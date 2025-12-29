@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Dev: Max Archetypes Mint</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <style>
+            body {
+                background:
+                    radial-gradient(1200px 600px at 30% 10%, rgba(255, 107, 53, 0.18), transparent 60%),
+                    radial-gradient(900px 600px at 80% 20%, rgba(168, 85, 247, 0.18), transparent 60%),
+                    linear-gradient(135deg, #07060a 0%, #130c0a 55%, #07060a 100%);
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            }
+
+            .glass {
+                background: rgba(255, 255, 255, 0.04);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                backdrop-filter: blur(14px);
+            }
+        </style>
+    </head>
+    <body class="min-h-screen text-white">
+        <div class="max-w-7xl mx-auto p-6">
+            <div class="flex items-start justify-between gap-6 flex-wrap">
+                <div>
+                    <div class="text-xs tracking-[0.35em] text-gray-400 font-mono">DEV TOOL</div>
+                    <h1 class="text-4xl md:text-5xl font-black mt-2">MAX ARCHETYPES MINT LAB</h1>
+                    <p class="text-gray-400 mt-3 max-w-2xl">
+                        Pick an archetype preset, inject it into <code class="text-orange-300">index.html</code>, then
+                        mint. This is a temporary page for generating parent candidates.
+                    </p>
+                </div>
+
+                <div class="glass rounded-2xl p-4 w-full md:w-[420px]">
+                    <div class="text-xs font-mono text-gray-400 tracking-widest">PRESET</div>
+                    <div class="mt-2 grid grid-cols-3 gap-2">
+                        <button
+                            class="presetBtn px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-orange-400/50 hover:bg-orange-500/10 transition text-xs font-bold"
+                            data-key="DRIFTER"
+                        >
+                            DRIFTER
+                        </button>
+                        <button
+                            class="presetBtn px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-orange-400/50 hover:bg-orange-500/10 transition text-xs font-bold"
+                            data-key="WALKER"
+                        >
+                            WALKER
+                        </button>
+                        <button
+                            class="presetBtn px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-orange-400/50 hover:bg-orange-500/10 transition text-xs font-bold"
+                            data-key="MERCHANT"
+                        >
+                            MERCHANT
+                        </button>
+                        <button
+                            class="presetBtn px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-orange-400/50 hover:bg-orange-500/10 transition text-xs font-bold"
+                            data-key="ENGINEER"
+                        >
+                            ENGINEER
+                        </button>
+                        <button
+                            class="presetBtn px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-orange-400/50 hover:bg-orange-500/10 transition text-xs font-bold"
+                            data-key="SHAMAN"
+                        >
+                            SHAMAN
+                        </button>
+                        <button
+                            class="presetBtn px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-orange-400/50 hover:bg-orange-500/10 transition text-xs font-bold"
+                            data-key="KEEPER"
+                        >
+                            KEEPER
+                        </button>
+                        <button
+                            class="presetBtn px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-orange-400/50 hover:bg-orange-500/10 transition text-xs font-bold"
+                            data-key="LORD"
+                        >
+                            LORD
+                        </button>
+                        <button
+                            class="presetBtn px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-orange-400/50 hover:bg-orange-500/10 transition text-xs font-bold"
+                            data-key="PRIME"
+                        >
+                            PRIME
+                        </button>
+                        <button
+                            class="presetBtn px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-orange-400/50 hover:bg-orange-500/10 transition text-xs font-bold"
+                            data-key="SINGULARITY"
+                        >
+                            SINGULARITY
+                        </button>
+                    </div>
+
+                    <div class="mt-4 flex items-center gap-2">
+                        <button
+                            id="injectBtn"
+                            class="flex-1 px-4 py-3 rounded-xl bg-gradient-to-r from-orange-500 to-orange-300 text-black font-black disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            INJECT INTO IFRAME
+                        </button>
+                        <button
+                            id="mintBtn"
+                            class="flex-1 px-4 py-3 rounded-xl bg-white/5 border border-white/10 font-black hover:border-orange-400/40 hover:bg-orange-500/10 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            MINT
+                        </button>
+                    </div>
+
+                    <div class="mt-3 text-xs text-gray-400">
+                        - If mint fails: run Worker with a provenance key, or use the new dev fallback in
+                        <code>sign_provenance</code>.
+                        <br />
+                        - Parent inscription ID is taken from the main site localStorage key
+                        <code class="text-orange-300">fennec_parent_inscription_id</code>.
+                    </div>
+
+                    <div class="mt-4">
+                        <div class="text-xs font-mono text-gray-400 tracking-widest">DEBUG</div>
+                        <pre
+                            id="debugOut"
+                            class="mt-2 text-[11px] leading-relaxed bg-black/40 border border-white/10 rounded-xl p-3 overflow-auto max-h-56"
+                        ></pre>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-6 glass rounded-2xl overflow-hidden border border-white/10">
+                <div class="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-black/30">
+                    <div class="text-xs font-mono text-gray-400 tracking-widest">IFRAME: index.html</div>
+                    <div class="text-xs text-gray-500" id="iframeStatus">Loading…</div>
+                </div>
+                <iframe id="siteFrame" src="index.html" class="w-full" style="height: 820px"></iframe>
+            </div>
+        </div>
+
+        <script>
+            const debugOut = document.getElementById('debugOut');
+            const iframeStatus = document.getElementById('iframeStatus');
+            const frame = document.getElementById('siteFrame');
+            const injectBtn = document.getElementById('injectBtn');
+            const mintBtn = document.getElementById('mintBtn');
+
+            let selectedKey = 'DRIFTER';
+
+            const archetypeTitles = {
+                DRIFTER: 'DESERT GHOST',
+                WALKER: 'TIMELESS ENTITY',
+                MERCHANT: 'MARKET SOVEREIGN',
+                ENGINEER: 'REALITY CODER',
+                SHAMAN: 'RUNE DEITY',
+                KEEPER: 'OMNISCIENT',
+                LORD: 'EMPEROR',
+                PRIME: 'PRIME ABSOLUTE',
+                SINGULARITY: 'THE SINGULARITY'
+            };
+
+            function mkIdentity(baseKey) {
+                const badges = [
+                    { name: 'GENESIS', icon: '💎', img: 'img/badge_genesis.png', desc: '' },
+                    { name: 'WHALE', icon: '🐋', img: 'img/badge_whale.png', desc: '' },
+                    { name: 'PROVIDER', icon: '💧', img: 'img/badge_provider.png', desc: '' },
+                    { name: 'FENNEC MAXI', icon: '🔥', img: 'img/badge_maxi.png', desc: '' },
+                    { name: 'ARTIFACT HUNTER', icon: '🏺', img: 'img/badge_collector.png', desc: '' },
+                    { name: 'RUNE KEEPER', icon: '🧿', img: 'img/badge_rune.png', desc: '' },
+                    { name: 'MEMPOOL RIDER', icon: '⚡', img: 'img/mempool_rider.png', desc: '' },
+                    { name: 'DUST DEVIL', icon: '🌪️', desc: '' }
+                ];
+
+                const scoreBreakdown = {
+                    activityPoints: 30,
+                    wealthPoints: 20,
+                    timePoints: 15,
+                    badgesPoints: 35,
+                    baseScore: 100,
+                    multiplier: 1.2,
+                    scoreAfterMultiplier: 120
+                };
+
+                return {
+                    archetype: {
+                        baseKey,
+                        title: archetypeTitles[baseKey] || baseKey,
+                        tierLevel: 3,
+                        tierLabel: '',
+                        tier: '',
+                        badges
+                    },
+                    metrics: {
+                        wealth: '500.00',
+                        daysAlive: 365,
+                        first_tx_ts: 1725840000,
+                        txCount: 10000,
+                        utxoCount: 999,
+                        activityScore: 100,
+                        scoreBreakdown,
+                        rarity: { name: 'SPIRIT', class: 'card-spirit', color: 'text-spirit' },
+                        rarityName: 'SPIRIT',
+                        rarityColor: 'text-spirit',
+                        activityStatus: 'SPIRIT',
+                        activityColor: 'text-spirit',
+                        avgTxPerDay: '27.40',
+                        inscriptionStats: { runes: 999, brc20: 999, ordinals: 999, total: 2997 },
+                        nativeBalance: '999.0000',
+                        fbSwapBalance: 999,
+                        lpValueUSD: 500,
+                        lpValueFB: 999,
+                        fbTotal: '1998.00',
+                        fennecBalance: '20000.00',
+                        fennecNativeBalance: 12000,
+                        fennecWalletBalance: 12000,
+                        fennecInSwapBalance: 8000,
+                        stakedFB: 0,
+                        hasFennecSoul: true,
+                        hasFennecInLP: true,
+                        hasFennecMaxi: true,
+                        badgeCount: badges.length
+                    }
+                };
+            }
+
+            function log(obj) {
+                debugOut.textContent = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
+            }
+
+            function getFrameWin() {
+                return frame.contentWindow;
+            }
+
+            function inject() {
+                const w = getFrameWin();
+                if (!w) throw new Error('Frame not ready');
+                if (typeof w.setDebugAuditIdentity !== 'function') {
+                    throw new Error('setDebugAuditIdentity is not available in iframe yet.');
+                }
+                const identity = mkIdentity(selectedKey);
+                w.setDebugAuditIdentity(identity);
+                log(identity);
+            }
+
+            async function mint() {
+                const w = getFrameWin();
+                if (!w) throw new Error('Frame not ready');
+                if (typeof w.mintAuditCard !== 'function') {
+                    throw new Error('mintAuditCard is not available in iframe yet.');
+                }
+                await w.mintAuditCard();
+            }
+
+            document.querySelectorAll('.presetBtn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document
+                        .querySelectorAll('.presetBtn')
+                        .forEach(b => b.classList.remove('ring-2', 'ring-orange-400'));
+                    btn.classList.add('ring-2', 'ring-orange-400');
+                    selectedKey = btn.dataset.key;
+                    log(`Selected: ${selectedKey}`);
+                });
+            });
+
+            injectBtn.addEventListener('click', () => {
+                try {
+                    inject();
+                } catch (e) {
+                    log(`Inject error: ${e.message || String(e)}`);
+                }
+            });
+
+            mintBtn.addEventListener('click', async () => {
+                try {
+                    await mint();
+                } catch (e) {
+                    log(`Mint error: ${e.message || String(e)}`);
+                }
+            });
+
+            frame.addEventListener('load', () => {
+                iframeStatus.textContent = 'Ready';
+                injectBtn.disabled = false;
+                mintBtn.disabled = false;
+                log('Select an archetype and click INJECT.');
+            });
+
+            // Default selection highlight
+            document.querySelector('.presetBtn[data-key="DRIFTER"]').classList.add('ring-2', 'ring-orange-400');
+        </script>
+    </body>
+</html>

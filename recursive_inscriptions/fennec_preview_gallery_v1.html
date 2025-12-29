@@ -1,0 +1,768 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Fennec ID - Preview Gallery (Local)</title>
+        <style>
+            :root {
+                --bg: #060607;
+                --panel: rgba(255, 255, 255, 0.06);
+                --line: rgba(255, 255, 255, 0.1);
+                --text: rgba(255, 255, 255, 0.92);
+                --muted: rgba(255, 255, 255, 0.65);
+                --fennec: #ff6b35;
+            }
+            html,
+            body {
+                margin: 0;
+                padding: 0;
+                background:
+                    radial-gradient(1200px 900px at 50% -20%, rgba(255, 107, 53, 0.2), transparent 60%),
+                    radial-gradient(900px 700px at 30% 120%, rgba(59, 130, 246, 0.16), transparent 60%), var(--bg);
+                color: var(--text);
+                font-family:
+                    system-ui,
+                    -apple-system,
+                    Segoe UI,
+                    Roboto,
+                    Arial,
+                    sans-serif;
+            }
+            .wrap {
+                max-width: 1200px;
+                margin: 0 auto;
+                padding: 20px 16px 60px;
+            }
+            .head {
+                display: flex;
+                align-items: flex-end;
+                justify-content: space-between;
+                gap: 14px;
+                margin-bottom: 16px;
+            }
+            h1 {
+                margin: 0;
+                font-size: 18px;
+                letter-spacing: 0.08em;
+                text-transform: uppercase;
+            }
+            .sub {
+                margin-top: 6px;
+                color: var(--muted);
+                font-size: 12px;
+                line-height: 1.4;
+            }
+            .panel {
+                background: var(--panel);
+                border: 1px solid var(--line);
+                border-radius: 16px;
+                padding: 12px 12px;
+            }
+            .controls {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+                align-items: center;
+            }
+            label {
+                display: flex;
+                gap: 8px;
+                align-items: center;
+                font-size: 12px;
+                color: var(--muted);
+            }
+            .controls input[type='text'] {
+                background: rgba(0, 0, 0, 0.22);
+                border: 1px solid var(--line);
+                border-radius: 12px;
+                padding: 8px 10px;
+                color: var(--text);
+                outline: none;
+                min-width: 320px;
+            }
+            .btn {
+                appearance: none;
+                border: 1px solid var(--line);
+                border-radius: 12px;
+                padding: 8px 12px;
+                background: rgba(0, 0, 0, 0.22);
+                color: var(--text);
+                font-size: 12px;
+                font-weight: 650;
+                letter-spacing: 0.06em;
+                cursor: pointer;
+            }
+            .btn:hover {
+                background: rgba(0, 0, 0, 0.32);
+            }
+            input[type='checkbox'] {
+                accent-color: var(--fennec);
+            }
+            .grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+                gap: 18px;
+                margin-top: 16px;
+            }
+            .cell {
+                background: rgba(0, 0, 0, 0.18);
+                border: 1px solid var(--line);
+                border-radius: 18px;
+                padding: 12px;
+            }
+            .cell-title {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 10px;
+                margin: 0 0 8px;
+            }
+            .cell-title b {
+                font-size: 12px;
+                letter-spacing: 0.1em;
+                text-transform: uppercase;
+            }
+            .cell-title span {
+                font-size: 12px;
+                color: var(--muted);
+            }
+            .mount {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+            }
+            .smallgrid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+                gap: 14px;
+                margin-top: 14px;
+            }
+            .raritygrid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+                gap: 14px;
+                margin-top: 14px;
+            }
+            .hint {
+                margin-top: 16px;
+                color: var(--muted);
+                font-size: 12px;
+                line-height: 1.45;
+            }
+            code {
+                color: rgba(255, 255, 255, 0.86);
+            }
+        </style>
+    </head>
+    <body>
+        <div class="wrap">
+            <div class="head">
+                <div>
+                    <h1>Fennec ID — Preview Gallery</h1>
+                    <div class="sub">
+                        Local preview for archetypes, tiers and badges using
+                        <code>recursive_inscriptions/fennec_lib_v1.js</code>.<br />It uses local images from
+                        <code>../img/</code> so you can verify visuals before minting assets on-chain.
+                    </div>
+                </div>
+                <div class="panel">
+                    <div class="controls">
+                        <label><input id="toggleFlip" type="checkbox" checked /> flip</label>
+                        <label><input id="toggleTilt" type="checkbox" checked /> tilt</label>
+                        <label><input id="toggleOracle" type="checkbox" /> oracle (calls worker)</label>
+                    </div>
+                </div>
+            </div>
+
+            <div id="gallery" class="grid"></div>
+
+            <div class="panel" style="margin-top: 16px">
+                <b style="font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase">Live data (oracle)</b>
+                <div class="sub" style="margin-top: 6px">
+                    Enter a real address and enable <code>oracle</code> to load real metrics from the deployed worker.
+                </div>
+                <div class="controls" style="margin-top: 12px">
+                    <button id="walletConnect" class="btn" type="button">connect wallet</button>
+                    <span id="walletStatus" class="sub" style="margin: 0"></span>
+                    <label>
+                        address
+                        <input id="liveAddress" type="text" placeholder="bc1q..." autocomplete="off" />
+                    </label>
+                    <label>
+                        pubkey (optional)
+                        <input id="livePubkey" type="text" placeholder="02ab..." autocomplete="off" />
+                    </label>
+                    <button id="liveRender" class="btn" type="button">render</button>
+                </div>
+                <div id="liveMount" class="mount" style="margin-top: 14px"></div>
+            </div>
+
+            <div class="panel" style="margin-top: 16px">
+                <b style="font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase">Rarity Showcase</b>
+                <div class="sub" style="margin-top: 6px">
+                    Borders are driven by <code>activityScore</code> thresholds.
+                </div>
+                <div id="rarities" class="raritygrid"></div>
+            </div>
+
+            <div class="panel" style="margin-top: 16px">
+                <b style="font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase">Effects Showcase</b>
+                <div class="sub" style="margin-top: 6px">
+                    Curated cards to demonstrate individual and combined effects (flip some cards to see back
+                    watermark).
+                </div>
+                <div id="effects" class="smallgrid"></div>
+            </div>
+
+            <div class="panel" style="margin-top: 16px">
+                <b style="font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase">Badge Showcase</b>
+                <div class="sub" style="margin-top: 6px">
+                    Each card below has exactly one badge to preview rendering and mapping.
+                </div>
+                <div id="badges" class="smallgrid"></div>
+            </div>
+
+            <div class="hint">
+                Files you will mint:
+                <div style="margin-top: 8px">
+                    1) <code>recursive_inscriptions/fennec_lib_v1.js</code> (JS inscription)<br />
+                    2) <code>recursive_inscriptions/fennec_config_v1.json</code> (config inscription)<br />
+                    3) Images listed in <code>recursive_inscriptions/assets_manifest_v1.json</code>
+                </div>
+            </div>
+        </div>
+
+        <script src="./fennec_lib_v1.js"></script>
+        <script>
+            function setMeta(name, value) {
+                let el = document.querySelector(`meta[name="${name}"]`);
+                if (!el) {
+                    el = document.createElement('meta');
+                    el.setAttribute('name', name);
+                    document.head.appendChild(el);
+                }
+                el.setAttribute('content', String(value || ''));
+            }
+
+            const QS = new URLSearchParams(window.location.search);
+
+            function makeConfig() {
+                const enableFlip = document.getElementById('toggleFlip').checked;
+                const enableTilt = document.getElementById('toggleTilt').checked;
+                const enableOracle = document.getElementById('toggleOracle').checked;
+
+                return {
+                    version: 1,
+                    theme: 'default',
+                    features: { enableFlip, enableTilt },
+                    oracle: {
+                        enabled: enableOracle,
+                        endpoint: 'https://fennec-api.warninghejo.workers.dev',
+                        action: 'fractal_audit',
+                        timeoutMs: 8000,
+                        showSyncFx: true
+                    },
+                    assets: {
+                        backgrounds: {
+                            '*': '../img/drifter.png',
+                            DRIFTER: '../img/drifter.png',
+                            WALKER: '../img/walker.png',
+                            KEEPER: '../img/keeper.png',
+                            ENGINEER: '../img/engineer.png',
+                            MERCHANT: '../img/merchant.png',
+                            SHAMAN: '../img/shaman.png',
+                            LORD: '../img/oasis.png',
+                            PRIME: '../img/prime.png',
+                            SINGULARITY: '../img/singularity.png'
+                        },
+                        badges: {
+                            GENESIS: '../img/badge_genesis.png',
+                            WHALE: '../img/badge_whale.png',
+                            PROVIDER: '../img/badge_provider.png',
+                            'FENNEC MAXI': '../img/badge_maxi.png',
+                            'ARTIFACT HUNTER': '../img/badge_collector.png',
+                            'RUNE KEEPER': '../img/badge_rune.png',
+                            'MEMPOOL RIDER': '../img/badge_mempool_rider.png',
+                            'SAND SWEEPER': '../img/badge_sweeper.png'
+                        },
+                        misc: {
+                            LOGO: '../img/phav.png',
+                            WATERMARK: '../img/FBSYM.png'
+                        }
+                    }
+                };
+            }
+
+            const ARCHETYPES = [
+                'DRIFTER',
+                'WALKER',
+                'KEEPER',
+                'ENGINEER',
+                'MERCHANT',
+                'SHAMAN',
+                'LORD',
+                'PRIME',
+                'SINGULARITY'
+            ];
+
+            const TITLES = {
+                DRIFTER: ['DESERT RUNNER', 'SAND WANDERER', 'DUNE NOMAD', 'STORM SURFER'],
+                MERCHANT: ['CARAVAN MERCHANT', 'GOLD TRADER', 'OASIS KING', 'DESERT TYCOON'],
+                ENGINEER: ['CODE ENGINEER', 'SYSTEM BUILDER', 'NEURAL ARCHITECT', 'QUANTUM ENGINEER'],
+                SHAMAN: ['RUNE SHAMAN', 'RUNE SEER', 'RUNE PROPHET', 'RUNE DEITY'],
+                KEEPER: ['KEEPER OF LORE', 'CHRONICLER', 'GRAND ARCHIVIST', 'OMNISCIENT'],
+                WALKER: ['FIRST WALKER', 'ANCIENT WALKER', 'PRIMORDIAL', 'TIMELESS ENTITY'],
+                LORD: ['OASIS LORD', 'TERMINAL BARON', 'FRACTAL KING', 'EMPEROR'],
+                PRIME: ['FRACTAL PRIME', 'APEX PRIME', 'OMEGA PRIME', 'PRIME ABSOLUTE'],
+                SINGULARITY: ['THE SINGULARITY', 'THE SINGULARITY', 'THE SINGULARITY', 'THE SINGULARITY']
+            };
+
+            const BADGE_ORDER = [
+                'GENESIS',
+                'WHALE',
+                'PROVIDER',
+                'FENNEC MAXI',
+                'ARTIFACT HUNTER',
+                'RUNE KEEPER',
+                'MEMPOOL RIDER',
+                'SAND SWEEPER'
+            ];
+
+            function seeded(n) {
+                let x = n >>> 0;
+                x ^= x << 13;
+                x ^= x >>> 17;
+                x ^= x << 5;
+                return (x >>> 0) / 4294967296;
+            }
+
+            function seedFrom(baseKey, tierLevel, idx) {
+                const s = `${baseKey}:${tierLevel}:${idx}`;
+                let h = 2166136261;
+                for (let i = 0; i < s.length; i++) {
+                    h ^= s.charCodeAt(i);
+                    h = Math.imul(h, 16777619);
+                }
+                return h >>> 0;
+            }
+
+            function clamp(n, a, b) {
+                return Math.max(a, Math.min(b, n));
+            }
+
+            function fmt2(n) {
+                return (Math.round(n * 100) / 100).toFixed(2);
+            }
+
+            function buildDna(baseKey, tierLevel, idx) {
+                const isMaxOnly = baseKey === 'PRIME' || baseKey === 'SINGULARITY';
+                const t = isMaxOnly ? 3 : tierLevel;
+
+                const title = (TITLES[baseKey] || TITLES.DRIFTER)[t] || baseKey;
+                const tierLabel = isMaxOnly ? 'MAX' : `TIER ${t}`;
+
+                const r0 = seeded(seedFrom(baseKey, t, idx));
+                const r1 = seeded(seedFrom(baseKey, t, idx + 7));
+                const r2 = seeded(seedFrom(baseKey, t, idx + 13));
+
+                const daysAlive = Math.round(10 + r0 * (t === 0 ? 30 : t === 1 ? 120 : t === 2 ? 260 : 520));
+                const txBase = t === 0 ? 12 : t === 1 ? 240 : t === 2 ? 1600 : 8500;
+                const txCount = Math.round(txBase + r1 * (txBase * 0.6));
+                const scoreBase = t === 0 ? 8 : t === 1 ? 28 : t === 2 ? 55 : 82;
+                const activityScore = clamp(Math.round(scoreBase + r2 * 16), 0, 100);
+                const worthBase = t === 0 ? 12 : t === 1 ? 80 : t === 2 ? 260 : 980;
+                const netWorth = worthBase + r1 * worthBase * 0.8;
+
+                const fbPrice = 1.0;
+                const fbBase = t === 0 ? 0.02 : t === 1 ? 0.8 : t === 2 ? 4.2 : 18;
+                const fbTotal = fbBase + r0 * fbBase * 1.6;
+                const lpValueUSD = (t === 0 ? 0 : t === 1 ? 12 : t === 2 ? 55 : 220) + r2 * (t === 0 ? 0 : 80);
+                const abandonedUtxoCount = Math.round(r1 * (t === 0 ? 35 : t === 1 ? 90 : t === 2 ? 180 : 320));
+
+                const fennecBase = t === 0 ? 50 : t === 1 ? 800 : t === 2 ? 6500 : 25000;
+                const fennecBalance = fennecBase + r2 * fennecBase * 0.75;
+
+                const rarityName = t === 0 ? 'CUB' : t === 1 ? 'SCOUT' : t === 2 ? 'HUNTER' : 'SPIRIT';
+                const hasFennecSoul = t >= 2;
+
+                let badgesCount = t === 0 ? 0 : t === 1 ? 2 : t === 2 ? 4 : 7;
+                if (baseKey === 'PRIME') badgesCount = 8;
+                if (baseKey === 'SINGULARITY') badgesCount = 8;
+
+                const badges = BADGE_ORDER.slice(0, badgesCount).map(name => ({ name }));
+
+                const inscriptionStats = {
+                    runes: Math.round((t === 0 ? 0 : t === 1 ? 2 : t === 2 ? 15 : 40) + r2 * (t === 0 ? 0 : 60)),
+                    ordinals: Math.round((t === 0 ? 0 : t === 1 ? 1 : t === 2 ? 10 : 35) + r0 * (t === 0 ? 0 : 50))
+                };
+                inscriptionStats.total = inscriptionStats.runes + inscriptionStats.ordinals;
+
+                const addrTail = String(Math.floor(100000 + r0 * 899999));
+
+                return {
+                    address: `bc1q-preview-${baseKey.toLowerCase()}-${addrTail}`,
+                    archetype: { baseKey, title, tierLevel: t, tierLabel },
+                    badges,
+                    metrics: {
+                        rarityName,
+                        wealth: fmt2(netWorth),
+                        netWorthUSD: fmt2(netWorth),
+                        fbPrice,
+                        fbTotal: fbTotal.toFixed(4),
+                        lpValueUSD: fmt2(lpValueUSD),
+                        txCount,
+                        daysAlive,
+                        activityScore,
+                        fennecBalance: fmt2(fennecBalance),
+                        hasFennecSoul,
+                        abandonedUtxoCount,
+                        inscriptionStats
+                    }
+                };
+            }
+
+            function buildDnaWithScore(baseKey, tierLevel, idx, forcedScore) {
+                const dna = buildDna(baseKey, tierLevel, idx);
+                dna.metrics.activityScore = clamp(Number(forcedScore) || 0, 0, 100);
+                return dna;
+            }
+
+            function mountCard(container, dna, config) {
+                const scene = window.FennecIDLib.createCard(dna, config);
+                container.appendChild(scene);
+            }
+
+            function renderLive(config) {
+                const mount = document.getElementById('liveMount');
+                if (!mount) return;
+                mount.innerHTML = '';
+
+                const address = String(document.getElementById('liveAddress')?.value || '').trim();
+                const pubkey = String(document.getElementById('livePubkey')?.value || '').trim();
+                setMeta('fennec-pubkey', pubkey);
+
+                if (!address) {
+                    const hint = document.createElement('div');
+                    hint.className = 'sub';
+                    hint.textContent = 'Enter address to preview live oracle.';
+                    mount.appendChild(hint);
+                    return;
+                }
+
+                const dna = {
+                    address,
+                    archetype: { baseKey: 'DRIFTER', title: 'SYNCING', tierLabel: '', tierLevel: 0 },
+                    badges: [],
+                    fxKey: 'holo-wave',
+                    metrics: {
+                        rarityName: 'CUB',
+                        wealth: '0.00',
+                        txCount: 0,
+                        daysAlive: 0,
+                        activityScore: 0,
+                        fennecBalance: '0.00',
+                        hasFennecSoul: false
+                    }
+                };
+
+                mountCard(mount, dna, config);
+            }
+
+            function setWalletStatus(text) {
+                const el = document.getElementById('walletStatus');
+                if (!el) return;
+                el.textContent = String(text || '');
+            }
+
+            async function connectUniSat() {
+                const btn = document.getElementById('walletConnect');
+                if (btn) btn.disabled = true;
+                setWalletStatus('');
+
+                try {
+                    if (!window.unisat) {
+                        setWalletStatus('UniSat not found. Install/enable the extension.');
+                        return;
+                    }
+
+                    let accounts = [];
+                    if (typeof window.unisat.requestAccounts === 'function') {
+                        accounts = await window.unisat.requestAccounts();
+                    } else if (typeof window.unisat.getAccounts === 'function') {
+                        accounts = await window.unisat.getAccounts();
+                    }
+
+                    const address = Array.isArray(accounts) && accounts.length ? String(accounts[0] || '').trim() : '';
+                    if (!address) {
+                        setWalletStatus('No address returned from UniSat.');
+                        return;
+                    }
+
+                    let pubkey = '';
+                    try {
+                        if (typeof window.unisat.getPublicKey === 'function')
+                            pubkey = await window.unisat.getPublicKey();
+                    } catch (_) {
+                        pubkey = '';
+                    }
+
+                    document.getElementById('liveAddress').value = address;
+                    document.getElementById('livePubkey').value = pubkey || '';
+
+                    // Enable oracle automatically for real-data test
+                    document.getElementById('toggleOracle').checked = true;
+
+                    setWalletStatus(`connected: ${address.slice(0, 6)}…${address.slice(-6)}`);
+                    renderLive(makeConfig());
+
+                    if (typeof window.unisat.on === 'function') {
+                        try {
+                            window.unisat.on('accountsChanged', accs => {
+                                const a = Array.isArray(accs) && accs.length ? String(accs[0] || '').trim() : '';
+                                if (a) {
+                                    document.getElementById('liveAddress').value = a;
+                                    setWalletStatus(`connected: ${a.slice(0, 6)}…${a.slice(-6)}`);
+                                    renderLive(makeConfig());
+                                }
+                            });
+                        } catch (_) {}
+                    }
+                } catch (e) {
+                    setWalletStatus(e && e.message ? e.message : String(e));
+                } finally {
+                    if (btn) btn.disabled = false;
+                }
+            }
+
+            function rebuild() {
+                const config = makeConfig();
+                const gallery = document.getElementById('gallery');
+                const badges = document.getElementById('badges');
+                const rarities = document.getElementById('rarities');
+                const effects = document.getElementById('effects');
+                gallery.innerHTML = '';
+                badges.innerHTML = '';
+                rarities.innerHTML = '';
+                effects.innerHTML = '';
+
+                for (const baseKey of ARCHETYPES) {
+                    const tiers = baseKey === 'PRIME' || baseKey === 'SINGULARITY' ? [3] : [0, 1, 2, 3];
+                    for (const tier of tiers) {
+                        const cell = document.createElement('div');
+                        cell.className = 'cell';
+                        const head = document.createElement('div');
+                        head.className = 'cell-title';
+                        head.innerHTML = `<b>${baseKey}</b><span>TIER ${tier}</span>`;
+                        const mount = document.createElement('div');
+                        mount.className = 'mount';
+                        cell.appendChild(head);
+                        cell.appendChild(mount);
+                        gallery.appendChild(cell);
+
+                        const dna = buildDna(baseKey, tier, tier);
+                        dna.fxKey = baseKey === 'ENGINEER' ? 'scanlines' : 'reactive-sheen';
+                        mountCard(mount, dna, config);
+                    }
+                }
+
+                const raritySamples = [
+                    { label: 'CUB (0-29)', score: 12, tier: 0 },
+                    { label: 'SCOUT (30-49)', score: 35, tier: 1 },
+                    { label: 'HUNTER (50-64)', score: 55, tier: 2 },
+                    { label: 'ALPHA (65-79)', score: 70, tier: 2 },
+                    { label: 'ELDER (80-94)', score: 85, tier: 3 },
+                    { label: 'SPIRIT (95-100)', score: 97, tier: 3 }
+                ];
+
+                for (const sample of raritySamples) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    const head = document.createElement('div');
+                    head.className = 'cell-title';
+                    head.innerHTML = `<b>${sample.label}</b><span>score ${sample.score}</span>`;
+                    const mount = document.createElement('div');
+                    mount.className = 'mount';
+                    cell.appendChild(head);
+                    cell.appendChild(mount);
+                    rarities.appendChild(cell);
+
+                    const dna = buildDnaWithScore('DRIFTER', sample.tier, sample.score, sample.score);
+                    dna.fxKey = 'reactive-sheen';
+                    mountCard(mount, dna, config);
+                }
+
+                const curatedSamples = [
+                    {
+                        label: 'ALL EFFECTS (max combo)',
+                        detail: 'SPIRIT + SOUL + goldShine + VFX-3D + back watermark',
+                        dna: (() => {
+                            const d = buildDnaWithScore('MERCHANT', 3, 909, 97);
+                            d.metrics.hasFennecSoul = true;
+                            d.metrics.activityScore = 97;
+                            d.fxKey = 'aurora-flow';
+                            return d;
+                        })()
+                    },
+                    {
+                        label: 'GOLD SHINE (preview goldShine)',
+                        detail: 'MERCHANT overlay + Tier 1 breathe',
+                        dna: (() => {
+                            const d = buildDna('MERCHANT', 1, 101);
+                            d.fxKey = 'prism-ribbon';
+                            return d;
+                        })()
+                    },
+                    {
+                        label: 'SOUL GLOW',
+                        detail: 'Tier 2 (SOUL active) + VFX-3D',
+                        dna: (() => {
+                            const d = buildDna('DRIFTER', 2, 202);
+                            d.fxKey = 'photon-ring';
+                            return d;
+                        })()
+                    },
+                    {
+                        label: 'ENGINEER GLITCH',
+                        detail: 'ENGINEER overlay + Tier 2 glitch',
+                        dna: (() => {
+                            const d = buildDna('ENGINEER', 2, 303);
+                            d.fxKey = 'scanlines';
+                            return d;
+                        })()
+                    },
+                    {
+                        label: 'ENGINEER T3 (heavy)',
+                        detail: 'ENGINEER overlay + Tier 3 glitch',
+                        dna: (() => {
+                            const d = buildDna('ENGINEER', 3, 404);
+                            d.fxKey = 'neon-grid';
+                            return d;
+                        })()
+                    },
+                    {
+                        label: 'ELDER BORDER',
+                        detail: 'score 85 (border + stronger overlay)',
+                        dna: (() => {
+                            const d = buildDnaWithScore('DRIFTER', 3, 505, 85);
+                            d.fxKey = 'glass-shards';
+                            return d;
+                        })()
+                    },
+                    {
+                        label: 'SPIRIT BORDER',
+                        detail: 'score 97 (border + stronger overlay)',
+                        dna: (() => {
+                            const d = buildDnaWithScore('DRIFTER', 3, 606, 97);
+                            d.fxKey = 'holo-wave';
+                            return d;
+                        })()
+                    },
+                    {
+                        label: 'WATERMARK (back)',
+                        detail: 'Flip card to see FBSYM watermark + header',
+                        dna: (() => {
+                            const d = buildDna('DRIFTER', 1, 707);
+                            d.fxKey = 'sandstorm';
+                            return d;
+                        })()
+                    }
+                ];
+
+                const usedFx = new Set(
+                    curatedSamples
+                        .map(s => (s && s.dna ? String(s.dna.fxKey || '') : ''))
+                        .map(s => s.trim())
+                        .filter(Boolean)
+                );
+
+                const fxDemos = [
+                    { key: 'reactive-sheen', label: 'REACTIVE SHEEN' },
+                    { key: 'prism-ribbon', label: 'PRISM RIBBON' },
+                    { key: 'scanlines', label: 'SCANLINES' },
+                    { key: 'stardust', label: 'STARDUST' },
+                    { key: 'aurora-flow', label: 'AURORA FLOW' },
+                    { key: 'glass-shards', label: 'GLASS SHARDS' },
+                    { key: 'sandstorm', label: 'SANDSTORM' },
+                    { key: 'neon-grid', label: 'NEON GRID' },
+                    { key: 'emberfall', label: 'EMBERFALL' },
+                    { key: 'photon-ring', label: 'PHOTON RING' },
+                    { key: 'holo-wave', label: 'HOLO WAVE' }
+                ].filter(fx => fx && fx.key && !usedFx.has(String(fx.key).trim()));
+
+                const effectSamples = [
+                    ...curatedSamples,
+                    ...fxDemos.map((fx, i) => ({
+                        label: `FX — ${fx.label}`,
+                        detail: `dna.fxKey = ${fx.key}`,
+                        dna: (() => {
+                            const d = buildDna('DRIFTER', 2, 800 + i);
+                            d.fxKey = fx.key;
+                            return d;
+                        })()
+                    }))
+                ];
+
+                for (const sample of effectSamples) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    const head = document.createElement('div');
+                    head.className = 'cell-title';
+                    head.innerHTML = `<b>${sample.label}</b><span>${sample.detail}</span>`;
+                    const mount = document.createElement('div');
+                    mount.className = 'mount';
+                    cell.appendChild(head);
+                    cell.appendChild(mount);
+                    effects.appendChild(cell);
+
+                    mountCard(mount, sample.dna, config);
+                }
+
+                for (const name of BADGE_ORDER) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    const head = document.createElement('div');
+                    head.className = 'cell-title';
+                    head.innerHTML = `<b>${name}</b><span>single</span>`;
+                    const mount = document.createElement('div');
+                    mount.className = 'mount';
+                    cell.appendChild(head);
+                    cell.appendChild(mount);
+                    badges.appendChild(cell);
+
+                    const dna = {
+                        address: 'bc1q-preview-address',
+                        archetype: { baseKey: 'DRIFTER', title: 'BADGE PREVIEW', tierLevel: 1, tierLabel: '' },
+                        badges: [{ name }],
+                        fxKey: 'reactive-sheen',
+                        metrics: {
+                            rarityName: 'SCOUT',
+                            wealth: '0.00',
+                            txCount: 0,
+                            hasFennecSoul: false,
+                            activityScore: 35
+                        }
+                    };
+                    mountCard(mount, dna, config);
+                }
+
+                renderLive(config);
+            }
+
+            const qpOracle = QS.get('oracle');
+            const qpAddress = QS.get('address') || '';
+            const qpPubkey = QS.get('pubkey') || '';
+            if (qpOracle === '1' || qpOracle === 'true') document.getElementById('toggleOracle').checked = true;
+            if (qpAddress) document.getElementById('liveAddress').value = qpAddress;
+            if (qpPubkey) document.getElementById('livePubkey').value = qpPubkey;
+
+            document.getElementById('toggleFlip').addEventListener('change', rebuild);
+            document.getElementById('toggleTilt').addEventListener('change', rebuild);
+            document.getElementById('toggleOracle').addEventListener('change', rebuild);
+            document.getElementById('liveRender').addEventListener('click', () => renderLive(makeConfig()));
+            document.getElementById('walletConnect').addEventListener('click', connectUniSat);
+
+            rebuild();
+        </script>
+    </body>
+</html>

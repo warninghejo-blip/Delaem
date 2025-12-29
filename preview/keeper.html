@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Fennec ID • KEEPER • Evolution Preview</title>
+        <link rel="stylesheet" href="./_shared.css" />
+        <link rel="stylesheet" href="./archetype-effects.css" />
+    </head>
+    <body>
+        <div class="container">
+            <div class="topbar">
+                <div class="title">KEEPER</div>
+                <div class="nav">
+                    <a href="./index.html">INDEX</a>
+                    <a href="./drifter.html">DRIFTER</a>
+                    <a href="./walker.html">WALKER</a>
+                    <a href="./merchant.html">MERCHANT</a>
+                    <a href="./engineer.html">ENGINEER</a>
+                    <a href="./shaman.html">SHAMAN</a>
+                    <a href="./keeper.html">KEEPER</a>
+                    <a href="./lord.html">LORD</a>
+                    <a href="./prime.html">PRIME</a>
+                    <a href="./singularity.html">SINGULARITY</a>
+                </div>
+            </div>
+
+            <p class="subtitle">Side-by-side preview of Tier 0 → Tier 3 (same animations/overlays as live).</p>
+
+            <div class="grid">
+                <div class="tile">
+                    <div class="tile-head">
+                        <div class="tier-name">Tier 0</div>
+                        <div class="tier-note">Dormant</div>
+                    </div>
+                    <div class="preview-card">
+                        <img src="../img/keeper.png" class="img-tier-0" alt="KEEPER Tier 0" />
+                        <div class="shade"></div>
+                    </div>
+                </div>
+
+                <div class="tile">
+                    <div class="tile-head">
+                        <div class="tier-name">Tier 1</div>
+                        <div class="tier-note">Awakening</div>
+                    </div>
+                    <div class="preview-card">
+                        <img src="../img/keeper.png" class="anim-tier-1" alt="KEEPER Tier 1" />
+                        <div class="overlay-MERCHANT" style="opacity: 0.18"></div>
+                        <div class="shade"></div>
+                    </div>
+                </div>
+
+                <div class="tile">
+                    <div class="tile-head">
+                        <div class="tier-name">Tier 2</div>
+                        <div class="tier-note">Empowered</div>
+                    </div>
+                    <div class="preview-card">
+                        <img src="../img/keeper.png" class="anim-tier-2-shine" alt="KEEPER Tier 2" />
+                        <div class="overlay-MERCHANT" style="opacity: 0.3"></div>
+                        <div class="shade"></div>
+                    </div>
+                </div>
+
+                <div class="tile">
+                    <div class="tile-head">
+                        <div class="tier-name">Tier 3</div>
+                        <div class="tier-note">Unleashed</div>
+                    </div>
+                    <div class="preview-card">
+                        <img src="../img/keeper.png" class="anim-MERCHANT" alt="KEEPER Tier 3" />
+                        <div class="overlay-MERCHANT"></div>
+                        <div class="shade"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="footer">Note: VFX profile is MERCHANT for all classes except ENGINEER.</div>
+        </div>
+
+        <script>
+            (function () {
+                const path = (location.pathname || '').toLowerCase();
+                document.querySelectorAll('.nav a').forEach(a => {
+                    const href = (a.getAttribute('href') || '').toLowerCase();
+                    if (href && path.endsWith(href.replace('./', '/'))) a.classList.add('active');
+                });
+            })();
+        </script>
+
+        <script src="./_shared.js"></script>
+    </body>
+</html>

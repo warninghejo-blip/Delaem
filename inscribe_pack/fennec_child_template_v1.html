@@ -1,0 +1,569 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap"
+            rel="stylesheet"
+        />
+
+        <!-- Fill these after minting -->
+        <meta name="fennec-lib" content="ec53f51e93f5d510cc8ba134b25ee016a8cae85294f18d8844b2469ef15e189di0" />
+        <meta name="fennec-config" content="e40e1bba154f3f5421ab727d6a92e92b10eda1670a122e293d6f8ce8867b54afi0" />
+
+        <meta name="fennec-manifest" content="https://fennecbtc.xyz/recursive_inscriptions/fennec_manifest_live.json" />
+
+        <!-- Optional: provenance parent id (if you want the child to know it at runtime) -->
+        <meta name="fennec-parent" content="INSCRIPTION_ID_PARENT" />
+
+        <title>Fennec ID</title>
+    </head>
+    <body>
+        <div id="fennec-root"></div>
+
+        <!-- Unique data for THIS user/card -->
+        <script id="dna-data" type="application/json">
+            {
+                "address": "bc1q...",
+                "archetype": {
+                    "baseKey": "DRIFTER",
+                    "title": "DRIFTER",
+                    "tierLabel": "",
+                    "tierLevel": 0,
+                    "badges": []
+                },
+                "badges": [],
+                "metrics": {
+                    "rarityName": "CUB",
+                    "wealth": "0.00",
+                    "txCount": 0,
+                    "hasFennecSoul": false
+                }
+            }
+        </script>
+
+        <!-- Recursive load: the LIB is a JS inscription. It will auto-render using dna-data. -->
+        <script>
+            (function () {
+                // ГЛОБАЛЬНЫЙ ШИМ STORAGE (предотвращает краш в sandbox/incognito)
+                (function () {
+                    function makeShim() {
+                        var mem = {};
+                        return {
+                            getItem: function (k) {
+                                return mem.hasOwnProperty(k) ? mem[k] : null;
+                            },
+                            setItem: function (k, v) {
+                                mem[k] = String(v);
+                            },
+                            removeItem: function (k) {
+                                delete mem[k];
+                            },
+                            clear: function () {
+                                mem = {};
+                            },
+                            key: function (i) {
+                                return Object.keys(mem)[i] || null;
+                            },
+                            get length() {
+                                return Object.keys(mem).length;
+                            }
+                        };
+                    }
+                    try {
+                        var test = window.localStorage;
+                        if (!test) throw 1;
+                        test.setItem('__test', '1');
+                        test.removeItem('__test');
+                    } catch (e) {
+                        try {
+                            Object.defineProperty(window, 'localStorage', { value: makeShim(), configurable: true });
+                        } catch (e2) {
+                            window.localStorage = makeShim();
+                        }
+                    }
+                    try {
+                        var test2 = window.sessionStorage;
+                        if (!test2) throw 1;
+                        test2.setItem('__test', '1');
+                        test2.removeItem('__test');
+                    } catch (e) {
+                        try {
+                            Object.defineProperty(window, 'sessionStorage', { value: makeShim(), configurable: true });
+                        } catch (e2) {
+                            window.sessionStorage = makeShim();
+                        }
+                    }
+                })();
+
+                var fallbackManifestId = '8593e591de03ecbdd041121ee76256c22e51eaf670bfa0887358c6d3d50ad5ddi0';
+                var getMeta = function (name) {
+                    var el = document.querySelector('meta[name="' + name + '"]');
+                    return el ? el.getAttribute('content') || '' : '';
+                };
+
+                var setMeta = function (name, value) {
+                    var el = document.querySelector('meta[name="' + name + '"]');
+                    if (!el) {
+                        el = document.createElement('meta');
+                        el.setAttribute('name', name);
+                        document.head.appendChild(el);
+                    }
+                    el.setAttribute('content', String(value || ''));
+                };
+
+                var renderBoot = function (text) {
+                    try {
+                        var root = document.getElementById('fennec-root') || document.body;
+                        var msg = document.getElementById('__fennec_boot_msg');
+                        if (!msg) {
+                            msg = document.createElement('div');
+                            msg.id = '__fennec_boot_msg';
+                            msg.setAttribute(
+                                'style',
+                                'min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:rgba(255,255,255,0.88);background:#060607;padding:24px;box-sizing:border-box;text-align:left;white-space:pre-wrap;line-height:1.35;'
+                            );
+                            root.appendChild(msg);
+                        }
+                        msg.textContent = String(text || '');
+                    } catch (e) {}
+                };
+
+                var safeErrText = function (err) {
+                    try {
+                        if (!err) return '';
+                        if (typeof err === 'string') return err;
+                        if (err && typeof err.message === 'string' && err.message) return err.message;
+                        return String(err);
+                    } catch (_) {
+                        return 'Unknown error';
+                    }
+                };
+
+                var shouldIgnoreBootError = function (ev) {
+                    try {
+                        var m = '';
+                        var s = '';
+                        if (ev && typeof ev === 'object') {
+                            m = String(
+                                ev.message || (ev.reason && (ev.reason.message || ev.reason)) || ''
+                            ).toLowerCase();
+                            s = String(ev.filename || (ev.error && ev.error.fileName) || '').toLowerCase();
+                        } else {
+                            m = String(ev || '').toLowerCase();
+                        }
+
+                        if (m.indexOf('metamask') !== -1) return true;
+                        if (m.indexOf('cannot redefine property: ethereum') !== -1) return true;
+                        if (m.indexOf('failed to connect to metamask') !== -1) return true;
+                        if (m.indexOf('ethereum') !== -1 && m.indexOf('defineproperty') !== -1) return true;
+                        if (m.indexOf('content security policy') !== -1) return true;
+                        if (m.indexOf('refused to connect') !== -1) return true;
+                        if (
+                            m.indexOf('sandboxed') !== -1 &&
+                            (m.indexOf('localstorage') !== -1 || m.indexOf('sessionstorage') !== -1)
+                        )
+                            return true;
+                        if (m.indexOf('postmessage') !== -1 && m.indexOf("origin ('null')") !== -1) return true;
+                        if (m.indexOf('accessing a cross-origin frame') !== -1) return true;
+                        if (m.indexOf('securityerror') !== -1 && m.indexOf('document') !== -1) return true;
+
+                        if (s.indexOf('evmask') !== -1) return true;
+                        if (s.indexOf('inpage.js') !== -1) return true;
+                        if (s.indexOf('contentscript') !== -1) return true;
+                        if (s.indexOf('hostname_check') !== -1) return true;
+                        if (s.indexOf('requests.') !== -1 && s.indexOf('.js') !== -1) return true;
+                    } catch (_) {}
+                    return false;
+                };
+
+                var NL = String.fromCharCode(10);
+
+                try {
+                    window.addEventListener(
+                        'error',
+                        function (ev) {
+                            try {
+                                if (shouldIgnoreBootError(ev)) return;
+                                var msg = (ev && (ev.message || (ev.error && ev.error.message))) || 'Script error';
+                                renderBoot('Fennec ID crashed:' + NL + String(msg || ''));
+                            } catch (_) {}
+                        },
+                        true
+                    );
+                } catch (_) {}
+
+                try {
+                    window.addEventListener(
+                        'unhandledrejection',
+                        function (ev) {
+                            try {
+                                if (shouldIgnoreBootError(ev)) return;
+                                renderBoot('Fennec ID crashed (promise):' + NL + safeErrText(ev && ev.reason));
+                            } catch (_) {}
+                        },
+                        true
+                    );
+                } catch (_) {}
+
+                renderBoot('Loading Fennec ID…');
+
+                var inferContentBase = function () {
+                    var m = String(getMeta('fennec-content-base') || '').trim();
+                    if (m) return m;
+                    try {
+                        var h = (
+                            window.location && window.location.hostname ? String(window.location.hostname) : ''
+                        ).toLowerCase();
+                        var o =
+                            window.location && typeof window.location.origin === 'string'
+                                ? String(window.location.origin)
+                                : '';
+                        var p = window.location && window.location.pathname ? String(window.location.pathname) : '';
+                        if (!o || o === 'null') return 'https://uniscan.cc/fractal/content/';
+
+                        // UniSat static hosts may serve inscription content under /content/ (not /fractal/content/)
+                        if (h.indexOf('fractal-static.unisat.') === 0 && p.indexOf('/fractal/content/') !== -1) {
+                            return o + '/content/';
+                        }
+
+                        if (p.indexOf('/fractal/content/') !== -1) return o + '/fractal/content/';
+                        if (p.indexOf('/content/') !== -1) return o + '/content/';
+
+                        if (h === 'uniscan.cc' || h.slice(-10) === '.uniscan.cc') return o + '/fractal/content/';
+                    } catch (e) {}
+                    return '';
+                };
+
+                var contentBase = inferContentBase();
+                if (contentBase) setMeta('fennec-content-base', contentBase);
+
+                var looksLikeInscriptionId = function (ref) {
+                    try {
+                        var s = String(ref || '').trim();
+                        if (!s) return false;
+                        if (
+                            s.indexOf('/') !== -1 ||
+                            s.indexOf(':') !== -1 ||
+                            s.indexOf('?') !== -1 ||
+                            s.indexOf('#') !== -1
+                        )
+                            return false;
+                        if (s.length < 16) return false;
+                        return /i\d+$/i.test(s);
+                    } catch (_) {
+                        return false;
+                    }
+                };
+
+                var proxyUrlForId = function (id) {
+                    try {
+                        var h = (
+                            window.location && window.location.hostname ? String(window.location.hostname) : ''
+                        ).toLowerCase();
+                        // Disable proxy on UniScan/Unisat to avoid CSP blocks
+                        if (h.indexOf('uniscan') !== -1 || h.indexOf('unisat') !== -1) return '';
+
+                        var ep = String(getMeta('fennec-oracle-endpoint') || '').trim();
+                        if (!ep) return '';
+                        var sep = ep.indexOf('?') === -1 ? '?' : '&';
+                        return (
+                            ep +
+                            sep +
+                            'action=inscription_content&raw=1&inscriptionId=' +
+                            encodeURIComponent(String(id || ''))
+                        );
+                    } catch (_) {
+                        return '';
+                    }
+                };
+
+                var resolveRefToUrl = function (ref) {
+                    var s = String(ref || '').trim();
+                    if (!s) return '';
+
+                    if (looksLikeInscriptionId(s)) {
+                        var p0 = proxyUrlForId(s);
+                        if (p0) return p0;
+                    }
+
+                    if (s.indexOf('http://') === 0 || s.indexOf('https://') === 0) {
+                        try {
+                            if (
+                                (s.indexOf('fractal-static.unisat.space') !== -1 ||
+                                    s.indexOf('fractal-static.unisat.io') !== -1) &&
+                                (s.indexOf('/content/') !== -1 || s.indexOf('/fractal/content/') !== -1) &&
+                                typeof rewriteContentUrl === 'function'
+                            ) {
+                                return rewriteContentUrl(s);
+                            }
+                        } catch (_) {}
+                        return s;
+                    }
+
+                    if (s.indexOf('/') === 0) {
+                        try {
+                            if (typeof rewriteContentUrl === 'function') return rewriteContentUrl(s);
+                        } catch (_) {}
+                        return s;
+                    }
+
+                    var base = String(getMeta('fennec-content-base') || '').trim();
+                    if (base) {
+                        while (base.length && base.charAt(base.length - 1) === '/') base = base.slice(0, -1);
+                        var u0 = base + '/' + s;
+                        try {
+                            if (typeof rewriteContentUrl === 'function') return rewriteContentUrl(u0);
+                        } catch (_) {}
+                        return u0;
+                    }
+
+                    var fallback = '/content/' + s;
+                    try {
+                        if (typeof rewriteContentUrl === 'function') return rewriteContentUrl(fallback);
+                    } catch (_) {}
+                    return fallback;
+                };
+
+                var extractContentId = function (url) {
+                    try {
+                        var s = String(url || '').trim();
+                        if (!s) return '';
+                        var i = s.indexOf('/content/');
+                        if (i !== -1) {
+                            var tail = s.slice(i + '/content/'.length);
+                            if (tail) tail = tail.split(/[?#/]/)[0];
+                            return tail || '';
+                        }
+                        var j = s.indexOf('/fractal/content/');
+                        if (j !== -1) {
+                            var tail2 = s.slice(j + '/fractal/content/'.length);
+                            if (tail2) tail2 = tail2.split(/[?#/]/)[0];
+                            return tail2 || '';
+                        }
+                    } catch (_) {}
+                    return '';
+                };
+
+                var rewriteContentUrl = function (u) {
+                    try {
+                        var s = String(u || '').trim();
+                        if (!s) return u;
+                        if (s.indexOf('action=inscription_content') !== -1) return s;
+
+                        var base = String(getMeta('fennec-content-base') || '').trim();
+                        while (base.length && base.charAt(base.length - 1) === '/') base = base.slice(0, -1);
+
+                        var id = '';
+                        if (s.indexOf('fractal-static.unisat.space') !== -1) id = extractContentId(s);
+                        if (!id && s.indexOf('fractal-static.unisat.io') !== -1) id = extractContentId(s);
+                        if (!id && s.indexOf('uniscan.cc') !== -1) id = extractContentId(s);
+                        if (!id && s.indexOf('/content/') === 0) id = extractContentId(s);
+                        if (!id && s.indexOf('/fractal/content/') === 0) id = extractContentId(s);
+
+                        if (id) {
+                            var p = proxyUrlForId(id);
+                            if (p) return p;
+                            return (base ? base + '/' : 'https://uniscan.cc/fractal/content/') + id;
+                        }
+
+                        if (looksLikeInscriptionId(s)) {
+                            var p2 = proxyUrlForId(s);
+                            if (p2) return p2;
+                            if (base) return base + '/' + s;
+                            return 'https://uniscan.cc/fractal/content/' + s;
+                        }
+                    } catch (_) {}
+                    return u;
+                };
+
+                try {
+                    if (window.fetch) {
+                        var __fennecFetch0 = window.fetch;
+                        window.fetch = function (input, init) {
+                            try {
+                                if (typeof input === 'string') {
+                                    input = rewriteContentUrl(input);
+                                } else if (input && typeof input.url === 'string') {
+                                    var nu = rewriteContentUrl(input.url);
+                                    if (nu && nu !== input.url) input = new Request(nu, input);
+                                }
+                            } catch (_) {}
+                            return __fennecFetch0(input, init);
+                        };
+                    }
+                } catch (_) {}
+
+                try {
+                    if (
+                        window.XMLHttpRequest &&
+                        window.XMLHttpRequest.prototype &&
+                        window.XMLHttpRequest.prototype.open
+                    ) {
+                        var __fennecXhrOpen0 = window.XMLHttpRequest.prototype.open;
+                        window.XMLHttpRequest.prototype.open = function (method, url) {
+                            try {
+                                arguments[1] = rewriteContentUrl(url);
+                            } catch (_) {}
+                            return __fennecXhrOpen0.apply(this, arguments);
+                        };
+                    }
+                } catch (_) {}
+
+                var pinnedLib = getMeta('fennec-lib');
+                var pinnedConfig = getMeta('fennec-config');
+                var manifestRef = getMeta('fennec-manifest');
+
+                var resolved = {
+                    lib: pinnedLib,
+                    config: pinnedConfig
+                };
+
+                var applyManifest = function (m) {
+                    if (!m || typeof m !== 'object') return;
+                    var latest = m.latest && typeof m.latest === 'object' ? m.latest : m;
+                    var lib =
+                        latest.lib || latest.libId || latest.library || latest.libraryId || latest.fennecLib || '';
+                    var cfg =
+                        latest.config ||
+                        latest.configId ||
+                        latest.configuration ||
+                        latest.configurationId ||
+                        latest.fennecConfig ||
+                        '';
+                    if (typeof lib === 'string' && lib.trim()) resolved.lib = lib.trim();
+                    if (typeof cfg === 'string' && cfg.trim()) resolved.config = cfg.trim();
+                };
+
+                var loadLib = function () {
+                    if (!resolved.lib) {
+                        renderBoot('Missing fennec-lib meta');
+                        return;
+                    }
+                    if (resolved.config) setMeta('fennec-config', resolved.config);
+
+                    var s = document.createElement('script');
+                    s.src = resolveRefToUrl(resolved.lib);
+                    s.onload = function () {
+                        if (typeof window.initFennecID !== 'function') {
+                            renderBoot('Fennec ID loaded, but initFennecID() not found');
+                            return;
+                        }
+                        try {
+                            var r = window.initFennecID();
+                            if (r && typeof r.then === 'function') {
+                                r.then(function () {
+                                    try {
+                                        var msg = document.getElementById('__fennec_boot_msg');
+                                        if (msg) msg.remove();
+                                    } catch (e) {}
+                                }).catch(function (e) {
+                                    renderBoot('initFennecID() failed:' + NL + safeErrText(e));
+                                });
+                            } else {
+                                try {
+                                    var msg2 = document.getElementById('__fennec_boot_msg');
+                                    if (msg2) msg2.remove();
+                                } catch (e2) {}
+                            }
+                        } catch (e3) {
+                            renderBoot('initFennecID() crashed:' + NL + safeErrText(e3));
+                        }
+                    };
+                    s.onerror = function () {
+                        try {
+                            if (!window.__fennecLibRetry && resolved && resolved.lib) {
+                                window.__fennecLibRetry = 1;
+                                var retryBase = 'https://uniscan.cc/fractal/content/';
+                                try {
+                                    var h = window.location.hostname.toLowerCase();
+                                    if (h.indexOf('uniscan') !== -1 || h.indexOf('unisat') !== -1) {
+                                        retryBase = '/fractal/content/';
+                                    }
+                                } catch (_) {}
+
+                                setMeta('fennec-content-base', retryBase);
+                                var s2 = document.createElement('script');
+                                s2.src = retryBase + String(resolved.lib || '').trim();
+                                s2.onload = function () {
+                                    if (typeof window.initFennecID !== 'function') {
+                                        renderBoot('Fennec ID loaded, but initFennecID() not found');
+                                        return;
+                                    }
+                                    try {
+                                        var r2 = window.initFennecID();
+                                        if (r2 && typeof r2.then === 'function') {
+                                            r2.then(function () {
+                                                try {
+                                                    var msg = document.getElementById('__fennec_boot_msg');
+                                                    if (msg) msg.remove();
+                                                } catch (e) {}
+                                            }).catch(function (e) {
+                                                renderBoot('initFennecID() failed:' + NL + safeErrText(e));
+                                            });
+                                        } else {
+                                            try {
+                                                var msg2 = document.getElementById('__fennec_boot_msg');
+                                                if (msg2) msg2.remove();
+                                            } catch (e2) {}
+                                        }
+                                    } catch (e3) {
+                                        renderBoot('initFennecID() crashed:' + NL + safeErrText(e3));
+                                    }
+                                };
+                                s2.onerror = function () {
+                                    renderBoot(
+                                        'Failed to load Fennec ID library' + NL + 'Tried: ' + String(s2.src || '')
+                                    );
+                                };
+                                document.head.appendChild(s2);
+                                return;
+                            }
+                        } catch (e) {}
+                        renderBoot('Failed to load Fennec ID library' + NL + 'Tried: ' + String(s.src || ''));
+                    };
+                    document.head.appendChild(s);
+                };
+
+                var skipManifestFetch = false;
+
+                if (manifestRef && String(manifestRef).trim()) {
+                    var manifestUrl = resolveRefToUrl(manifestRef);
+                    fetchJsonWithTimeout(manifestUrl, 4500)
+                        .then(function (m) {
+                            applyManifest(m);
+                            loadLib();
+                        })
+                        .catch(function () {
+                            try {
+                                if (
+                                    fallbackManifestId &&
+                                    String(fallbackManifestId).trim() &&
+                                    fallbackManifestId !== manifestRef &&
+                                    typeof resolveRefToUrl === 'function'
+                                ) {
+                                    var fbUrl = resolveRefToUrl(fallbackManifestId);
+                                    fetchJsonWithTimeout(fbUrl, 4500)
+                                        .then(function (m2) {
+                                            applyManifest(m2);
+                                            loadLib();
+                                        })
+                                        .catch(function () {
+                                            loadLib();
+                                        });
+                                    return;
+                                }
+                            } catch (_) {}
+                            loadLib();
+                        });
+                } else {
+                    loadLib();
+                }
+            })();
+        </script>
+    </body>
+</html>

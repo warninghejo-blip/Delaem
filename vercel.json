@@ -1,0 +1,34 @@
+{
+    "name": "fennec-swap",
+    "version": 2,
+    "headers": [
+        {
+            "source": "/recursive_inscriptions/(.*)",
+            "headers": [
+                { "key": "Access-Control-Allow-Origin", "value": "*" },
+                { "key": "Access-Control-Allow-Methods", "value": "GET, OPTIONS" },
+                { "key": "Access-Control-Allow-Headers", "value": "*" }
+            ]
+        }
+    ],
+    "builds": [
+        {
+            "src": "index.html",
+            "use": "@vercel/static"
+        },
+        {
+            "src": "api/proxy.js",
+            "use": "@vercel/node"
+        }
+    ],
+    "routes": [
+        {
+            "src": "/api/(.*)",
+            "dest": "/api/proxy.js"
+        },
+        {
+            "src": "/(.*)",
+            "dest": "/$1"
+        }
+    ]
+}

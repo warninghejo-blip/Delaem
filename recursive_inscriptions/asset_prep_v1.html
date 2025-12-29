@@ -1,0 +1,543 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Fennec ID - Asset Prep (Local)</title>
+        <style>
+            :root {
+                --bg: #060607;
+                --panel: rgba(255, 255, 255, 0.06);
+                --line: rgba(255, 255, 255, 0.1);
+                --text: rgba(255, 255, 255, 0.92);
+                --muted: rgba(255, 255, 255, 0.65);
+                --fennec: #ff6b35;
+            }
+            html,
+            body {
+                margin: 0;
+                padding: 0;
+                background:
+                    radial-gradient(1200px 900px at 50% -20%, rgba(255, 107, 53, 0.2), transparent 60%),
+                    radial-gradient(900px 700px at 30% 120%, rgba(59, 130, 246, 0.16), transparent 60%), var(--bg);
+                color: var(--text);
+                font-family:
+                    system-ui,
+                    -apple-system,
+                    Segoe UI,
+                    Roboto,
+                    Arial,
+                    sans-serif;
+            }
+            .wrap {
+                max-width: 980px;
+                margin: 0 auto;
+                padding: 20px 16px 48px;
+            }
+            h1 {
+                margin: 0;
+                font-size: 16px;
+                letter-spacing: 0.1em;
+                text-transform: uppercase;
+            }
+            .sub {
+                margin-top: 8px;
+                color: var(--muted);
+                font-size: 12px;
+                line-height: 1.45;
+            }
+            .panel {
+                margin-top: 14px;
+                background: var(--panel);
+                border: 1px solid var(--line);
+                border-radius: 16px;
+                padding: 12px;
+            }
+            .row {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+                align-items: center;
+            }
+            label {
+                display: flex;
+                gap: 8px;
+                align-items: center;
+                font-size: 12px;
+                color: var(--muted);
+            }
+            input[type='number'] {
+                width: 92px;
+                padding: 8px 10px;
+                border-radius: 10px;
+                border: 1px solid rgba(255, 255, 255, 0.14);
+                background: rgba(0, 0, 0, 0.2);
+                color: var(--text);
+            }
+            button {
+                cursor: pointer;
+                padding: 10px 12px;
+                border-radius: 12px;
+                border: 1px solid rgba(255, 255, 255, 0.14);
+                background: rgba(0, 0, 0, 0.22);
+                color: var(--text);
+                font-weight: 900;
+                letter-spacing: 0.08em;
+                text-transform: uppercase;
+            }
+            button:hover {
+                border-color: rgba(255, 107, 53, 0.35);
+            }
+            .log {
+                margin-top: 10px;
+                white-space: pre-wrap;
+                font-size: 12px;
+                color: rgba(255, 255, 255, 0.8);
+                line-height: 1.4;
+            }
+            .grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+                gap: 12px;
+                margin-top: 12px;
+            }
+            .card {
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 14px;
+                padding: 10px;
+                background: rgba(0, 0, 0, 0.18);
+            }
+            .card b {
+                display: block;
+                font-size: 12px;
+                letter-spacing: 0.1em;
+                text-transform: uppercase;
+            }
+            .card span {
+                display: block;
+                margin-top: 6px;
+                color: var(--muted);
+                font-size: 12px;
+            }
+            .thumb {
+                margin-top: 10px;
+                width: 100%;
+                aspect-ratio: 1/1;
+                border-radius: 12px;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                background: rgba(0, 0, 0, 0.2);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                overflow: hidden;
+            }
+            .thumb img {
+                width: 100%;
+                height: 100%;
+                object-fit: contain;
+            }
+            code {
+                color: rgba(255, 255, 255, 0.86);
+            }
+        </style>
+    </head>
+    <body>
+        <div class="wrap">
+            <h1>Fennec ID — Asset Prep</h1>
+            <div class="sub">
+                Generates resized PNGs for inscription (backgrounds + badges) from your local
+                <code>../img/</code> folder. It downloads files to your default Downloads folder; move them into a
+                dedicated folder afterward.
+            </div>
+
+            <div class="panel">
+                <div class="row">
+                    <label>Background W <input id="bgW" type="number" value="720" min="128" step="1" /></label>
+                    <label>Background H <input id="bgH" type="number" value="1040" min="128" step="1" /></label>
+                    <label>Max KB <input id="maxKB" type="number" value="365" min="32" step="1" /></label>
+                    <label
+                        >BG format
+                        <select
+                            id="bgFmt"
+                            style="
+                                padding: 8px 10px;
+                                border-radius: 10px;
+                                border: 1px solid rgba(255, 255, 255, 0.14);
+                                background: rgba(0, 0, 0, 0.2);
+                                color: var(--text);
+                            "
+                        >
+                            <option value="image/jpeg" selected>JPEG</option>
+                            <option value="image/webp">WEBP</option>
+                            <option value="image/png">PNG</option>
+                        </select>
+                    </label>
+                    <label>BG q <input id="bgQ" type="number" value="0.82" min="0.3" max="0.98" step="0.01" /></label>
+                    <label>Badge size <input id="bdS" type="number" value="128" min="32" step="1" /></label>
+                    <label
+                        >Badge format
+                        <select
+                            id="bdFmt"
+                            style="
+                                padding: 8px 10px;
+                                border-radius: 10px;
+                                border: 1px solid rgba(255, 255, 255, 0.14);
+                                background: rgba(0, 0, 0, 0.2);
+                                color: var(--text);
+                            "
+                        >
+                            <option value="image/png" selected>PNG</option>
+                            <option value="image/webp">WEBP</option>
+                        </select>
+                    </label>
+                    <label
+                        >Badge q <input id="bdQ" type="number" value="0.92" min="0.3" max="0.98" step="0.01"
+                    /></label>
+                </div>
+                <div class="row" style="margin-top: 10px">
+                    <label
+                        >Pick img folder
+                        <input id="pickDir" type="file" webkitdirectory directory multiple style="width: 280px" />
+                    </label>
+                </div>
+                <div class="row" style="margin-top: 10px">
+                    <button id="dlBg">Download backgrounds</button>
+                    <button id="dlBd">Download badges</button>
+                    <button id="dlAll">Download all</button>
+                </div>
+                <div id="log" class="log"></div>
+            </div>
+
+            <div class="panel">
+                <b style="font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase">Inputs detected</b>
+                <div class="sub" style="margin-top: 6px">
+                    This list is hard-coded so you don't have to search. Files must exist in <code>img/</code>.
+                </div>
+                <div id="list" class="grid"></div>
+            </div>
+        </div>
+
+        <script>
+            const BACKGROUNDS = [
+                { key: 'DRIFTER', file: '../img/drifter.png' },
+                { key: 'WALKER', file: '../img/walker.png' },
+                { key: 'KEEPER', file: '../img/keeper.png' },
+                { key: 'ENGINEER', file: '../img/engineer.png' },
+                { key: 'MERCHANT', file: '../img/merchant.png' },
+                { key: 'SHAMAN', file: '../img/shaman.png' },
+                { key: 'LORD', file: '../img/oasis.png' },
+                { key: 'PRIME', file: '../img/prime.png' },
+                { key: 'SINGULARITY', file: '../img/singularity.png' }
+            ];
+
+            const BADGES = [
+                { key: 'GENESIS', file: '../img/badge_genesis.png' },
+                { key: 'WHALE', file: '../img/badge_whale.png' },
+                { key: 'PROVIDER', file: '../img/badge_provider.png' },
+                { key: 'FENNEC_MAXI', file: '../img/badge_maxi.png' },
+                { key: 'ARTIFACT_HUNTER', file: '../img/badge_collector.png' },
+                { key: 'RUNE_KEEPER', file: '../img/badge_rune.png' },
+                { key: 'MEMPOOL_RIDER', file: '../img/badge_mempool_rider.png' },
+                { key: 'SAND_SWEEPER', file: '../img/badge_sweeper.png' }
+            ];
+
+            let pickedFilesByName = null;
+            let pickedThumbUrls = [];
+
+            function baseName(path) {
+                const s = String(path || '');
+                const parts = s.split('/');
+                return parts[parts.length - 1] || s;
+            }
+
+            function setPickedFiles(fileList) {
+                pickedFilesByName = {};
+                for (const f of Array.from(fileList || [])) {
+                    if (!f || !f.name) continue;
+                    pickedFilesByName[String(f.name).toLowerCase()] = f;
+                }
+            }
+
+            function pickedFileForPath(path) {
+                if (!pickedFilesByName) return null;
+                const key = baseName(path).toLowerCase();
+                return pickedFilesByName[key] || null;
+            }
+
+            function logLine(s) {
+                const el = document.getElementById('log');
+                el.textContent = (el.textContent ? el.textContent + '\n' : '') + s;
+            }
+
+            function clearLog() {
+                document.getElementById('log').textContent = '';
+            }
+
+            async function loadImg(src) {
+                const picked = pickedFileForPath(src);
+                if (picked) {
+                    const dataUrl = await new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(String(reader.result || ''));
+                        reader.onerror = () => reject(new Error('Failed to read file: ' + picked.name));
+                        reader.readAsDataURL(picked);
+                    });
+                    return await new Promise((resolve, reject) => {
+                        const img = new Image();
+                        img.onload = () => resolve(img);
+                        img.onerror = () => reject(new Error('Failed to decode image: ' + picked.name));
+                        img.src = dataUrl;
+                    });
+                }
+                try {
+                    const res = await fetch(src, { cache: 'no-store' });
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const blob = await res.blob();
+                    const objUrl = URL.createObjectURL(blob);
+                    return await new Promise((resolve, reject) => {
+                        const img = new Image();
+                        img.onload = () => {
+                            try {
+                                URL.revokeObjectURL(objUrl);
+                            } catch (e) {}
+                            resolve(img);
+                        };
+                        img.onerror = () => {
+                            try {
+                                URL.revokeObjectURL(objUrl);
+                            } catch (e) {}
+                            reject(new Error('Failed to decode image: ' + src));
+                        };
+                        img.src = objUrl;
+                    });
+                } catch (e) {
+                    const hint =
+                        window.location && window.location.protocol === 'file:'
+                            ? ' (Pick img folder above, or open via a local server)'
+                            : '';
+                    throw new Error('Failed to load: ' + src + hint);
+                }
+            }
+
+            function drawContainBottom(ctx, img, outW, outH) {
+                ctx.clearRect(0, 0, outW, outH);
+                const s = Math.min(outW / img.naturalWidth, outH / img.naturalHeight);
+                const w = img.naturalWidth * s;
+                const h = img.naturalHeight * s;
+                const x = (outW - w) / 2;
+                const y = outH - h;
+                ctx.drawImage(img, x, y, w, h);
+            }
+
+            function drawContainCenter(ctx, img, outW, outH) {
+                ctx.clearRect(0, 0, outW, outH);
+                const s = Math.min(outW / img.naturalWidth, outH / img.naturalHeight);
+                const w = img.naturalWidth * s;
+                const h = img.naturalHeight * s;
+                const x = (outW - w) / 2;
+                const y = (outH - h) / 2;
+                ctx.drawImage(img, x, y, w, h);
+            }
+
+            async function downloadBlob(blob, filename) {
+                if (!blob) throw new Error('Encoding failed: ' + filename);
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+            }
+
+            async function canvasToBlob(canvas, mimeType, quality) {
+                const mt = String(mimeType || 'image/png');
+                const q = typeof quality === 'number' ? quality : undefined;
+                return await new Promise(resolve => canvas.toBlob(resolve, mt, q));
+            }
+
+            async function encodeCanvasUnderLimit(canvas, { mimeType, quality, maxBytes }) {
+                const mt = String(mimeType || 'image/png');
+                const limit = Number(maxBytes || 0) || 0;
+
+                let q = typeof quality === 'number' ? quality : undefined;
+                const minQ = 0.4;
+
+                for (let i = 0; i < 16; i++) {
+                    const blob = await canvasToBlob(canvas, mt, q);
+                    if (!limit || (blob && blob.size <= limit)) return { blob, quality: q, scaled: 1 };
+                    if (mt === 'image/png') return { blob, quality: q, scaled: 1 };
+                    if (typeof q !== 'number') q = 0.86;
+                    q = Math.max(minQ, q - 0.05);
+                    if (q === minQ) break;
+                }
+
+                let scale = 0.92;
+                for (let s = 0; s < 8; s++) {
+                    const w = Math.max(64, Math.round(canvas.width * scale));
+                    const h = Math.max(64, Math.round(canvas.height * scale));
+                    const tmp = document.createElement('canvas');
+                    tmp.width = w;
+                    tmp.height = h;
+                    const tctx = tmp.getContext('2d');
+                    tctx.imageSmoothingEnabled = true;
+                    tctx.imageSmoothingQuality = 'high';
+                    tctx.drawImage(canvas, 0, 0, w, h);
+                    const blob = await canvasToBlob(tmp, mt, q);
+                    if (!limit || (blob && blob.size <= limit)) return { blob, quality: q, scaled: scale };
+                    scale *= 0.92;
+                }
+
+                return { blob: await canvasToBlob(canvas, mt, q), quality: q, scaled: 1 };
+            }
+
+            async function downloadBackgrounds() {
+                clearLog();
+                const outW = Number(document.getElementById('bgW').value) || 720;
+                const outH = Number(document.getElementById('bgH').value) || 1040;
+                const maxKB = Number(document.getElementById('maxKB').value) || 365;
+                const maxBytes = Math.max(16 * 1024, Math.floor(maxKB * 1024));
+                const bgMimeType = String(document.getElementById('bgFmt')?.value || 'image/jpeg');
+                const bgQ = Number(document.getElementById('bgQ').value);
+                const bgQuality = Number.isFinite(bgQ) ? Math.max(0.01, Math.min(0.99, bgQ)) : undefined;
+
+                const canvas = document.createElement('canvas');
+                canvas.width = outW;
+                canvas.height = outH;
+                const ctx = canvas.getContext('2d');
+
+                for (const it of BACKGROUNDS) {
+                    logLine('BG ' + it.key + '…');
+                    const img = await loadImg(it.file);
+                    drawContainBottom(ctx, img, outW, outH);
+
+                    const encoded = await encodeCanvasUnderLimit(canvas, {
+                        mimeType: bgMimeType,
+                        quality: bgMimeType === 'image/png' ? undefined : bgQuality,
+                        maxBytes
+                    });
+                    const ext = bgMimeType === 'image/webp' ? 'webp' : bgMimeType === 'image/png' ? 'png' : 'jpg';
+                    const kb = encoded.blob ? (encoded.blob.size / 1024).toFixed(1) : '0.0';
+                    logLine(
+                        `  -> ${kb} KB (${ext}${typeof encoded.quality === 'number' ? ` q=${encoded.quality.toFixed(2)}` : ''}${encoded.scaled !== 1 ? ` scale=${encoded.scaled.toFixed(2)}` : ''})`
+                    );
+                    await downloadBlob(encoded.blob, `bg_${it.key.toLowerCase()}_${outW}x${outH}.${ext}`);
+                }
+
+                logLine('Done.');
+            }
+
+            async function downloadBadges() {
+                clearLog();
+                const size = Number(document.getElementById('bdS').value) || 128;
+                const maxKB = Number(document.getElementById('maxKB').value) || 365;
+                const maxBytes = Math.max(16 * 1024, Math.floor(maxKB * 1024));
+                const bdMimeType = String(document.getElementById('bdFmt')?.value || 'image/png');
+                const bdQ = Number(document.getElementById('bdQ').value);
+                const bdQuality = Number.isFinite(bdQ) ? Math.max(0.01, Math.min(0.99, bdQ)) : undefined;
+
+                const canvas = document.createElement('canvas');
+                canvas.width = size;
+                canvas.height = size;
+                const ctx = canvas.getContext('2d');
+
+                for (const it of BADGES) {
+                    logLine('BADGE ' + it.key + '…');
+                    const img = await loadImg(it.file);
+                    drawContainCenter(ctx, img, size, size);
+
+                    const encoded = await encodeCanvasUnderLimit(canvas, {
+                        mimeType: bdMimeType,
+                        quality: bdMimeType === 'image/png' ? undefined : bdQuality,
+                        maxBytes
+                    });
+                    const ext = bdMimeType === 'image/webp' ? 'webp' : 'png';
+                    const kb = encoded.blob ? (encoded.blob.size / 1024).toFixed(1) : '0.0';
+                    logLine(
+                        `  -> ${kb} KB (${ext}${typeof encoded.quality === 'number' ? ` q=${encoded.quality.toFixed(2)}` : ''}${encoded.scaled !== 1 ? ` scale=${encoded.scaled.toFixed(2)}` : ''})`
+                    );
+                    await downloadBlob(encoded.blob, `badge_${it.key.toLowerCase()}_${size}x${size}.${ext}`);
+                }
+
+                logLine('Done.');
+            }
+
+            async function downloadAll() {
+                await downloadBackgrounds();
+                await downloadBadges();
+            }
+
+            function renderList() {
+                const el = document.getElementById('list');
+                el.innerHTML = '';
+
+                for (const u of pickedThumbUrls) {
+                    try {
+                        URL.revokeObjectURL(u);
+                    } catch (e) {}
+                }
+                pickedThumbUrls = [];
+
+                const items = [
+                    ...BACKGROUNDS.map(x => ({ type: 'background', ...x })),
+                    ...BADGES.map(x => ({ type: 'badge', ...x }))
+                ];
+
+                for (const it of items) {
+                    const card = document.createElement('div');
+                    card.className = 'card';
+                    card.innerHTML = `<b>${it.type}: ${it.key}</b><span>${it.file}</span>`;
+
+                    const thumb = document.createElement('div');
+                    thumb.className = 'thumb';
+                    const img = document.createElement('img');
+                    const picked = pickedFileForPath(it.file);
+                    if (picked) {
+                        const u = URL.createObjectURL(picked);
+                        pickedThumbUrls.push(u);
+                        img.src = u;
+                    } else {
+                        img.src = it.file;
+                    }
+                    img.alt = it.key;
+                    img.onerror = () => {
+                        thumb.textContent = 'Missing file';
+                    };
+
+                    thumb.appendChild(img);
+                    card.appendChild(thumb);
+                    el.appendChild(card);
+                }
+            }
+
+            document
+                .getElementById('dlBg')
+                .addEventListener('click', () => downloadBackgrounds().catch(e => logLine('ERROR: ' + e.message)));
+            document
+                .getElementById('dlBd')
+                .addEventListener('click', () => downloadBadges().catch(e => logLine('ERROR: ' + e.message)));
+            document
+                .getElementById('dlAll')
+                .addEventListener('click', () => downloadAll().catch(e => logLine('ERROR: ' + e.message)));
+
+            const pickDirEl = document.getElementById('pickDir');
+            if (pickDirEl) {
+                pickDirEl.addEventListener('change', e => {
+                    try {
+                        const files = e && e.target && e.target.files ? e.target.files : [];
+                        setPickedFiles(files);
+                        renderList();
+                        clearLog();
+                        logLine('Folder selected. Ready.');
+                    } catch (err) {
+                        clearLog();
+                        logLine('ERROR: ' + (err && err.message ? err.message : 'Failed to load folder'));
+                    }
+                });
+            }
+
+            renderList();
+        </script>
+    </body>
+</html>

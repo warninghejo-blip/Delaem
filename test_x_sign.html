@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test x-sign Generation</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+</head>
+<body>
+    <h1>Test x-sign Generation Algorithms</h1>
+    <div id="results"></div>
+
+    <script>
+        // Тестовые данные из ваших примеров
+        const testCases = [
+            {
+                name: 'Uniscan',
+                url: 'https://uniscan.cc/fractal-api/explorer-v1/address/summary?address=bc1pmq3lgs85hjf686j8davaju6v29pf2lydw05fpwplq0443lz9ag5s8u9l9q',
+                timestamp: 1765934147,
+                expectedSign: '456cbba050b7560334ce59a863e41408',
+                xAppId: '1adcd7969603261753f1812c9461cd36'
+            },
+            {
+                name: 'InSwap',
+                url: 'https://inswap.cc/fractal-api/swap-v1/all_balance?address=bc1pmq3lgs85hjf686j8davaju6v29pf2lydw05fpwplq0443lz9ag5s8u9l9q&pubkey=020f483fb20a908dfb83399c7d163d2ce827774242e1f1d8b606253457dd8e59e8',
+                timestamp: 1765934196,
+                expectedSign: 'd794f6e37228ead1270076fbb4bdf056',
+                xAppId: '1adcd7969603261753f1812c9461cd36'
+            }
+        ];
+
+        // Различные алгоритмы для тестирования
+        const algorithms = {
+            // Алгоритм 1: MD5 от URL + timestamp
+            md5_url_timestamp: (url, timestamp) => {
+                const message = `${url}${timestamp}`;
+                return CryptoJS.MD5(message).toString().substring(0, 32);
+            },
+
+            // Алгоритм 2: MD5 от timestamp + URL
+            md5_timestamp_url: (url, timestamp) => {
+                const message = `${timestamp}${url}`;
+                return CryptoJS.MD5(message).toString().substring(0, 32);
+            },
+
+            // Алгоритм 3: SHA-256 от URL + timestamp (первые 32 символа)
+            sha256_url_timestamp: (url, timestamp) => {
+                const message = `${url}${timestamp}`;
+                return CryptoJS.SHA256(message).toString().substring(0, 32);
+            },
+
+            // Алгоритм 4: SHA-256 от timestamp + URL (первые 32 символа)
+            sha256_timestamp_url: (url, timestamp) => {
+                const message = `${timestamp}${url}`;
+                return CryptoJS.SHA256(message).toString().substring(0, 32);
+            },
+
+            // Алгоритм 5: HMAC-SHA256 с x-appid как ключом
+            hmac_sha256_appid: (url, timestamp, xAppId) => {
+                const message = `${url}${timestamp}`;
+                return CryptoJS.HmacSHA256(message, xAppId).toString().substring(0, 32);
+            },
+
+            // Алгоритм 6: HMAC-SHA256 с timestamp + URL
+            hmac_sha256_timestamp_url: (url, timestamp, xAppId) => {
+                const message = `${timestamp}${url}`;
+                return CryptoJS.HmacSHA256(message, xAppId).toString().substring(0, 32);
+            },
+
+            // Алгоритм 7: HMAC-SHA256 только от URL
+            hmac_sha256_url_only: (url, timestamp, xAppId) => {
+                return CryptoJS.HmacSHA256(url, xAppId).toString().substring(0, 32);
+            },
+
+            // Алгоритм 8: HMAC-SHA256 только от timestamp
+            hmac_sha256_timestamp_only: (url, timestamp, xAppId) => {
+                return CryptoJS.HmacSHA256(timestamp.toString(), xAppId).toString().substring(0, 32);
+            },
+
+            // Алгоритм 9: MD5 от path + query + timestamp
+            md5_path_query_timestamp: (url, timestamp) => {
+                const urlObj = new URL(url);
+                const message = `${urlObj.pathname}${urlObj.search}${timestamp}`;
+                return CryptoJS.MD5(message).toString().substring(0, 32);
+            },
+
+            // Алгоритм 10: HMAC-SHA256 от path + query + timestamp
+            hmac_sha256_path_query_timestamp: (url, timestamp, xAppId) => {
+                const urlObj = new URL(url);
+                const message = `${urlObj.pathname}${urlObj.search}${timestamp}`;
+                return CryptoJS.HmacSHA256(message, xAppId).toString().substring(0, 32);
+            }
+        };
+
+        // Тестирование всех алгоритмов
+        function testAlgorithms() {
+            const results = [];
+
+            testCases.forEach(testCase => {
+                results.push(`<h2>${testCase.name}</h2>`);
+                results.push(`<p><strong>URL:</strong> ${testCase.url}</p>`);
+                results.push(`<p><strong>Timestamp:</strong> ${testCase.timestamp}</p>`);
+                results.push(`<p><strong>Expected x-sign:</strong> <code>${testCase.expectedSign}</code></p>`);
+                results.push(`<p><strong>x-appid:</strong> ${testCase.xAppId}</p>`);
+                results.push('<table border="1" cellpadding="5" cellspacing="0">');
+                results.push('<tr><th>Algorithm</th><th>Calculated x-sign</th><th>Match</th></tr>');
+
+                Object.keys(algorithms).forEach(algName => {
+                    let calculated;
+                    try {
+                        if (algName.includes('hmac')) {
+                            calculated = algorithms[algName](testCase.url, testCase.timestamp, testCase.xAppId);
+                        } else {
+                            calculated = algorithms[algName](testCase.url, testCase.timestamp);
+                        }
+                        const match = calculated.toLowerCase() === testCase.expectedSign.toLowerCase();
+                        const matchClass = match ? 'style="background-color: #90EE90;"' : '';
+                        results.push(`<tr ${matchClass}>
+                            <td>${algName}</td>
+                            <td><code>${calculated}</code></td>
+                            <td>${match ? '✅ MATCH!' : '❌'}</td>
+                        </tr>`);
+                    } catch (e) {
+                        results.push(`<tr>
+                            <td>${algName}</td>
+                            <td colspan="2">Error: ${e.message}</td>
+                        </tr>`);
+                    }
+                });
+
+                results.push('</table><br>');
+            });
+
+            document.getElementById('results').innerHTML = results.join('');
+        }
+
+        // Запускаем тесты при загрузке страницы
+        window.onload = testAlgorithms;
+    </script>
+</body>
+</html>
+

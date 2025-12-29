@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Простой поиск x-sign</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #4ec9b0;
+        }
+        .code-block {
+            background: #252526;
+            padding: 15px;
+            border-radius: 5px;
+            border-left: 3px solid #007acc;
+            margin: 15px 0;
+            overflow-x: auto;
+        }
+        code {
+            color: #ce9178;
+            white-space: pre-wrap;
+        }
+        button {
+            background: #007acc;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            margin: 20px 0;
+        }
+        button:hover {
+            background: #005a9e;
+        }
+        .step {
+            background: #2d2d30;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border-left: 3px solid #4ec9b0;
+        }
+        .warning {
+            background: #3f3f00;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+            border-left: 3px solid #ffd700;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 Простой поиск x-sign алгоритма</h1>
+
+    <div class="warning">
+        <strong>⚠️ ВАЖНО:</strong> Откройте этот скрипт на странице <strong>uniscan.cc</strong> или <strong>inswap.cc</strong>!
+    </div>
+
+    <div class="step">
+        <strong>Шаг 1:</strong> Откройте <a href="https://uniscan.cc" target="_blank" style="color: #4ec9b0;">uniscan.cc</a> или <a href="https://inswap.cc" target="_blank" style="color: #4ec9b0;">inswap.cc</a>
+    </div>
+
+    <div class="step">
+        <strong>Шаг 2:</strong> Откройте DevTools (F12) → вкладка <strong>Console</strong>
+    </div>
+
+    <div class="step">
+        <strong>Шаг 3:</strong> Нажмите кнопку ниже, чтобы скопировать скрипт:
+    </div>
+
+    <button onclick="copyScript()">📋 Скопировать скрипт</button>
+
+    <div class="step">
+        <strong>Шаг 4:</strong> Вставьте скрипт в консоль и нажмите Enter
+    </div>
+
+    <div class="step">
+        <strong>Шаг 5:</strong> Обновите страницу (F5) или сделайте любой запрос
+    </div>
+
+    <div class="step">
+        <strong>Шаг 6:</strong> Когда увидите "✅ НАЙДЕН ЗАПРОС С X-SIGN", нажмите на стрелку в call stack и найдите функцию, которая устанавливает x-sign
+    </div>
+
+    <div class="code-block">
+        <code id="scriptCode">// Простой скрипт для поиска x-sign
+// Вставьте в консоль на странице uniscan.cc или inswap.cc
+
+console.clear();
+console.log('%c🔍 ПОИСК X-SIGN АЛГОРИТМА', 'font-size: 20px; font-weight: bold; color: #4ec9b0;');
+console.log('Скрипт установлен! Обновите страницу или сделайте запрос.\n');
+
+let foundRequests = [];
+
+// 1. Перехватываем fetch
+const originalFetch = window.fetch;
+window.fetch = function(url, options = {}) {
+    const urlStr = typeof url === 'string' ? url : url.toString();
+
+    // Проверяем запросы к нужным доменам
+    if (urlStr.includes('uniscan.cc') || urlStr.includes('inswap.cc') || urlStr.includes('unisat.io')) {
+        const headers = options.headers || {};
+        const xSign = headers['x-sign'] || headers['X-Sign'] || (headers.get && headers.get('x-sign'));
+        const xTs = headers['x-ts'] || headers['X-Ts'] || (headers.get && headers.get('x-ts'));
+
+        if (xSign || xTs) {
+            console.log('%c✅ НАЙДЕН ЗАПРОС С X-SIGN (fetch)', 'background: #0f3f0f; color: white; padding: 5px; font-weight: bold;');
+            console.log('URL:', urlStr);
+            console.log('x-sign:', xSign);
+            console.log('x-ts:', xTs);
+            console.log('Все headers:', headers);
+            console.trace();
+            console.log('\n');
+
+            foundRequests.push({ type: 'fetch', url: urlStr, xSign, xTs, headers });
+        }
+    }
+
+    return originalFetch.apply(this, arguments);
+};
+
+// 2. Перехватываем XMLHttpRequest
+const originalXHROpen = XMLHttpRequest.prototype.open;
+const originalXHRSend = XMLHttpRequest.prototype.send;
+const originalXHRSetRequestHeader = XMLHttpRequest.prototype.setRequestHeader;
+
+XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+    this._method = method;
+    this._url = url;
+    this._headers = {};
+    return originalXHROpen.apply(this, [method, url, ...rest]);
+};
+
+XMLHttpRequest.prototype.setRequestHeader = function(name, value) {
+    if (!this._headers) this._headers = {};
+    this._headers[name] = value;
+
+    if (name.toLowerCase() === 'x-sign' || name.toLowerCase() === 'x-ts') {
+        console.log('%c✅ НАЙДЕН ЗАГОЛОВОК ' + name.toUpperCase() + ' (XHR)', 'background: #0f3f0f; color: white; padding: 5px; font-weight: bold;');
+        console.log('URL:', this._url);
+        console.log(name + ':', value);
+        console.trace();
+        console.log('\n');
+    }
+
+    return originalXHRSetRequestHeader.apply(this, [name, value]);
+};
+
+XMLHttpRequest.prototype.send = function(...args) {
+    if (this._url && (this._url.includes('uniscan.cc') || this._url.includes('inswap.cc') || this._url.includes('unisat.io'))) {
+        const xSign = this._headers && (this._headers['x-sign'] || this._headers['X-Sign']);
+        const xTs = this._headers && (this._headers['x-ts'] || this._headers['X-Ts']);
+
+        if (xSign || xTs) {
+            console.log('%c✅ НАЙДЕН ЗАПРОС С X-SIGN (XHR)', 'background: #0f3f0f; color: white; padding: 5px; font-weight: bold;');
+            console.log('URL:', this._url);
+            console.log('Method:', this._method);
+            console.log('x-sign:', xSign);
+            console.log('x-ts:', xTs);
+            console.log('Все headers:', this._headers);
+            console.trace();
+            console.log('\n');
+
+            foundRequests.push({ type: 'XHR', url: this._url, method: this._method, xSign, xTs, headers: this._headers });
+        }
+    }
+
+    return originalXHRSend.apply(this, args);
+};
+
+// 3. Перехватываем axios (если используется)
+if (window.axios && window.axios.interceptors) {
+    const originalUse = window.axios.interceptors.request.use;
+    window.axios.interceptors.request.use = function(fulfilled, rejected) {
+        return originalUse.call(this, function(config) {
+            if (config.url && (config.url.includes('uniscan.cc') || config.url.includes('inswap.cc') || config.url.includes('unisat.io'))) {
+                const xSign = config.headers && (config.headers['x-sign'] || config.headers['X-Sign']);
+                const xTs = config.headers && (config.headers['x-ts'] || config.headers['X-Ts']);
+
+                if (xSign || xTs) {
+                    console.log('%c✅ НАЙДЕН ЗАПРОС С X-SIGN (axios)', 'background: #0f3f0f; color: white; padding: 5px; font-weight: bold;');
+                    console.log('URL:', config.url);
+                    console.log('x-sign:', xSign);
+                    console.log('x-ts:', xTs);
+                    console.log('Config:', config);
+                    console.trace();
+                    console.log('\n');
+
+                    foundRequests.push({ type: 'axios', url: config.url, xSign, xTs, headers: config.headers });
+                }
+            }
+            return fulfilled ? fulfilled(config) : config;
+        }, rejected);
+    };
+}
+
+// Сохраняем результаты в глобальной переменной
+window._xSignRequests = foundRequests;
+
+// Показываем инструкции
+console.log('%c📋 ИНСТРУКЦИЯ:', 'font-size: 16px; font-weight: bold; color: #569cd6;');
+console.log('1. Обновите страницу (F5)');
+console.log('2. Или сделайте любой запрос на странице');
+console.log('3. Когда увидите "НАЙДЕН ЗАПРОС С X-SIGN", нажмите на стрелку в call stack');
+console.log('4. Найдите функцию, которая устанавливает x-sign');
+console.log('5. Скопируйте код этой функции');
+console.log('\n');
+console.log('Все найденные запросы сохранены в window._xSignRequests');
+console.log('Для просмотра выполните: console.log(window._xSignRequests)');</code>
+    </div>
+
+    <script>
+        function copyScript() {
+            const code = document.getElementById('scriptCode').textContent;
+            navigator.clipboard.writeText(code).then(() => {
+                alert('✅ Скрипт скопирован! Теперь вставьте его в консоль на странице uniscan.cc или inswap.cc');
+            }).catch(err => {
+                // Fallback
+                const textarea = document.createElement('textarea');
+                textarea.value = code;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                alert('✅ Скрипт скопирован!');
+            });
+        }
+    </script>
+</body>
+</html>
+

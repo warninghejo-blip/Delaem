@@ -1,0 +1,2616 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Parent Inscription Minting | Fennec</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+        <style>
+            body {
+                background: linear-gradient(135deg, #1a0f0a 0%, #2c1a12 100%);
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            }
+
+            .overlay {
+                position: absolute;
+                inset: 0;
+                border-radius: 24px;
+                clip-path: inset(0 round 24px);
+                pointer-events: none;
+                z-index: 10;
+                background: linear-gradient(to top, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0) 55%, rgba(0, 0, 0, 0.6) 100%);
+            }
+
+            .card-glare {
+                position: absolute;
+                inset: 0;
+                border-radius: 24px;
+                pointer-events: none;
+                mix-blend-mode: overlay;
+                display: none !important;
+                opacity: 0;
+                transition: opacity 120ms linear;
+                background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.12) 0%, transparent 60%);
+            }
+            .card {
+                background: rgba(17, 17, 17, 0.9);
+                border: 1px solid rgba(255, 107, 53, 0.2);
+                border-radius: 12px;
+                padding: 24px;
+                margin-bottom: 20px;
+            }
+            .badge-icon {
+                display: inline-block;
+                width: 32px;
+                height: 32px;
+                border-radius: 50%;
+                background: rgba(255, 107, 53, 0.1);
+                border: 2px solid rgba(255, 107, 53, 0.3);
+                text-align: center;
+                line-height: 28px;
+                margin: 4px;
+            }
+            .archetype-btn {
+                background: rgba(255, 107, 53, 0.1);
+                border: 2px solid rgba(255, 107, 53, 0.3);
+                color: #ff6b35;
+                padding: 12px 24px;
+                border-radius: 8px;
+                font-weight: bold;
+                cursor: pointer;
+                transition: all 0.3s;
+            }
+            .archetype-btn:hover {
+                background: rgba(255, 107, 53, 0.2);
+                border-color: #ff6b35;
+            }
+
+            .card > button {
+                margin-top: 18px;
+            }
+
+            .card-scene {
+                perspective: 1200px;
+                width: 320px;
+                height: 490px;
+                margin: 0 auto;
+                position: relative;
+                z-index: 10;
+            }
+            .card-object {
+                width: 100%;
+                height: 100%;
+                position: relative;
+                transform-style: preserve-3d;
+                transform-origin: center center;
+                transition: transform 620ms cubic-bezier(0.4, 0, 0.2, 1);
+                --tiltX: 0deg;
+                --tiltY: 0deg;
+                --flipY: 0deg;
+                transform: rotateX(var(--tiltX)) rotateY(calc(var(--tiltY) + var(--flipY)));
+                border-radius: 24px;
+                overflow: visible;
+                will-change: transform;
+                box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.55);
+                isolation: isolate;
+                contain: layout style;
+            }
+            .card-object::after {
+                content: '';
+                position: absolute;
+                inset: 0;
+                border-radius: 24px;
+                pointer-events: none;
+                z-index: 40;
+                opacity: 0.07;
+                mix-blend-mode: overlay;
+                background:
+                    linear-gradient(
+                        115deg,
+                        rgba(255, 255, 255, 0.16),
+                        rgba(255, 255, 255, 0) 45%,
+                        rgba(255, 255, 255, 0.1) 55%,
+                        rgba(255, 255, 255, 0) 70%
+                    ),
+                    linear-gradient(
+                        45deg,
+                        rgba(255, 255, 255, 0.014),
+                        rgba(255, 255, 255, 0) 55%,
+                        rgba(255, 255, 255, 0.01)
+                    );
+            }
+            .card-object:not([data-vfx='ENGINEER']) .face-front::before {
+                content: '';
+                position: absolute;
+                top: -120%;
+                left: -160%;
+                width: 90px;
+                height: 360%;
+                border-radius: 24px;
+                pointer-events: none;
+                z-index: 14;
+                opacity: 0;
+                mix-blend-mode: screen;
+                transform: rotate(22deg);
+                filter: blur(3px);
+                background: linear-gradient(
+                    45deg,
+                    transparent 30%,
+                    rgba(var(--tier-shine-rgb, 255, 215, 0), 0.3) 50%,
+                    transparent 70%
+                );
+                animation: tierShineSweep var(--tier-shine-dur, 9.5s) ease-in-out infinite;
+            }
+
+            .card-object:not([data-vfx='ENGINEER']) .vfx-3d,
+            .card-object:not([data-vfx='ENGINEER']) .vfx-webgl {
+                display: none !important;
+            }
+            .card-object[data-tier='0'] {
+                --tier-shine-opacity: 0;
+                --tier-shine-dur: 999s;
+            }
+            .card-object[data-tier='1'] {
+                --tier-shine-opacity: 0.16;
+                --tier-shine-dur: 12s;
+            }
+            .card-object[data-tier='2'] {
+                --tier-shine-opacity: 0.22;
+                --tier-shine-dur: 9s;
+            }
+            .card-object[data-tier='3'] {
+                --tier-shine-opacity: 0.3;
+                --tier-shine-dur: 7.5s;
+            }
+            .card-object[data-archetype='DRIFTER'] {
+                --tier-shine-rgb: 255, 160, 0;
+            }
+            .card-object[data-archetype='WALKER'] {
+                --tier-shine-rgb: 59, 130, 246;
+            }
+            .card-object[data-archetype='MERCHANT'] {
+                --tier-shine-rgb: 255, 215, 0;
+            }
+            .card-object[data-archetype='KEEPER'] {
+                --tier-shine-rgb: 251, 146, 60;
+            }
+            .card-object[data-archetype='SHAMAN'] {
+                --tier-shine-rgb: 168, 85, 247;
+            }
+            .card-object[data-archetype='LORD'] {
+                --tier-shine-rgb: 234, 179, 8;
+            }
+            .card-object[data-archetype='PRIME'] {
+                --tier-shine-rgb: 255, 255, 255;
+            }
+            .card-object[data-archetype='SINGULARITY'] {
+                --tier-shine-rgb: 168, 85, 247;
+            }
+            @keyframes tierShineSweep {
+                0% {
+                    left: -160%;
+                    opacity: 0;
+                }
+                45% {
+                    opacity: 0;
+                }
+                50% {
+                    opacity: var(--tier-shine-opacity, 0.18);
+                }
+                55% {
+                    left: 160%;
+                    opacity: 0;
+                }
+                100% {
+                    left: 160%;
+                    opacity: 0;
+                }
+            }
+            .card-object.is-flipped {
+                --flipY: 180deg;
+            }
+            .card-face {
+                position: absolute;
+                inset: 0;
+                -webkit-backface-visibility: hidden;
+                backface-visibility: hidden;
+                border-radius: 24px;
+                overflow: hidden;
+                background: #050505;
+                color: #fff;
+                transform: translateZ(0);
+            }
+            .face-front {
+                z-index: 2;
+                transform: rotateY(0deg);
+            }
+            .face-back {
+                transform: rotateY(180deg);
+                z-index: 1;
+                display: flex;
+                flex-direction: column;
+                background-color: #080808;
+                background-image:
+                    linear-gradient(rgba(255, 107, 53, 0.03) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(255, 107, 53, 0.03) 1px, transparent 1px);
+                background-size: 20px 20px;
+            }
+
+            .bg-img {
+                position: absolute;
+                inset: 0;
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                object-position: center top;
+                border-radius: 24px;
+                clip-path: inset(0 round 24px);
+                transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+                will-change: transform, filter;
+            }
+
+            .card-holo-sheen {
+                position: absolute;
+                inset: 0;
+                pointer-events: none;
+                z-index: 26;
+                opacity: 0.175;
+                mix-blend-mode: overlay;
+                border-radius: 24px;
+                clip-path: inset(0 round 24px);
+                background-image:
+                    linear-gradient(
+                        115deg,
+                        rgba(255, 255, 255, 0) 10%,
+                        rgba(255, 255, 255, 0.22) 35%,
+                        rgba(255, 255, 255, 0) 60%
+                    ),
+                    linear-gradient(90deg, rgba(255, 107, 53, 0.1), rgba(168, 85, 247, 0.1), rgba(59, 130, 246, 0.1));
+                background-size:
+                    240% 140%,
+                    200% 100%;
+                background-position:
+                    -80% 50%,
+                    0% 50%;
+                animation: cardHoloSheen 4.5s linear infinite;
+            }
+            @keyframes cardHoloSheen {
+                0% {
+                    background-position:
+                        -80% 50%,
+                        0% 50%;
+                }
+                100% {
+                    background-position:
+                        180% 50%,
+                        100% 50%;
+                }
+            }
+
+            .vfx-3d {
+                position: absolute;
+                inset: 0;
+                border-radius: inherit;
+                pointer-events: none;
+                z-index: 13;
+                opacity: var(--vfx3d-opacity, 0.28);
+                mix-blend-mode: screen;
+                overflow: hidden;
+            }
+            .vfx-3d::before {
+                content: '';
+                position: absolute;
+                inset: -30%;
+                background:
+                    radial-gradient(
+                        circle at var(--mxp, 50%) var(--myp, 50%),
+                        rgba(255, 255, 255, 0.12),
+                        rgba(255, 255, 255, 0.06) 30%,
+                        transparent 65%
+                    ),
+                    linear-gradient(135deg, transparent, rgba(255, 255, 255, 0.04), transparent);
+                filter: blur(14px) saturate(1.7) brightness(1.4);
+                transform: translate3d(calc(var(--npx, 0px) * 0.8), calc(var(--npy, 0px) * 0.8), 0);
+                animation: vfx-pulse 4s ease-in-out infinite;
+                opacity: 0.25;
+            }
+            .vfx-3d::after {
+                content: '';
+                position: absolute;
+                inset: -15%;
+                background:
+                    radial-gradient(
+                        circle at var(--mxp, 50%) var(--myp, 50%),
+                        rgba(255, 255, 255, 0.18),
+                        rgba(255, 255, 255, 0.08) 35%,
+                        transparent 55%
+                    ),
+                    repeating-linear-gradient(
+                        45deg,
+                        rgba(255, 255, 255, 0),
+                        rgba(255, 255, 255, 0.06) 1px,
+                        transparent 3px,
+                        transparent 9px
+                    );
+                background-size:
+                    100% 100%,
+                    280% 280%;
+                mix-blend-mode: screen;
+                filter: blur(2px);
+                opacity: 0.175;
+                transform: translate3d(calc(var(--px, 0px) * 0.8), calc(var(--py, 0px) * 0.8), 0) scale(1.02);
+                animation: vfx-sheen 6s linear infinite;
+            }
+
+            .vfx-webgl {
+                position: absolute;
+                inset: 0;
+                border-radius: inherit;
+                pointer-events: none;
+                z-index: 13;
+                overflow: hidden;
+                display: block;
+                opacity: calc(var(--vfxwebgl-opacity, 0.18) * var(--vfxwebgl-mult, 1));
+                mix-blend-mode: screen;
+            }
+            .vfx-webgl canvas {
+                width: 100%;
+                height: 100%;
+                display: block;
+            }
+            .overlay-MERCHANT ~ .vfx-webgl {
+                --vfxwebgl-mult: 0.8;
+            }
+            .overlay-KEEPER ~ .vfx-webgl {
+                --vfxwebgl-mult: 0.7;
+            }
+
+            .text-tier-0 {
+                color: rgba(229, 231, 235, 0.95);
+                text-shadow: 0 2px 16px rgba(0, 0, 0, 0.65);
+            }
+            .text-tier-1 {
+                color: #ff6b35;
+                text-shadow: 0 2px 16px rgba(0, 0, 0, 0.65);
+            }
+            .text-tier-2 {
+                color: #f59e0b;
+                text-shadow: 0 2px 16px rgba(0, 0, 0, 0.65);
+            }
+            .text-tier-3 {
+                color: #ffffff;
+                text-shadow: 0 2px 18px rgba(0, 0, 0, 0.7);
+            }
+            @keyframes vfx-pulse {
+                0%,
+                100% {
+                    opacity: 1;
+                }
+                50% {
+                    opacity: 0.9;
+                }
+            }
+            @keyframes vfx-sheen {
+                0% {
+                    background-position:
+                        0 0,
+                        0% 0%;
+                }
+                100% {
+                    background-position:
+                        0 0,
+                        200% 200%;
+                }
+            }
+
+            .overlay-DRIFTER,
+            .overlay-WALKER,
+            .overlay-MERCHANT,
+            .overlay-ENGINEER,
+            .overlay-SHAMAN,
+            .overlay-KEEPER,
+            .overlay-LORD,
+            .overlay-PRIME,
+            .overlay-SINGULARITY {
+                position: absolute;
+                inset: 0;
+                border-radius: inherit;
+                pointer-events: none;
+                z-index: 12;
+                overflow: hidden;
+            }
+            .overlay-DRIFTER {
+                background: linear-gradient(to bottom, rgba(255, 160, 0, 0.16), transparent 70%);
+                mix-blend-mode: overlay;
+            }
+            .overlay-WALKER {
+                background: linear-gradient(45deg, rgba(59, 130, 246, 0.22), transparent);
+                mix-blend-mode: overlay;
+            }
+            .overlay-MERCHANT {
+                background: radial-gradient(
+                    circle at var(--mxp, 50%) var(--myp, 50%),
+                    rgba(255, 215, 0, 0.26),
+                    transparent 70%
+                );
+                mix-blend-mode: screen;
+            }
+            .overlay-ENGINEER {
+                mix-blend-mode: hard-light;
+                background:
+                    repeating-linear-gradient(
+                        0deg,
+                        rgba(0, 255, 170, 0),
+                        rgba(0, 255, 170, 0) 2px,
+                        rgba(0, 255, 170, 0.12) 3px
+                    ),
+                    linear-gradient(90deg, rgba(0, 0, 0, 0), rgba(0, 255, 170, 0.08), rgba(0, 0, 0, 0));
+            }
+            .overlay-SHAMAN {
+                background: radial-gradient(circle at 50% 55%, rgba(147, 51, 234, 0.18), transparent 62%);
+                mix-blend-mode: color-dodge;
+            }
+            .overlay-KEEPER {
+                background: radial-gradient(circle at 50% 45%, rgba(251, 146, 60, 0.14), transparent 62%);
+                mix-blend-mode: screen;
+            }
+            .overlay-LORD {
+                background: radial-gradient(circle at 50% 85%, rgba(6, 182, 212, 0.14), transparent 60%);
+                mix-blend-mode: overlay;
+            }
+            .overlay-PRIME {
+                background: radial-gradient(
+                    circle at var(--mxp, 50%) var(--myp, 0%),
+                    rgba(255, 255, 255, 0.46),
+                    transparent 72%
+                );
+                mix-blend-mode: soft-light;
+            }
+            .overlay-SINGULARITY {
+                background: conic-gradient(
+                    from 0deg,
+                    rgba(255, 0, 0, 0.75),
+                    rgba(0, 255, 0, 0.68),
+                    rgba(0, 0, 255, 0.75),
+                    rgba(255, 0, 0, 0.75)
+                );
+                mix-blend-mode: overlay;
+                opacity: 0.18;
+                filter: saturate(0.78) contrast(0.95);
+            }
+
+            .img-tier-0 {
+                filter: grayscale(0.2) sepia(0.16) contrast(1) brightness(1) saturate(1.05);
+                transform: scale(1.01);
+            }
+            .anim-tier-1 {
+                animation: breathe 6s ease-in-out infinite alternate;
+            }
+            @keyframes breathe {
+                0% {
+                    filter: grayscale(0.1) contrast(1) brightness(1);
+                    transform: scale(1.01);
+                }
+                100% {
+                    filter: grayscale(0) contrast(1.05) brightness(1.05);
+                    transform: scale(1.03);
+                }
+            }
+            .anim-tier-2-heat {
+                animation: heat-low 5s infinite alternate;
+            }
+            @keyframes heat-low {
+                0% {
+                    filter: sepia(0.08) contrast(1.1) brightness(1.04) saturate(1.08);
+                    transform: scale(1.03);
+                }
+                100% {
+                    filter: sepia(0.22) contrast(1.16) brightness(1.1) saturate(1.12);
+                    transform: scale(1.06);
+                }
+            }
+            .anim-tier-2-shine {
+                animation: shine-low 4s infinite alternate;
+            }
+            @keyframes shine-low {
+                0% {
+                    filter: brightness(1.02) saturate(1.08);
+                }
+                100% {
+                    filter: brightness(1.18) saturate(1.22);
+                }
+            }
+            .anim-tier-2-glitch {
+                animation: glitch-low 3s infinite;
+            }
+            @keyframes glitch-low {
+                0%,
+                95% {
+                    filter: contrast(1.1) hue-rotate(0deg);
+                    transform: translate(0, 0) scale(1.03);
+                }
+                96% {
+                    filter: contrast(1.3) hue-rotate(8deg);
+                    transform: translate(2px, 0) scale(1.03);
+                }
+                100% {
+                    filter: contrast(1.1) hue-rotate(0deg);
+                    transform: translate(0, 0) scale(1.03);
+                }
+            }
+            .anim-tier-2-magic {
+                animation: magic-low 4s infinite alternate;
+            }
+            @keyframes magic-low {
+                0% {
+                    filter: hue-rotate(0deg) saturate(1.1) brightness(1.02);
+                }
+                100% {
+                    filter: hue-rotate(-10deg) saturate(1.34) brightness(1.08);
+                }
+            }
+
+            .anim-DRIFTER {
+                animation: drifter-heat 8s ease-in-out infinite alternate;
+            }
+            @keyframes drifter-heat {
+                0% {
+                    filter: sepia(0.12) contrast(1.06) brightness(1.03) saturate(1.05);
+                }
+                100% {
+                    filter: sepia(0.22) contrast(1.1) brightness(1.08) saturate(1.08) blur(0.25px);
+                }
+            }
+            .anim-WALKER {
+                animation: walker-shift 6s ease-in-out infinite;
+            }
+            @keyframes walker-shift {
+                0%,
+                100% {
+                    filter: contrast(1.1) brightness(1.05) saturate(1.06) hue-rotate(0deg);
+                }
+                50% {
+                    filter: contrast(1.18) brightness(1.1) saturate(1.14) hue-rotate(4deg);
+                }
+            }
+            .anim-MERCHANT {
+                animation: merchant-shine 5s ease-in-out infinite;
+            }
+            @keyframes merchant-shine {
+                0%,
+                100% {
+                    filter: contrast(1.06) brightness(1.06) saturate(1.1);
+                }
+                50% {
+                    filter: contrast(1.1) brightness(1.18) saturate(1.18);
+                }
+            }
+            .anim-ENGINEER {
+                animation: engineer-glitch 4s infinite;
+            }
+            @keyframes engineer-glitch {
+                0%,
+                92% {
+                    filter: contrast(1.12) brightness(1.04) saturate(1.06);
+                    transform: translate3d(0, 0, 0);
+                }
+                96% {
+                    filter: contrast(1.3) brightness(1.07) saturate(1.15) hue-rotate(18deg);
+                    transform: translate3d(2px, 0, 0);
+                }
+                100% {
+                    filter: contrast(1.12) brightness(1.04) saturate(1.06);
+                    transform: translate3d(0, 0, 0);
+                }
+            }
+            .anim-SHAMAN {
+                animation: shaman-pulse 6s ease-in-out infinite alternate;
+            }
+            @keyframes shaman-pulse {
+                0% {
+                    filter: contrast(1.06) brightness(1.04) saturate(1.1);
+                }
+                100% {
+                    filter: contrast(1.14) brightness(1.1) saturate(1.22) hue-rotate(-4deg);
+                }
+            }
+            .anim-KEEPER {
+                animation: keeper-eternal 8s ease-in-out infinite alternate;
+            }
+            @keyframes keeper-eternal {
+                0% {
+                    filter: sepia(0.05) contrast(1.08) brightness(1.02) saturate(1.06);
+                }
+                100% {
+                    filter: sepia(0.01) contrast(1.14) brightness(1.06) saturate(1.1);
+                }
+            }
+            .anim-LORD {
+                animation: lord-tide 10s ease-in-out infinite alternate;
+            }
+            @keyframes lord-tide {
+                0% {
+                    filter: contrast(1.08) brightness(1.04) saturate(1.08);
+                }
+                100% {
+                    filter: contrast(1.16) brightness(1.1) saturate(1.18);
+                }
+            }
+            .anim-PRIME {
+                animation: prime-radiance 4s ease-in-out infinite alternate;
+            }
+            @keyframes prime-radiance {
+                0% {
+                    filter: brightness(1.1) contrast(1.06) saturate(1.06);
+                }
+                100% {
+                    filter: brightness(1.26) contrast(1.12) saturate(1.14);
+                }
+            }
+            .anim-SINGULARITY {
+                animation: singularity-chaos 6s ease-in-out infinite alternate;
+            }
+            @keyframes singularity-chaos {
+                0% {
+                    filter: contrast(1.1) brightness(1.03) saturate(1.06);
+                }
+                100% {
+                    filter: contrast(1.26) brightness(1.08) saturate(1.12);
+                }
+            }
+
+            .card-object.card-cub {
+                border: 3px solid #52525b;
+                box-shadow:
+                    0 0 25px rgba(82, 82, 91, 0.5),
+                    inset 0 0 10px rgba(82, 82, 91, 0.2);
+            }
+            .card-object.card-scout {
+                border: 3px solid #22c55e;
+                box-shadow:
+                    0 0 30px rgba(34, 197, 94, 0.6),
+                    inset 0 0 15px rgba(34, 197, 94, 0.3);
+            }
+            .card-object.card-hunter {
+                border: 3px solid #3b82f6;
+                box-shadow:
+                    0 0 35px rgba(59, 130, 246, 0.7),
+                    inset 0 0 15px rgba(59, 130, 246, 0.4);
+            }
+            .card-object.card-alpha {
+                border: 3px solid #ef4444;
+                box-shadow:
+                    0 0 40px rgba(239, 68, 68, 0.8),
+                    inset 0 0 20px rgba(239, 68, 68, 0.5);
+            }
+            .card-object.card-elder {
+                border: 3px solid #eab308;
+                box-shadow:
+                    0 0 45px rgba(234, 179, 8, 0.9),
+                    inset 0 0 20px rgba(234, 179, 8, 0.6);
+            }
+            .card-object.card-spirit {
+                position: relative;
+                border-radius: 24px;
+                overflow: visible;
+            }
+            .card-object.card-spirit::before {
+                content: '';
+                position: absolute;
+                inset: -4px;
+                border-radius: 28px;
+                padding: 4px;
+                background: conic-gradient(
+                    from 0deg,
+                    #ff0000,
+                    #ff7f00,
+                    #ffff00,
+                    #00ff00,
+                    #00ffff,
+                    #0000ff,
+                    #4b0082,
+                    #9400d3,
+                    #ff0000
+                );
+                -webkit-mask:
+                    linear-gradient(#fff 0 0) content-box,
+                    linear-gradient(#fff 0 0);
+                -webkit-mask-composite: xor;
+                mask:
+                    linear-gradient(#fff 0 0) content-box,
+                    linear-gradient(#fff 0 0);
+                mask-composite: exclude;
+                z-index: 0;
+                pointer-events: none;
+                filter: brightness(1.65) saturate(1.25) hue-rotate(0deg) drop-shadow(0 0 22px rgba(255, 255, 255, 0.25));
+                animation: rainbowHue 6s linear infinite;
+            }
+            .card-object.card-spirit::after {
+                content: '';
+                position: absolute;
+                inset: -16px;
+                border-radius: 40px;
+                background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.18), transparent 62%);
+                filter: blur(18px);
+                opacity: 0.35;
+                pointer-events: none;
+                z-index: 0;
+            }
+            .card-object.card-spirit .card-face {
+                z-index: 2;
+            }
+            @keyframes rainbowHue {
+                0% {
+                    filter: brightness(1.65) saturate(1.25) hue-rotate(0deg)
+                        drop-shadow(0 0 22px rgba(255, 255, 255, 0.25));
+                }
+                100% {
+                    filter: brightness(1.65) saturate(1.25) hue-rotate(360deg)
+                        drop-shadow(0 0 22px rgba(255, 255, 255, 0.25));
+                }
+            }
+
+            @keyframes soulBreath {
+                0% {
+                    box-shadow:
+                        0 0 15px rgba(255, 107, 53, 0.35),
+                        0 0 25px rgba(255, 107, 53, 0.25);
+                }
+                50% {
+                    box-shadow:
+                        0 0 30px rgba(255, 107, 53, 0.65),
+                        0 0 50px rgba(255, 107, 53, 0.45),
+                        0 0 70px rgba(255, 107, 53, 0.25);
+                }
+                100% {
+                    box-shadow:
+                        0 0 15px rgba(255, 107, 53, 0.35),
+                        0 0 25px rgba(255, 107, 53, 0.25);
+                }
+            }
+            .fennec-pulse {
+                animation: soulBreath 2s infinite ease-in-out !important;
+                position: relative;
+                z-index: 10;
+            }
+
+            .soul-badge {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                background: linear-gradient(90deg, #ff6b35, #ff4e00);
+                color: #fff;
+                font-weight: 800;
+                box-shadow: 0 0 10px rgba(255, 107, 53, 0.4);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                padding: 4px 8px;
+                border-radius: 6px;
+                font-size: 9px;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+            }
+
+            .score-bar {
+                height: 7px;
+                border-radius: 9999px;
+                background: rgba(0, 0, 0, 0.45);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                overflow: hidden;
+            }
+            .score-bar > div {
+                height: 100%;
+                border-radius: 9999px;
+                background: linear-gradient(90deg, #ff6b35, #fb923c, #facc15);
+            }
+        </style>
+    </head>
+    <body class="min-h-screen p-8">
+        <div class="max-w-6xl mx-auto">
+            <div class="text-center mb-12">
+                <h1 class="text-5xl font-black text-white mb-4">🦊 PARENT INSCRIPTION MINTING</h1>
+                <p class="text-gray-400">Mint all 9 parent inscriptions with maximum parameters</p>
+                <div class="mt-6 flex flex-wrap items-center justify-center gap-3">
+                    <button class="archetype-btn" id="connectWalletBtn" onclick="connectWallet()">
+                        CONNECT WALLET
+                    </button>
+                    <button class="archetype-btn" id="exportAllBtn" onclick="exportAllParentHtml()">
+                        EXPORT 9 HTML
+                    </button>
+                    <div id="walletStatus" class="text-xs text-gray-400"></div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- DRIFTER -->
+                <div class="card">
+                    <div id="slot-DRIFTER" class="w-full flex justify-center"></div>
+                    <button class="archetype-btn w-full" onclick="mintParent('DRIFTER')">MINT DRIFTER PARENT</button>
+                </div>
+
+                <!-- WALKER -->
+                <div class="card">
+                    <div id="slot-WALKER" class="w-full flex justify-center"></div>
+                    <button class="archetype-btn w-full" onclick="mintParent('WALKER')">MINT WALKER PARENT</button>
+                </div>
+
+                <!-- MERCHANT -->
+                <div class="card">
+                    <div id="slot-MERCHANT" class="w-full flex justify-center"></div>
+                    <button class="archetype-btn w-full" onclick="mintParent('MERCHANT')">MINT MERCHANT PARENT</button>
+                </div>
+
+                <!-- ENGINEER -->
+                <div class="card">
+                    <div id="slot-ENGINEER" class="w-full flex justify-center"></div>
+                    <button class="archetype-btn w-full" onclick="mintParent('ENGINEER')">MINT ENGINEER PARENT</button>
+                </div>
+
+                <!-- SHAMAN -->
+                <div class="card">
+                    <div id="slot-SHAMAN" class="w-full flex justify-center"></div>
+                    <button class="archetype-btn w-full" onclick="mintParent('SHAMAN')">MINT SHAMAN PARENT</button>
+                </div>
+
+                <!-- KEEPER -->
+                <div class="card">
+                    <div id="slot-KEEPER" class="w-full flex justify-center"></div>
+                    <button class="archetype-btn w-full" onclick="mintParent('KEEPER')">MINT KEEPER PARENT</button>
+                </div>
+
+                <!-- LORD -->
+                <div class="card">
+                    <div id="slot-LORD" class="w-full flex justify-center"></div>
+                    <button class="archetype-btn w-full" onclick="mintParent('LORD')">MINT LORD PARENT</button>
+                </div>
+
+                <!-- PRIME -->
+                <div class="card">
+                    <div id="slot-PRIME" class="w-full flex justify-center"></div>
+                    <button class="archetype-btn w-full" onclick="mintParent('PRIME')">MINT PRIME PARENT</button>
+                </div>
+
+                <!-- SINGULARITY -->
+                <div class="card">
+                    <div id="slot-SINGULARITY" class="w-full flex justify-center"></div>
+                    <button class="archetype-btn w-full" onclick="mintParent('SINGULARITY')">
+                        MINT SINGULARITY PARENT
+                    </button>
+                </div>
+            </div>
+
+            <div id="output" class="mt-8 p-6 bg-black/50 rounded-lg border border-gray-700 hidden">
+                <h3 class="text-xl font-bold text-white mb-4">Mint Output</h3>
+                <pre id="outputContent" class="text-sm text-gray-300 font-mono whitespace-pre-wrap"></pre>
+            </div>
+        </div>
+
+        <script>
+            const FENNEC_ID_VERSION = '6.0';
+            const REQUIRED_NETWORK = 'FRACTAL_BITCOIN_MAINNET';
+            const BACKEND_URL = window.location.hostname.includes('vercel.app')
+                ? '/api/proxy'
+                : 'https://fennec-api.warninghejo.workers.dev';
+
+            let userAddress = null;
+            let userPubkey = null;
+
+            const ARCHETYPES = [
+                'DRIFTER',
+                'WALKER',
+                'MERCHANT',
+                'ENGINEER',
+                'SHAMAN',
+                'KEEPER',
+                'LORD',
+                'PRIME',
+                'SINGULARITY'
+            ];
+
+            const ARCHETYPE_TITLES = {
+                DRIFTER: 'DRIFTER',
+                WALKER: 'WALKER',
+                MERCHANT: 'MERCHANT',
+                ENGINEER: 'ENGINEER',
+                SHAMAN: 'SHAMAN',
+                KEEPER: 'KEEPER',
+                LORD: 'LORD',
+                PRIME: 'PRIME',
+                SINGULARITY: 'SINGULARITY'
+            };
+
+            const placeholderJpeg1x1 =
+                'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/2wBDAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwA/wA==';
+
+            const imageDataUrlCache = new Map();
+
+            const resolveAssetUrl = url => {
+                try {
+                    return new URL(url, window.location.origin).href;
+                } catch {
+                    return url;
+                }
+            };
+
+            const abs = p => {
+                try {
+                    return new URL(p, window.location.origin).href;
+                } catch {
+                    return p;
+                }
+            };
+
+            async function getOptimizedDataUrl(
+                url,
+                { maxWidth = 512, maxHeight = 512, mimeType = 'image/jpeg', quality = 0.85 } = {}
+            ) {
+                try {
+                    let imageUrl = (url || '').trim();
+                    if (!imageUrl) return placeholderJpeg1x1;
+                    if (imageUrl.startsWith('data:')) return imageUrl;
+                    imageUrl = resolveAssetUrl(imageUrl);
+                    const cacheKey = `${imageUrl}|${maxWidth}|${maxHeight}|${mimeType}|${quality}`;
+                    if (imageDataUrlCache.has(cacheKey)) {
+                        return imageDataUrlCache.get(cacheKey);
+                    }
+                    const dataUrl = await new Promise(resolve => {
+                        const img = new Image();
+                        try {
+                            const u = new URL(imageUrl);
+                            if (u.origin !== window.location.origin) {
+                                img.crossOrigin = 'anonymous';
+                            }
+                        } catch {}
+                        img.onerror = () => resolve(placeholderJpeg1x1);
+                        img.onload = () => {
+                            try {
+                                const canvas = document.createElement('canvas');
+                                let w = img.width;
+                                let h = img.height;
+                                if (!w || !h) return resolve(placeholderJpeg1x1);
+                                if (w > maxWidth || h > maxHeight) {
+                                    const ratio = Math.min(maxWidth / w, maxHeight / h);
+                                    w = Math.floor(w * ratio);
+                                    h = Math.floor(h * ratio);
+                                }
+                                canvas.width = w;
+                                canvas.height = h;
+                                const ctx = canvas.getContext('2d');
+                                ctx.imageSmoothingEnabled = true;
+                                ctx.imageSmoothingQuality = 'high';
+                                ctx.drawImage(img, 0, 0, w, h);
+                                resolve(canvas.toDataURL(mimeType, quality));
+                            } catch {
+                                resolve(placeholderJpeg1x1);
+                            }
+                        };
+                        img.src = imageUrl;
+                    });
+                    imageDataUrlCache.set(cacheKey, dataUrl);
+                    return dataUrl;
+                } catch {
+                    return placeholderJpeg1x1;
+                }
+            }
+
+            // expose for other async renderers
+            window.getOptimizedDataUrl = getOptimizedDataUrl;
+
+            const BG_IMAGE_BY_KEY = {
+                SINGULARITY: 'img/singularity.png',
+                PRIME: 'img/prime.png',
+                LORD: 'img/oasis.png',
+                WALKER: 'img/walker.png',
+                KEEPER: 'img/keeper.png',
+                SHAMAN: 'img/shaman.png',
+                ENGINEER: 'img/engineer.png',
+                MERCHANT: 'img/merchant.png',
+                DRIFTER: 'img/drifter.png'
+            };
+
+            const ALL_BADGES = [
+                {
+                    name: 'GENESIS',
+                    icon: '💎',
+                    img: 'img/badge_genesis.png',
+                    desc: 'You witnessed the first sunrise over the Fractal dunes.'
+                },
+                {
+                    name: 'WHALE',
+                    icon: '🐋',
+                    img: 'img/badge_whale.png',
+                    desc: 'When you move, the sands shift beneath you.'
+                },
+                {
+                    name: 'PROVIDER',
+                    icon: '💧',
+                    img: 'img/badge_provider.png',
+                    desc: 'The desert is thirsty, but your well runs deep.'
+                },
+                {
+                    name: 'FENNEC MAXI',
+                    icon: '🔥',
+                    img: 'img/badge_maxi.png',
+                    desc: 'The Spirit of the Fox guides your path.'
+                },
+                {
+                    name: 'ARTIFACT HUNTER',
+                    icon: '🏺',
+                    img: 'img/badge_collector.png',
+                    desc: 'Your pockets are heavy with echoes of the chain.'
+                },
+                {
+                    name: 'RUNE KEEPER',
+                    icon: '🧿',
+                    img: 'img/badge_rune.png',
+                    desc: 'You decipher the glyphs. The stones speak to you.'
+                },
+                {
+                    name: 'MEMPOOL RIDER',
+                    icon: '⚡',
+                    img: 'img/badge_mempool_rider.png',
+                    desc: 'Surfing the chaos of the 30-second block waves.'
+                },
+                {
+                    name: 'SAND SWEEPER',
+                    icon: '🧹',
+                    img: 'img/badge_sweeper.png',
+                    desc: 'Your UTXO set is clean. No trash left in the dunes.'
+                }
+            ];
+
+            function logOutput(message) {
+                const output = document.getElementById('output');
+                const outputContent = document.getElementById('outputContent');
+                if (output) output.classList.remove('hidden');
+                if (outputContent) {
+                    outputContent.textContent += `${message}\n`;
+                    outputContent.scrollTop = outputContent.scrollHeight;
+                }
+            }
+
+            function setWalletStatus(text) {
+                const el = document.getElementById('walletStatus');
+                if (el) el.textContent = text;
+            }
+
+            function shortAddr(addr) {
+                if (!addr) return '';
+                return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+            }
+
+            async function checkFractalNetwork() {
+                if (typeof window.unisat === 'undefined' || typeof window.unisat.getChain !== 'function') {
+                    throw new Error('UniSat wallet not found. Please install UniSat wallet extension.');
+                }
+                const currentChain = await window.unisat.getChain();
+                const chainName = typeof currentChain === 'string' ? currentChain : currentChain?.enum || currentChain;
+                if (chainName !== REQUIRED_NETWORK) {
+                    throw new Error(
+                        `Please switch to Fractal Bitcoin Mainnet in your UniSat wallet. Current: ${chainName}`
+                    );
+                }
+                return true;
+            }
+
+            async function connectWallet() {
+                if (typeof window.unisat === 'undefined') {
+                    window.open('https://unisat.io/download', '_blank');
+                    return;
+                }
+
+                const accounts =
+                    typeof window.unisat.requestAccounts === 'function'
+                        ? await window.unisat.requestAccounts()
+                        : typeof window.unisat.getAccounts === 'function'
+                          ? await window.unisat.getAccounts()
+                          : null;
+
+                if (!accounts || !accounts.length) {
+                    throw new Error('No accounts returned from wallet');
+                }
+
+                userAddress = accounts[0];
+                userPubkey =
+                    typeof window.unisat.getPublicKey === 'function' ? await window.unisat.getPublicKey() : null;
+                await checkFractalNetwork();
+
+                setWalletStatus(`Connected: ${shortAddr(userAddress)}`);
+                logOutput(`✅ Wallet connected: ${userAddress}`);
+            }
+
+            function getAnimationClass(baseKey, tier) {
+                if (tier === 0) return 'img-tier-0';
+                if (tier === 1) return 'anim-tier-1';
+                if (tier === 2) {
+                    if (baseKey === 'ENGINEER') return 'anim-tier-2-glitch';
+                    if (['MERCHANT', 'LORD'].includes(baseKey)) return 'anim-tier-2-shine';
+                    if (['SHAMAN', 'KEEPER', 'PRIME', 'SINGULARITY'].includes(baseKey)) return 'anim-tier-2-magic';
+                    return 'anim-tier-2-heat';
+                }
+                if (tier === 3) {
+                    if (baseKey === 'ENGINEER') return 'anim-tier-2-glitch';
+                    if (baseKey === 'KEEPER') return 'anim-tier-2-magic';
+                    if (baseKey === 'DRIFTER') return 'anim-tier-2-heat';
+                    return `anim-${baseKey}`;
+                }
+                return 'img-tier-0';
+            }
+
+            function buildMaxIdentity(baseKey) {
+                const tier = 3;
+                const rarityName = 'SPIRIT';
+                const rarityClass = 'card-spirit';
+                const tierLabel = 'MAX';
+
+                const scoreBreakdown = {
+                    activityPoints: 30,
+                    wealthPoints: 20,
+                    timePoints: 15,
+                    badgesPoints: 35,
+                    baseScore: 100
+                };
+
+                const metrics = {
+                    address: userAddress || '',
+                    daysAlive: 365,
+                    activityScore: 100,
+                    wealth: '1000.00',
+                    lpValueUSD: 0,
+                    txCount: 500,
+                    utxoCount: 128,
+                    hasFennecSoul: true,
+                    hasFennecMaxi: true,
+                    scoreBreakdown,
+                    nativeBalance: 100,
+                    fbSwapBalance: 25,
+                    fennecBalance: 10000,
+                    fennecSwapBalance: 2500,
+                    fennecLpBalance: 5000,
+                    fennecNativeBalance: 15000,
+                    fennecTotal: 20000,
+                    inscriptionStats: {
+                        runes: 10,
+                        brc20: 10,
+                        ordinals: 10,
+                        total: 30
+                    },
+                    rarity: { name: rarityName, class: rarityClass }
+                };
+
+                const archetype = {
+                    baseKey,
+                    title: ARCHETYPE_TITLES[baseKey] || baseKey,
+                    tierLevel: tier,
+                    tierLabel,
+                    badges: ALL_BADGES.map(b => ({ name: b.name, icon: b.icon, img: b.img, desc: b.desc }))
+                };
+
+                return applyParentOverridesToIdentity({ archetype, metrics });
+            }
+
+            function createBadgeDot(b) {
+                const glow =
+                    'drop-shadow(0 0 14px rgba(255,107,53,0.85)) drop-shadow(0 0 22px rgba(255,255,255,0.22)) drop-shadow(0 0 40px rgba(168,85,247,0.16))';
+                const frame =
+                    'background:linear-gradient(180deg,rgba(255,255,255,0.14),rgba(0,0,0,0.26));border:1px solid rgba(255,255,255,0.22);border-radius:9999px;box-sizing:border-box;backdrop-filter:blur(10px);box-shadow:0 0 0 1px rgba(255,107,53,0.16) inset,0 10px 18px rgba(0,0,0,0.35),0 0 18px rgba(255,107,53,0.12)';
+                const content = b.img
+                    ? `<img src="${b.img}" style="width:22px;height:22px;object-fit:contain;filter:${glow};transform:translateZ(0)" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"> <span style="display:none;font-size:14px;filter:${glow}">${b.icon || ''}</span>`
+                    : `<span style="font-size:14px;filter:${glow}">${b.icon || ''}</span>`;
+                return `<div style="width:30px;height:30px;display:flex;align-items:center;justify-content:center;${frame}" title="${b.name}">${content}</div>`;
+            }
+
+            function renderScoreBars(sb) {
+                const clamp = (v, m) => Math.max(0, Math.min(m, Math.round(Number(v) || 0)));
+                const rows = [
+                    { label: 'Activity', value: clamp(sb.activityPoints, 30), max: 30 },
+                    { label: 'Wealth', value: clamp(sb.wealthPoints, 20), max: 20 },
+                    { label: 'Time', value: clamp(sb.timePoints, 15), max: 15 },
+                    { label: 'Badges', value: clamp(sb.badgesPoints, 35), max: 35 },
+                    { label: 'Score', value: clamp(sb.baseScore, 100), max: 100 }
+                ];
+                return rows
+                    .map(r => {
+                        const pct = Math.max(0, Math.min(100, (r.value / r.max) * 100));
+                        const pctText = `${Math.round(pct)}%`;
+                        return `
+                        <div style="margin-bottom:10px">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                                <span style="font-size:11px;color:rgba(156,163,175,1)">${r.label}</span>
+                                <span style="font-size:12px;font-weight:900;color:#fff">${pctText}</span>
+                            </div>
+                            <div class="score-bar"><div style="width:${pct}%"></div></div>
+                        </div>`;
+                    })
+                    .join('');
+            }
+
+            function formatAddrForCard(addr) {
+                if (!addr) return '';
+                if (addr.length <= 12) return addr;
+                return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+            }
+
+            function applyParentOverridesToIdentity(identity) {
+                try {
+                    const raw = localStorage.getItem('fennec_parent_overrides') || '';
+                    if (!raw) return identity;
+                    const map = JSON.parse(raw);
+                    if (!map || typeof map !== 'object') return identity;
+
+                    const baseKey = identity?.archetype?.baseKey;
+                    if (!baseKey) return identity;
+                    const override = map[baseKey] || map['*'];
+                    if (!override || typeof override !== 'object') return identity;
+
+                    const out = {
+                        ...identity,
+                        archetype: { ...(identity.archetype || {}) },
+                        metrics: { ...(identity.metrics || {}) }
+                    };
+                    if (override.archetype && typeof override.archetype === 'object') {
+                        Object.assign(out.archetype, override.archetype);
+                    }
+                    if (override.metrics && typeof override.metrics === 'object') {
+                        Object.assign(out.metrics, override.metrics);
+                    }
+                    return out;
+                } catch {
+                    return identity;
+                }
+            }
+
+            function initVfxWebgl(object) {
+                if (!object || object.__vfxWebgl) return;
+                const canvas = object.querySelector('.vfx-webgl canvas');
+                const wrap = canvas ? canvas.parentElement : null;
+                if (!canvas || !wrap) return;
+                const gl =
+                    canvas.getContext('webgl', { alpha: true, premultipliedAlpha: true, antialias: true }) ||
+                    canvas.getContext('experimental-webgl');
+                if (!gl) {
+                    wrap.style.opacity = '0';
+                    return;
+                }
+                const vertSrc =
+                    'attribute vec2 aPos; varying vec2 vUv; void main(){ vUv=(aPos+1.0)*0.5; gl_Position=vec4(aPos,0.0,1.0); }';
+                const fragSrc =
+                    'precision highp float\n' +
+                    'varying vec2 vUv;\n' +
+                    'uniform vec2 uResolution;\n' +
+                    'uniform vec2 uPointer;\n' +
+                    'uniform vec2 uTilt;\n' +
+                    'uniform float uTime;\n' +
+                    'uniform vec3 uTint1;\n' +
+                    'uniform vec3 uTint2;\n' +
+                    'uniform float uStrength;\n' +
+                    'float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453123); }\n' +
+                    'float noise(vec2 p){ vec2 i=floor(p); vec2 f=fract(p); float a=hash(i); float b=hash(i+vec2(1.0,0.0)); float c=hash(i+vec2(0.0,1.0)); float d=hash(i+vec2(1.0,1.0)); vec2 u=f*f*(3.0-2.0*f); return mix(a,b,u.x) + (c-a)*u.y*(1.0-u.x) + (d-b)*u.x*u.y; }\n' +
+                    'float fbm(vec2 p){ float v=0.0; float a=0.5; for(int i=0;i<4;i++){ v += a*noise(p); p*=2.0; a*=0.5; } return v; }\n' +
+                    'void main(){\n' +
+                    '  vec2 uv=vUv;\n' +
+                    '  vec2 p=uPointer;\n' +
+                    '  vec2 d=uv-p;\n' +
+                    '  float dist=length(d);\n' +
+                    '  vec2 e=vec2(1.0)/max(uResolution, vec2(1.0));\n' +
+                    '  float h0 = fbm(uv*7.0 + vec2(uTime*0.05, -uTime*0.04));\n' +
+                    '  float hx1 = fbm((uv+vec2(e.x,0.0))*7.0 + vec2(uTime*0.05, -uTime*0.04));\n' +
+                    '  float hx2 = fbm((uv-vec2(e.x,0.0))*7.0 + vec2(uTime*0.05, -uTime*0.04));\n' +
+                    '  float hy1 = fbm((uv+vec2(0.0,e.y))*7.0 + vec2(uTime*0.05, -uTime*0.04));\n' +
+                    '  float hy2 = fbm((uv-vec2(0.0,e.y))*7.0 + vec2(uTime*0.05, -uTime*0.04));\n' +
+                    '  vec2 g = vec2(hx1-hx2, hy1-hy2);\n' +
+                    '  vec3 n = normalize(vec3(-g*16.0, 1.0));\n' +
+                    '  vec3 v = vec3(0.0, 0.0, 1.0);\n' +
+                    '  vec3 l = normalize(vec3(-d*2.7 + uTilt*0.55, 0.65));\n' +
+                    '  float ndl = max(dot(n,l), 0.0);\n' +
+                    '  vec3 h = normalize(l+v);\n' +
+                    '  float spec = pow(max(dot(n,h), 0.0), 36.0);\n' +
+                    '  float fres = pow(1.0 - max(dot(n,v), 0.0), 4.0);\n' +
+                    '  float bands = sin((uv.x*6.0 + uv.y*4.0 + h0*1.4)*6.283 + uTime*0.85 + uTilt.x*0.6);\n' +
+                    '  float t = 0.5 + 0.5*bands;\n' +
+                    '  vec3 tint = mix(uTint1, uTint2, t);\n' +
+                    '  float grain = hash(uv * (uResolution*0.12) + vec2(uTime*0.9, -uTime*0.7));\n' +
+                    '  grain = pow(grain, 14.0) * (0.26 + 1.85*spec);\n' +
+                    '  float streak = exp(-abs(d.x*1.45 + d.y*0.22 + uTilt.y*0.12)*18.0) * exp(-dist*dist*9.0);\n' +
+                    '  float edge = smoothstep(0.0, 0.05, min(min(uv.x, 1.0-uv.x), min(uv.y, 1.0-uv.y)));\n' +
+                    '  float a = uStrength * edge * (spec*1.10 + ndl*0.10 + fres*0.30 + streak*0.22 + grain*0.62);\n' +
+                    '  a = clamp(a, 0.0, 1.0);\n' +
+                    '  vec3 col = tint*(spec*1.25 + fres*0.25 + ndl*0.12) + vec3(1.0)*spec*0.52 + tint*grain*0.9;\n' +
+                    '  col *= (0.55 + 0.45*smoothstep(0.42, 0.0, dist));\n' +
+                    '  gl_FragColor = vec4(col, a);\n' +
+                    '}';
+
+                function compile(type, src) {
+                    const sh = gl.createShader(type);
+                    gl.shaderSource(sh, src);
+                    gl.compileShader(sh);
+                    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+                        gl.deleteShader(sh);
+                        return null;
+                    }
+                    return sh;
+                }
+                const vs = compile(gl.VERTEX_SHADER, vertSrc);
+                const fs = compile(gl.FRAGMENT_SHADER, fragSrc);
+                if (!vs || !fs) {
+                    wrap.style.opacity = '0';
+                    return;
+                }
+                const prog = gl.createProgram();
+                gl.attachShader(prog, vs);
+                gl.attachShader(prog, fs);
+                gl.linkProgram(prog);
+                if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+                    wrap.style.opacity = '0';
+                    return;
+                }
+                const buf = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+
+                const aPos = gl.getAttribLocation(prog, 'aPos');
+                const uResolution = gl.getUniformLocation(prog, 'uResolution');
+                const uPointer = gl.getUniformLocation(prog, 'uPointer');
+                const uTilt = gl.getUniformLocation(prog, 'uTilt');
+                const uTime = gl.getUniformLocation(prog, 'uTime');
+                const uTint1 = gl.getUniformLocation(prog, 'uTint1');
+                const uTint2 = gl.getUniformLocation(prog, 'uTint2');
+                const uStrength = gl.getUniformLocation(prog, 'uStrength');
+
+                const archetype = object?.dataset?.archetype || '';
+                const tier = object?.dataset?.tier ? Number(object.dataset.tier) || 0 : 0;
+                let tint1 = [1, 1, 1];
+                let tint2 = [1, 1, 1];
+                let mult = 1;
+                if (archetype === 'MERCHANT') {
+                    tint1 = [1.0, 0.82, 0.15];
+                    tint2 = [1.0, 1.0, 1.0];
+                    mult = 0.8;
+                } else if (archetype === 'KEEPER') {
+                    tint1 = [0.98, 0.57, 0.24];
+                    tint2 = [1.0, 1.0, 1.0];
+                    mult = 0.6;
+                } else if (archetype === 'SHAMAN') {
+                    tint1 = [0.66, 0.33, 0.97];
+                    tint2 = [0.23, 0.51, 0.96];
+                } else if (archetype === 'LORD') {
+                    tint1 = [0.02, 0.71, 0.83];
+                    tint2 = [1.0, 1.0, 1.0];
+                } else if (archetype === 'ENGINEER') {
+                    tint1 = [0.0, 1.0, 0.67];
+                    tint2 = [1.0, 0.0, 0.31];
+                } else if (archetype === 'WALKER') {
+                    tint1 = [0.23, 0.51, 0.96];
+                    tint2 = [1.0, 1.0, 1.0];
+                } else if (archetype === 'DRIFTER') {
+                    tint1 = [1.0, 0.63, 0.0];
+                    tint2 = [1.0, 1.0, 1.0];
+                } else if (archetype === 'SINGULARITY') {
+                    tint1 = [1.0, 1.0, 1.0];
+                    tint2 = [0.66, 0.33, 0.97];
+                }
+                const tierStrength = tier === 1 ? 0.55 : tier === 2 ? 0.78 : 1.0;
+                const strength = tierStrength * mult;
+
+                const state = {
+                    gl,
+                    prog,
+                    buf,
+                    aPos,
+                    uResolution,
+                    uPointer,
+                    uTilt,
+                    uTime,
+                    uTint1,
+                    uTint2,
+                    uStrength,
+                    pointer: [0.5, 0.5],
+                    tilt: [0, 0],
+                    start: performance.now(),
+                    lastSize: [0, 0],
+                    dpr: Math.min(2, window.devicePixelRatio || 1),
+                    tint1,
+                    tint2,
+                    strength
+                };
+
+                object.__vfxWebgl = state;
+
+                function render() {
+                    const rect = canvas.getBoundingClientRect();
+                    const w = Math.max(1, Math.round(rect.width * state.dpr));
+                    const h = Math.max(1, Math.round(rect.height * state.dpr));
+                    if (w !== state.lastSize[0] || h !== state.lastSize[1]) {
+                        canvas.width = w;
+                        canvas.height = h;
+                        state.lastSize[0] = w;
+                        state.lastSize[1] = h;
+                        gl.viewport(0, 0, w, h);
+                    }
+                    gl.useProgram(prog);
+                    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+                    gl.enableVertexAttribArray(aPos);
+                    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+                    gl.uniform2f(uResolution, canvas.width, canvas.height);
+                    gl.uniform2f(uPointer, state.pointer[0], state.pointer[1]);
+                    gl.uniform2f(uTilt, state.tilt[0], state.tilt[1]);
+                    gl.uniform1f(uTime, (performance.now() - state.start) / 1000);
+                    gl.uniform3f(uTint1, state.tint1[0], state.tint1[1], state.tint1[2]);
+                    gl.uniform3f(uTint2, state.tint2[0], state.tint2[1], state.tint2[2]);
+                    gl.uniform1f(uStrength, state.strength);
+                    gl.clearColor(0, 0, 0, 0);
+                    gl.clear(gl.COLOR_BUFFER_BIT);
+                    gl.drawArrays(gl.TRIANGLES, 0, 3);
+                    state.raf = requestAnimationFrame(render);
+                }
+
+                state.raf = requestAnimationFrame(render);
+            }
+
+            function updateVfxWebgl(object, xNorm, yNorm, tiltX, tiltY) {
+                const s = object && object.__vfxWebgl;
+                if (!s) return;
+                s.pointer[0] = Math.max(0, Math.min(1, xNorm));
+                s.pointer[1] = Math.max(0, Math.min(1, yNorm));
+                s.tilt[0] = Math.max(-1, Math.min(1, tiltX));
+                s.tilt[1] = Math.max(-1, Math.min(1, tiltY));
+            }
+
+            function generateParentCardHTML(identity, bgImageUrl) {
+                const { archetype, metrics } = identity;
+                const tier = archetype.tierLevel || 0;
+                const baseKey = archetype.baseKey || 'DRIFTER';
+                const rarityName = metrics.rarity?.name || 'CUB';
+                const rarityClass = metrics.rarity?.class || 'card-cub';
+                const soulClass = metrics.hasFennecSoul ? 'fennec-pulse' : '';
+                const imgClass = getAnimationClass(baseKey, tier);
+                const tierLabelText = archetype.tierLabel || '';
+
+                let overlayHtml = '';
+                let vfx3dHtml = '';
+                let vfxWebglHtml = '';
+                if (tier >= 1 && baseKey === 'ENGINEER') {
+                    const vfxOpacity = tier === 1 ? 0.18 : tier === 2 ? 0.34 : 0.52;
+                    vfx3dHtml = `<div class="vfx-3d" style="--vfx3d-opacity:${vfxOpacity};"></div>`;
+                    const vfxWebglOpacity = tier === 1 ? 0.12 : tier === 2 ? 0.18 : 0.26;
+                    vfxWebglHtml = `<div class="vfx-webgl" style="--vfxwebgl-opacity:${vfxWebglOpacity};"><canvas></canvas></div>`;
+                }
+                if (tier === 3) overlayHtml = `<div class="overlay-${baseKey}"></div>${vfxWebglHtml}${vfx3dHtml}`;
+                else if (tier === 2)
+                    overlayHtml = `<div class="overlay-${baseKey}" style="opacity:0.30"></div>${vfxWebglHtml}${vfx3dHtml}`;
+                else if (tier === 1)
+                    overlayHtml = `<div class="overlay-${baseKey}" style="opacity:0.18"></div>${vfxWebglHtml}${vfx3dHtml}`;
+
+                const badgesFront = (archetype.badges || []).slice(0, 6).map(createBadgeDot).join('');
+                const badgesBack = (ALL_BADGES || [])
+                    .map(b => {
+                        const hasBadge = (archetype.badges || []).some(x => x.name === b.name);
+                        const iconOpacity = hasBadge ? '1' : '0.22';
+                        const nameOpacity = hasBadge ? '1' : '0.78';
+                        const descOpacity = hasBadge ? '0.7' : '0.55';
+                        const borderOpacity = hasBadge ? '0.18' : '0.10';
+                        const bgOpacity = hasBadge ? '0.06' : '0.035';
+                        const glow = hasBadge
+                            ? 'drop-shadow(0 0 10px rgba(255,107,53,0.28)) drop-shadow(0 0 18px rgba(255,255,255,0.12))'
+                            : 'drop-shadow(0 0 6px rgba(255,255,255,0.10))';
+                        const iconHtml = b.img
+                            ? `<img src="${b.img}" style="width:22px;height:22px;object-fit:contain;filter:${glow}" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><span style="display:none;font-size:12px;filter:${glow}">${b.icon || ''}</span>`
+                            : `<span style="font-size:12px;filter:${glow}">${b.icon || ''}</span>`;
+                        return `<div title="${b.name} — ${b.desc}" style="display:flex;align-items:flex-start;gap:10px;background:rgba(255,255,255,${bgOpacity});border:1px solid rgba(255,255,255,${borderOpacity});padding:10px 12px;border-radius:12px;width:100%;min-width:0;">
+                            <div style="width:26px;height:26px;display:flex;align-items:center;justify-content:center;flex-shrink:0;opacity:${iconOpacity}">${iconHtml}</div>
+                            <div style="text-align:left;min-width:0;flex:1;">
+                                <div style="font-size:9px;font-weight:900;color:rgba(255,255,255,${nameOpacity});text-transform:uppercase;letter-spacing:0.10em;line-height:1.1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${b.name}</div>
+                                <div style="margin-top:3px;font-size:9px;line-height:1.25;color:rgba(229,231,235,${descOpacity});">${b.desc || ''}</div>
+                            </div>
+                        </div>`;
+                    })
+                    .join('');
+
+                const soulBadge = metrics.hasFennecSoul
+                    ? `<div class="soul-badge"><span>🔥</span><span>SOUL</span></div>`
+                    : '';
+                const titleClass =
+                    tier === 0
+                        ? 'text-tier-0'
+                        : tier === 1
+                          ? 'text-tier-1'
+                          : tier === 2
+                            ? 'text-tier-2'
+                            : 'text-tier-3';
+
+                const maxiMultiplier = metrics.hasFennecMaxi ? 1.2 : 1.0;
+                const maxiBoostPct = Math.round((maxiMultiplier - 1) * 100);
+
+                const front = `
+                <div class="card-face face-front ${soulClass}">
+                    <img src="${bgImageUrl}" class="bg-img ${imgClass}" alt="${baseKey}" />
+                    <div style="position:absolute;inset:0;background:linear-gradient(135deg,#0b0b0b 0%,#141414 45%,#060606 100%);border-radius:24px;clip-path:inset(0 round 24px);z-index:-1"></div>
+                    ${overlayHtml}
+                    <div class="card-holo-sheen"></div>
+                    <div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black/60 z-10 rounded-3xl" style="clip-path:inset(0 round 24px)"></div>
+                    <div class="relative z-20 p-5 flex justify-center items-start">
+                        <div class="flex gap-2 flex-wrap justify-center" style="max-width:260px">${badgesFront}</div>
+                    </div>
+                    <div class="relative z-20 mt-auto px-5 pb-6">
+                        <div class="text-center">
+                            ${tierLabelText ? `<div class="${rankBadgeClass} mb-2">${tierLabelText}</div>` : ''}
+                            <h2 class="text-3xl font-black uppercase italic leading-none drop-shadow-lg mb-4 ${titleClass} text-center">${archetype.title}</h2>
+                            <div class="mb-5"></div>
+                        </div>
+                        <div class="h-px w-full bg-gradient-to-r from-white/30 to-transparent mb-3"></div>
+                        <div class="flex items-center justify-between gap-2 mb-2" style="text-shadow:0 2px 10px rgba(0,0,0,0.75)">
+                            ${metrics.hasFennecSoul ? '<div class="px-2 py-1 bg-fennec/20 backdrop-blur-md border border-fennec/50 rounded text-[9px] font-bold text-fennec flex items-center gap-1">SOUL</div>' : '<div></div>'}
+                            <div class="text-right">
+                                <div class="text-[8px] text-white/70 font-mono tracking-widest mb-0.5">EVOLUTION</div>
+                                <div class="text-sm font-black italic tracking-widest uppercase ${rarityTextClass} drop-shadow-md">${rarityName}</div>
+                            </div>
+                        </div>
+                        <div class="text-[10px] text-gray-400 text-center tracking-widest">Tap card for details</div>
+                    </div>
+                </div>
+                `;
+
+                const back = `
+                <div class="card-face face-back">
+                    <div style="position:absolute;inset:0;opacity:0.06;background-image:url('img/FBSYM.png');background-repeat:no-repeat;background-position:center;background-size:70%;pointer-events:none;z-index:0;"></div>
+                    <div style="padding:16px;border-bottom:1px solid rgba(255,255,255,0.10);background:rgba(255,255,255,0.05);position:relative;z-index:10">
+                        <div style="display:flex;justify-content:center;align-items:center;gap:8px;margin-bottom:12px">
+                            <img src="img/phav.png" style="width:20px;height:20px;border-radius:9999px;opacity:0.85" />
+                            <span style="font-size:10px;font-weight:800;color:rgba(229,231,235,0.92);letter-spacing:0.22em;white-space:nowrap">FENNEC ID SYSTEM</span>
+                        </div>
+                        <div style="display:flex;gap:8px">
+                            <button class="card-tab-btn active" data-tab="badges" style="flex:1;padding:10px 12px;border-radius:10px;background:rgba(255,107,53,0.20);color:#FF6B35;border:1px solid rgba(255,107,53,0.25);font-size:11px;font-weight:800;letter-spacing:0.10em;text-transform:uppercase">BADGES</button>
+                            <button class="card-tab-btn" data-tab="stats" style="flex:1;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,0.05);color:rgba(156,163,175,1);border:1px solid rgba(255,255,255,0.08);font-size:11px;font-weight:800;letter-spacing:0.10em;text-transform:uppercase">STATS</button>
+                        </div>
+                    </div>
+                    <div class="card-tab-content card-tab-badges" style="display:block;flex:1;overflow-y:auto;padding:16px;position:relative;z-index:10;direction:ltr">
+                        <div style="display:flex;flex-direction:column;gap:10px;align-content:start">
+                            ${badgesBack}
+                        </div>
+                    </div>
+                    <div class="card-tab-content card-tab-stats" style="display:none;flex:1;overflow-y:auto;padding:16px;position:relative;z-index:10;direction:ltr">
+                        <div style="display:flex;flex-direction:column;gap:12px">
+                            <div style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.10);border-radius:12px;padding:12px">
+                                <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+                                <div>
+                                    <div style="font-size:10px;color:rgba(156,163,175,1);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:4px">NET WORTH</div>
+                                    <div style="font-size:22px;font-weight:900;color:#ffffff">$${metrics.wealth || '0.00'}</div>
+                                </div>
+                                <div style="text-align:right">
+                                    <div style="font-size:10px;color:rgba(156,163,175,1);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:4px">LP VALUE</div>
+                                    <div style="font-size:14px;font-weight:900;color:#ffffff">$${Number(metrics.lpValueUSD || 0).toFixed(2)}</div>
+                                </div>
+                            </div>
+                            </div>
+
+                            <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">
+                                <div style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.10);border-radius:12px;padding:10px">
+                                    <div style="font-size:10px;color:rgba(156,163,175,1);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:4px">TXS</div>
+                                    <div style="font-size:14px;font-weight:800;color:#fff">${metrics.txCount || 0}</div>
+                                </div>
+                                <div style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.10);border-radius:12px;padding:10px">
+                                    <div style="font-size:10px;color:rgba(156,163,175,1);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:4px">ON-CHAIN AGE</div>
+                                    <div style="font-size:14px;font-weight:800;color:#fff">${metrics.daysAlive || 0} Days</div>
+                                </div>
+                            </div>
+
+                            <div style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.10);border-radius:12px;padding:12px">
+                                <div style="font-size:10px;color:rgba(229,231,235,0.82);letter-spacing:0.16em;text-transform:uppercase;margin-bottom:10px;text-align:center">SCORE BREAKDOWN</div>
+                                ${renderScoreBars(metrics.scoreBreakdown || {})}
+                                <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding:10px;border-radius:12px;background:rgba(0,0,0,0.45);border:1px solid rgba(255,255,255,0.08)">
+                                    <div>
+                                        <div style="font-size:9px;color:rgba(156,163,175,1);letter-spacing:0.35em;text-transform:uppercase;margin-bottom:2px">MAXI BOOST</div>
+                                        <div style="font-size:10px;color:rgba(156,163,175,0.8);letter-spacing:0.15em;text-transform:uppercase">Multiplier</div>
+                                    </div>
+                                    <div style="text-align:right">
+                                        <div style="font-size:14px;font-weight:900;color:${metrics.hasFennecMaxi ? '#ffffff' : 'rgba(156,163,175,0.7)'}">${metrics.hasFennecMaxi ? maxiMultiplier.toFixed(1) + 'x' : '1.0x'}</div>
+                                        <div style="font-size:10px;font-weight:700;color:${metrics.hasFennecMaxi ? '#FF6B35' : 'rgba(156,163,175,0.7)'}">${metrics.hasFennecMaxi ? '+' + maxiBoostPct + '% ACTIVE' : 'DORMANT'}</div>
+                                    </div>
+                                </div>
+                                <div style="display:flex;justify-content:space-between;align-items:center">
+                                    <span style="font-size:11px;color:rgba(156,163,175,1)">Final Score</span>
+                                    <span style="font-size:14px;font-weight:900;color:#FF6B35">${metrics.activityScore || 0}%</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+
+                return `
+                <div class="card-scene">
+                    <div class="card-object ${rarityClass}" data-tier="${tier}" data-archetype="${baseKey}" data-vfx="${baseKey}">
+                        ${front}
+                        ${back}
+                    </div>
+                </div>`;
+            }
+
+            function attachCardInteractions(container) {
+                const card = container.querySelector('.card-object');
+                if (!card) return;
+
+                const tier = Number(card.getAttribute('data-tier') || 3);
+                const tiltStrength = tier === 0 ? 4 : tier === 1 ? 7 : tier === 2 ? 10 : 13;
+                const idleAmp = tier === 0 ? 2 : tier === 1 ? 3 : tier === 2 ? 4.5 : 6;
+                const glareIntensity = tier === 0 ? 0.025 : tier === 1 ? 0.035 : tier === 2 ? 0.045 : 0.055;
+                const glare = card.querySelector('.card-glare');
+
+                initVfxWebgl(card);
+                const idleState = {
+                    hover: false,
+                    raf: 0,
+                    start: performance.now(),
+                    lastMove: 0
+                };
+
+                const clearTilt = () => {
+                    card.style.removeProperty('transition');
+                    card.style.removeProperty('--mxp');
+                    card.style.removeProperty('--myp');
+                    card.style.removeProperty('--px');
+                    card.style.removeProperty('--py');
+                    card.style.removeProperty('--npx');
+                    card.style.removeProperty('--npy');
+                    card.style.setProperty('--tiltX', '0deg');
+                    card.style.setProperty('--tiltY', '0deg');
+                    if (glare) glare.style.opacity = '0';
+                };
+
+                const idleLoop = () => {
+                    idleState.raf = requestAnimationFrame(idleLoop);
+                    if (!idleState.hover) return;
+                    if (card.__flipAnimating) return;
+                    if (card.classList.contains('is-flipped')) return;
+                    if (performance.now() - idleState.lastMove < 180) return;
+
+                    const t = (performance.now() - idleState.start) / 1000;
+                    const mxp = 50 + Math.sin(t * 0.55) * idleAmp;
+                    const myp = 50 + Math.cos(t * 0.43) * (idleAmp * 0.85);
+                    const nx = (mxp - 50) / 50;
+                    const ny = (myp - 50) / 50;
+                    const px = nx * 11;
+                    const py = ny * 11;
+                    const rx = (-ny * tiltStrength).toFixed(2);
+                    const ry = (nx * tiltStrength).toFixed(2);
+
+                    card.style.transition = 'transform 220ms ease-out';
+                    card.style.setProperty('--mxp', `${mxp}%`);
+                    card.style.setProperty('--myp', `${myp}%`);
+                    card.style.setProperty('--px', `${px}px`);
+                    card.style.setProperty('--py', `${py}px`);
+                    card.style.setProperty('--npx', `${px * 0.75}px`);
+                    card.style.setProperty('--npy', `${py * 0.75}px`);
+                    card.style.setProperty('--tiltX', `${rx}deg`);
+                    card.style.setProperty('--tiltY', `${ry}deg`);
+
+                    updateVfxWebgl(card, mxp / 100, 1 - myp / 100, nx, -ny);
+                    if (glare) {
+                        const dist = Math.min(1, Math.sqrt(nx * nx + ny * ny));
+                        glare.style.opacity = (glareIntensity * (0.25 + dist * 0.75)).toFixed(3);
+                    }
+                };
+
+                card.addEventListener('click', e => {
+                    const t = e.target;
+                    const isTabBtn = t && t.classList && t.classList.contains('card-tab-btn');
+                    if (isTabBtn) return;
+
+                    if (card.__flipAnimating) return;
+                    card.__flipAnimating = true;
+
+                    clearTilt();
+                    idleState.lastMove = performance.now();
+
+                    const onFlipEnd = ev => {
+                        if (ev && ev.propertyName && ev.propertyName !== 'transform') return;
+                        card.__flipAnimating = false;
+                        card.removeEventListener('transitionend', onFlipEnd);
+                    };
+                    card.addEventListener('transitionend', onFlipEnd);
+                    setTimeout(() => {
+                        if (card.__flipAnimating) {
+                            card.__flipAnimating = false;
+                            card.removeEventListener('transitionend', onFlipEnd);
+                        }
+                    }, 1200);
+
+                    requestAnimationFrame(() => {
+                        card.classList.toggle('is-flipped');
+                    });
+                });
+
+                const back = container.querySelector('.face-back');
+                if (!back) return;
+
+                const tabBtns = back.querySelectorAll('.card-tab-btn');
+                const tabBadges = back.querySelector('.card-tab-badges');
+                const tabStats = back.querySelector('.card-tab-stats');
+                tabBtns.forEach(btn => {
+                    btn.addEventListener('click', ev => {
+                        ev.stopPropagation();
+                        tabBtns.forEach(b => {
+                            b.classList.remove('active');
+                            b.style.background = 'rgba(255,255,255,0.05)';
+                            b.style.color = 'rgba(156,163,175,1)';
+                            b.style.borderColor = 'rgba(255,255,255,0.08)';
+                        });
+                        btn.classList.add('active');
+                        btn.style.background = 'rgba(255,107,53,0.20)';
+                        btn.style.color = '#FF6B35';
+                        btn.style.borderColor = 'rgba(255,107,53,0.25)';
+                        const which = btn.getAttribute('data-tab');
+                        if (tabBadges) tabBadges.style.display = which === 'badges' ? 'block' : 'none';
+                        if (tabStats) tabStats.style.display = which === 'stats' ? 'block' : 'none';
+                    });
+                });
+
+                card.addEventListener('mousemove', ev => {
+                    if (card.__flipAnimating) return;
+                    if (card.classList.contains('is-flipped')) return;
+                    card.style.transition = 'transform 90ms linear';
+                    idleState.lastMove = performance.now();
+                    const rect = card.getBoundingClientRect();
+                    const mx = (ev.clientX - rect.left) / rect.width;
+                    const my = (ev.clientY - rect.top) / rect.height;
+                    const mxp = Math.max(0, Math.min(100, mx * 100));
+                    const myp = Math.max(0, Math.min(100, my * 100));
+                    const px = (mx - 0.5) * 22;
+                    const py = (my - 0.5) * 22;
+                    const nx = (mx - 0.5) * 2;
+                    const ny = (my - 0.5) * 2;
+                    const rx = (-ny * tiltStrength).toFixed(2);
+                    const ry = (nx * tiltStrength).toFixed(2);
+                    card.style.setProperty('--mxp', `${mxp}%`);
+                    card.style.setProperty('--myp', `${myp}%`);
+                    card.style.setProperty('--px', `${px}px`);
+                    card.style.setProperty('--py', `${py}px`);
+                    card.style.setProperty('--npx', `${px * 0.75}px`);
+                    card.style.setProperty('--npy', `${py * 0.75}px`);
+                    card.style.setProperty('--tiltX', `${rx}deg`);
+                    card.style.setProperty('--tiltY', `${ry}deg`);
+
+                    updateVfxWebgl(card, mx, 1 - my, nx, -ny);
+                    if (glare) {
+                        const dist = Math.min(1, Math.sqrt(nx * nx + ny * ny));
+                        glare.style.opacity = (glareIntensity * (0.25 + dist * 0.75)).toFixed(3);
+                    }
+                });
+
+                card.addEventListener('mouseenter', () => {
+                    idleState.hover = true;
+                    idleState.start = performance.now();
+                    idleState.lastMove = performance.now();
+                    if (!idleState.raf) idleLoop();
+                });
+
+                card.addEventListener('mouseleave', () => {
+                    idleState.hover = false;
+                    if (idleState.raf) {
+                        cancelAnimationFrame(idleState.raf);
+                        idleState.raf = 0;
+                    }
+                    clearTilt();
+                });
+            }
+
+            async function renderAllParentCards() {
+                for (const key of ARCHETYPES) {
+                    const slot = document.getElementById(`slot-${key}`);
+                    if (!slot) continue;
+                    try {
+                        const identity = buildMaxIdentity(key);
+                        const bgPath = BG_IMAGE_BY_KEY[key] || 'img/drifter.png';
+                        const bgDataUrl = await getOptimizedDataUrl(bgPath, {
+                            maxWidth: 450,
+                            maxHeight: 700,
+                            mimeType: 'image/jpeg',
+                            quality: 0.82
+                        });
+
+                        identity.archetype.badges = await Promise.all(
+                            (identity.archetype.badges || []).map(async b => {
+                                const dataUrl = b.img
+                                    ? await getOptimizedDataUrl(b.img, {
+                                          maxWidth: 56,
+                                          maxHeight: 56,
+                                          mimeType: 'image/png',
+                                          quality: 0.9
+                                      })
+                                    : '';
+                                return { ...b, img: dataUrl || b.img || '' };
+                            })
+                        );
+
+                        slot.innerHTML = generateParentCardHTML(identity, bgDataUrl);
+                        attachCardInteractions(slot);
+                    } catch (e) {
+                        console.error(`Render failed for ${key}:`, e);
+                        slot.innerHTML = `<div style="width:320px;height:490px;border-radius:24px;background:#000;border:1px solid rgba(255,107,53,0.25);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;padding:16px;box-sizing:border-box;text-align:center">Render failed for ${key}<br/>${e && e.message ? e.message : String(e)}</div>`;
+                        try {
+                            logOutput(`❌ Render failed for ${key}: ${e?.message || String(e)}`);
+                        } catch {}
+                    }
+                }
+            }
+
+            async function safeJson(res) {
+                const txt = await res.text();
+                if (!txt) return null;
+                try {
+                    return JSON.parse(txt);
+                } catch {
+                    return { error: 'Non-JSON response', raw: txt.slice(0, 200) };
+                }
+            }
+
+            async function signProvenance({ htmlCode, archetypeKey }) {
+                const htmlBytes = new TextEncoder().encode(htmlCode);
+                const htmlHashBuf = await crypto.subtle.digest('SHA-256', htmlBytes);
+                const htmlHashHex = Array.from(new Uint8Array(htmlHashBuf))
+                    .map(b => b.toString(16).padStart(2, '0'))
+                    .join('');
+
+                const payload = {
+                    schema: 'fennec.provenance.v1',
+                    kind: 'parent_mint',
+                    chain: 'fractal-bitcoin',
+                    address: userAddress,
+                    parent_inscription_id: null,
+                    archetype: {
+                        baseKey: archetypeKey,
+                        title: ARCHETYPE_TITLES[archetypeKey] || archetypeKey
+                    },
+                    tier: 3,
+                    html_sha256: htmlHashHex
+                };
+
+                const provRes = await fetch(`${BACKEND_URL}?action=sign_provenance`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-public-key': userPubkey || '',
+                        'x-address': userAddress || ''
+                    },
+                    body: JSON.stringify({ payload })
+                });
+
+                const json = await safeJson(provRes);
+                if (!json || json.code !== 0 || !json.data) {
+                    throw new Error(json?.error || json?.msg || 'Failed to sign provenance');
+                }
+
+                return { provenance: json.data, html_sha256: htmlHashHex };
+            }
+
+            function toB64Utf8(str) {
+                return btoa(unescape(encodeURIComponent(str)));
+            }
+
+            async function mintParent(archetypeKey) {
+                try {
+                    logOutput(`\n=== MINT PARENT: ${archetypeKey} ===`);
+
+                    if (typeof window.unisat === 'undefined') {
+                        throw new Error('UniSat wallet not found. Please install UniSat wallet extension.');
+                    }
+
+                    if (!userAddress || !userPubkey) {
+                        logOutput('Wallet not connected. Connecting...');
+                        await connectWallet();
+                    }
+                    await checkFractalNetwork();
+
+                    const identity = buildMaxIdentity(archetypeKey);
+                    const bg = BG_IMAGE_BY_KEY[archetypeKey] || 'img/drifter.png';
+
+                    const closeScriptTag = '</scr' + 'ipt>';
+                    const cssText = document.querySelector('style')?.textContent || '';
+                    const abs = p => {
+                        try {
+                            return new URL(p, window.location.origin).href;
+                        } catch {
+                            return p;
+                        }
+                    };
+
+                    const placeholderJpeg1x1 =
+                        'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/2wBDAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwA/wA==';
+
+                    const getOptimizedDataUrl = async (url, { maxWidth, maxHeight, mimeType, quality }) => {
+                        try {
+                            const u = abs(url);
+                            if (!u) return placeholderJpeg1x1;
+                            if (typeof u === 'string' && u.startsWith('data:')) return u;
+                            return await new Promise(resolve => {
+                                const img = new Image();
+                                try {
+                                    const parsed = new URL(String(u));
+                                    if (parsed.origin !== window.location.origin) {
+                                        img.crossOrigin = 'anonymous';
+                                    }
+                                } catch {}
+                                img.onerror = () => resolve(placeholderJpeg1x1);
+                                img.onload = () => {
+                                    try {
+                                        const canvas = document.createElement('canvas');
+                                        let w = img.width;
+                                        let h = img.height;
+                                        if (!w || !h) return resolve(placeholderJpeg1x1);
+                                        if (w > maxWidth || h > maxHeight) {
+                                            const r = Math.min(maxWidth / w, maxHeight / h);
+                                            w = Math.floor(w * r);
+                                            h = Math.floor(h * r);
+                                        }
+                                        canvas.width = w;
+                                        canvas.height = h;
+                                        const ctx = canvas.getContext('2d');
+                                        ctx.imageSmoothingEnabled = true;
+                                        ctx.imageSmoothingQuality = 'high';
+                                        ctx.drawImage(img, 0, 0, w, h);
+                                        resolve(canvas.toDataURL(mimeType, quality));
+                                    } catch {
+                                        resolve(placeholderJpeg1x1);
+                                    }
+                                };
+                                img.src = u;
+                            });
+                        } catch {
+                            return placeholderJpeg1x1;
+                        }
+                    };
+
+                    const bgAbs = abs(bg);
+                    const bgDataUrl = await getOptimizedDataUrl(bgAbs, {
+                        maxWidth: 450,
+                        maxHeight: 700,
+                        mimeType: 'image/jpeg',
+                        quality: 0.82
+                    });
+
+                    const phavData = await getOptimizedDataUrl('img/phav.png', {
+                        maxWidth: 64,
+                        maxHeight: 64,
+                        mimeType: 'image/jpeg',
+                        quality: 0.85
+                    });
+                    const symData = await getOptimizedDataUrl('img/FBSYM.png', {
+                        maxWidth: 256,
+                        maxHeight: 256,
+                        mimeType: 'image/png',
+                        quality: 0.92
+                    });
+
+                    identity.archetype.badges = await Promise.all(
+                        (identity.archetype.badges || []).map(async b => {
+                            const dataUrl = b.img
+                                ? await getOptimizedDataUrl(b.img, {
+                                      maxWidth: 56,
+                                      maxHeight: 56,
+                                      mimeType: 'image/png',
+                                      quality: 0.92
+                                  })
+                                : '';
+                            return { ...b, img: dataUrl || '' };
+                        })
+                    );
+
+                    let cardMarkup = generateParentCardHTML(identity, bgDataUrl);
+                    cardMarkup = cardMarkup.split('img/phav.png').join(phavData);
+                    cardMarkup = cardMarkup.split('img/FBSYM.png').join(symData);
+
+                    const htmlCode = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Fennec Parent — ${archetypeKey}</title>
+    <style>${cssText}</style>
+  </head>
+  <body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#000;">
+    ${cardMarkup}
+    <script>
+      ${initVfxWebgl.toString()}
+      ${updateVfxWebgl.toString()}
+      (function(){
+        const container = document;
+        const card = container.querySelector('.card-object');
+        if(!card) return;
+
+        const glare = card.querySelector('.card-glare');
+        initVfxWebgl(card);
+
+        const tier = Number(card.getAttribute('data-tier') || 3);
+        const tiltStrength = tier === 0 ? 4 : tier === 1 ? 7 : tier === 2 ? 10 : 13;
+        const idleAmp = tier === 0 ? 2 : tier === 1 ? 3 : tier === 2 ? 4.5 : 6;
+        const glareIntensity = tier === 0 ? 0.025 : tier === 1 ? 0.035 : tier === 2 ? 0.045 : 0.055;
+        const idleState = { hover: false, raf: 0, start: performance.now(), lastMove: 0 };
+
+        const clearTilt = () => {
+          card.style.removeProperty('transition');
+          card.style.removeProperty('--mxp');
+          card.style.removeProperty('--myp');
+          card.style.removeProperty('--px');
+          card.style.removeProperty('--py');
+          card.style.removeProperty('--npx');
+          card.style.removeProperty('--npy');
+          card.style.setProperty('--tiltX', '0deg');
+          card.style.setProperty('--tiltY', '0deg');
+          if (glare) glare.style.opacity = '0';
+        };
+
+        const idleLoop = () => {
+          idleState.raf = requestAnimationFrame(idleLoop);
+          if (!idleState.hover) return;
+          if (card.__flipAnimating) return;
+          if (card.classList.contains('is-flipped')) return;
+          if (performance.now() - idleState.lastMove < 180) return;
+
+          const t = (performance.now() - idleState.start) / 1000;
+          const mxp = 50 + Math.sin(t * 0.55) * idleAmp;
+          const myp = 50 + Math.cos(t * 0.43) * (idleAmp * 0.85);
+          const nx = (mxp - 50) / 50;
+          const ny = (myp - 50) / 50;
+          const px = nx * 11;
+          const py = ny * 11;
+          const rx = (-ny * tiltStrength).toFixed(2);
+          const ry = (nx * tiltStrength).toFixed(2);
+
+          card.style.transition = 'transform 220ms ease-out';
+          card.style.setProperty('--mxp', mxp + '%');
+          card.style.setProperty('--myp', myp + '%');
+          card.style.setProperty('--px', px + 'px');
+          card.style.setProperty('--py', py + 'px');
+          card.style.setProperty('--npx', (px * 0.75) + 'px');
+          card.style.setProperty('--npy', (py * 0.75) + 'px');
+          card.style.setProperty('--tiltX', rx + 'deg');
+          card.style.setProperty('--tiltY', ry + 'deg');
+
+          updateVfxWebgl(card, mxp / 100, 1 - myp / 100, nx, -ny);
+          if (glare) {
+            const dist = Math.min(1, Math.sqrt(nx * nx + ny * ny));
+            glare.style.opacity = (glareIntensity * (0.25 + dist * 0.75)).toFixed(3);
+          }
+        };
+
+        card.addEventListener('click', (e) => {
+          const t = e.target;
+          const isTabBtn = t && t.classList && t.classList.contains('card-tab-btn');
+          if (isTabBtn) return;
+
+          if (card.__flipAnimating) return;
+          card.__flipAnimating = true;
+          clearTilt();
+          idleState.lastMove = performance.now();
+
+          const onFlipEnd = (ev) => {
+            if (ev && ev.propertyName && ev.propertyName !== 'transform') return;
+            card.__flipAnimating = false;
+            card.removeEventListener('transitionend', onFlipEnd);
+          };
+          card.addEventListener('transitionend', onFlipEnd);
+          setTimeout(() => {
+            if (card.__flipAnimating) {
+              card.__flipAnimating = false;
+              card.removeEventListener('transitionend', onFlipEnd);
+            }
+          }, 1200);
+
+          requestAnimationFrame(() => {
+            card.classList.toggle('is-flipped');
+          });
+        });
+
+        const tabBtns = container.querySelectorAll('.card-tab-btn');
+        tabBtns.forEach(btn => {
+          btn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            tabBtns.forEach(b => {
+              b.classList.remove('active');
+              b.style.background = 'rgba(255,255,255,0.05)';
+              b.style.color = 'rgba(156,163,175,1)';
+              b.style.borderColor = 'rgba(255,255,255,0.08)';
+            });
+            btn.classList.add('active');
+            btn.style.background = 'rgba(255,107,53,0.20)';
+            btn.style.color = '#FF6B35';
+            btn.style.borderColor = 'rgba(255,107,53,0.25)';
+            const which = btn.getAttribute('data-tab');
+            const tabBadges = container.querySelector('.card-tab-badges');
+            const tabStats = container.querySelector('.card-tab-stats');
+            if (tabBadges) tabBadges.style.display = which === 'badges' ? 'block' : 'none';
+            if (tabStats) tabStats.style.display = which === 'stats' ? 'block' : 'none';
+          });
+        });
+
+        card.addEventListener('mousemove', (ev) => {
+          if (card.__flipAnimating) return;
+          if (card.classList.contains('is-flipped')) return;
+          card.style.transition = 'transform 90ms linear';
+          idleState.lastMove = performance.now();
+          const rect = card.getBoundingClientRect();
+          const mx = (ev.clientX - rect.left) / rect.width;
+          const my = (ev.clientY - rect.top) / rect.height;
+          const mxp = Math.max(0, Math.min(100, mx * 100));
+          const myp = Math.max(0, Math.min(100, my * 100));
+          const px = (mx - 0.5) * 22;
+          const py = (my - 0.5) * 22;
+          const nx = (mx - 0.5) * 2;
+          const ny = (my - 0.5) * 2;
+          const rx = (-ny * tiltStrength).toFixed(2);
+          const ry = (nx * tiltStrength).toFixed(2);
+          card.style.setProperty('--mxp', mxp + '%');
+          card.style.setProperty('--myp', myp + '%');
+          card.style.setProperty('--px', px + 'px');
+          card.style.setProperty('--py', py + 'px');
+          card.style.setProperty('--npx', (px * 0.75) + 'px');
+          card.style.setProperty('--npy', (py * 0.75) + 'px');
+          card.style.setProperty('--tiltX', rx + 'deg');
+          card.style.setProperty('--tiltY', ry + 'deg');
+
+          updateVfxWebgl(card, mx, 1 - my, nx, -ny);
+          if (glare) {
+            const dist = Math.min(1, Math.sqrt(nx * nx + ny * ny));
+            glare.style.opacity = (glareIntensity * (0.25 + dist * 0.75)).toFixed(3);
+          }
+        });
+
+        card.addEventListener('mouseenter', () => {
+          idleState.hover = true;
+          idleState.start = performance.now();
+          idleState.lastMove = performance.now();
+          if (!idleState.raf) idleLoop();
+        });
+
+        card.addEventListener('mouseleave', () => {
+          idleState.hover = false;
+          if (idleState.raf) {
+            cancelAnimationFrame(idleState.raf);
+            idleState.raf = 0;
+          }
+          clearTilt();
+        });
+      })();
+    ${closeScriptTag}
+  </body>
+</html>`;
+
+                    logOutput('Signing provenance...');
+                    const { provenance, html_sha256 } = await signProvenance({ htmlCode, archetypeKey });
+                    const provenanceJsonSafe = JSON.stringify(provenance).replace(/</g, '\\u003c');
+                    const provenanceTag =
+                        '<scr' +
+                        'ipt type="application/json" id="fennec-provenance">' +
+                        provenanceJsonSafe +
+                        '</scr' +
+                        'ipt>';
+                    const htmlCodeWithProvenance = htmlCode.includes('</body>')
+                        ? htmlCode.replace('</body>', `${provenanceTag}</body>`)
+                        : htmlCode + provenanceTag;
+
+                    const base64Content = toB64Utf8(htmlCodeWithProvenance);
+                    const base64SizeBytes = (base64Content.length * 3) / 4;
+                    const sizeKB = (base64SizeBytes / 1024).toFixed(2);
+                    logOutput(`Card size: ${sizeKB} KB`);
+
+                    const inscriptionBody = {
+                        receiveAddress: userAddress,
+                        feeRate: 5,
+                        outputValue: 546,
+                        files: [
+                            {
+                                filename: 'fennec_parent.html',
+                                dataURL: `data:text/html;base64,${base64Content}`
+                            }
+                        ]
+                    };
+
+                    logOutput('Creating inscription order...');
+                    const res = await fetch(`${BACKEND_URL}?action=create_inscription`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'x-public-key': userPubkey,
+                            'x-address': userAddress
+                        },
+                        body: JSON.stringify(inscriptionBody)
+                    });
+
+                    if (!res.ok) {
+                        const txt = await res.text().catch(() => '');
+                        throw new Error(`create_inscription failed: ${res.status} ${res.statusText} ${txt}`);
+                    }
+
+                    const json = await safeJson(res);
+                    if (!json || json.code !== 0 || !json.data) {
+                        throw new Error(json?.error || json?.msg || 'Order create failed');
+                    }
+
+                    const orderId = json.data.orderId || json.data.id;
+                    const payAddress = json.data.payAddress;
+                    const totalAmount = json.data.amount;
+                    if (!orderId || !payAddress || !totalAmount) {
+                        throw new Error(
+                            `Missing fields: orderId=${orderId} payAddress=${payAddress} amount=${totalAmount}`
+                        );
+                    }
+
+                    logOutput(`Order created: ${orderId}`);
+                    logOutput(`Pay address: ${payAddress}`);
+                    logOutput(`Amount: ${totalAmount} sats`);
+                    logOutput(`html_sha256: ${html_sha256}`);
+
+                    if (typeof window.unisat === 'undefined') {
+                        throw new Error('UniSat wallet not found.');
+                    }
+                    if (typeof window.unisat.sendBitcoin !== 'function') {
+                        throw new Error('UniSat sendBitcoin not available.');
+                    }
+
+                    logOutput('Sending payment via UniSat...');
+                    const txid = await window.unisat.sendBitcoin(payAddress, totalAmount);
+                    logOutput(`✅ Payment sent. TXID: ${txid}`);
+
+                    const allParents = JSON.parse(localStorage.getItem('fennec_parent_mints') || '[]');
+                    allParents.push({
+                        id: `parent_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+                        archetype: archetypeKey,
+                        address: userAddress,
+                        orderId,
+                        payAddress,
+                        amount: totalAmount,
+                        txid,
+                        html_sha256,
+                        provenance,
+                        createdAt: Date.now()
+                    });
+                    localStorage.setItem('fennec_parent_mints', JSON.stringify(allParents));
+
+                    logOutput(`✅ Parent mint queued and saved locally.`);
+                } catch (e) {
+                    logOutput(`❌ Error: ${e?.message || String(e)}`);
+                    console.error(e);
+                }
+            }
+
+            async function exportAllParentHtml() {
+                const btn = document.getElementById('exportAllBtn');
+                const originalText = btn ? btn.textContent : '';
+                if (btn) {
+                    btn.textContent = 'EXPORTING...';
+                    btn.disabled = true;
+                }
+
+                const closeScriptTag = '</scr' + 'ipt>';
+
+                const placeholderJpeg1x1 =
+                    'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/2wBDAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwA/wA==';
+
+                const getOptimizedDataUrl = async (url, { maxWidth, maxHeight, mimeType, quality }) => {
+                    try {
+                        let imageUrl = String(url || '');
+                        if (!imageUrl) return placeholderJpeg1x1;
+                        if (imageUrl.startsWith('data:')) return imageUrl;
+                        if (imageUrl.startsWith('img/')) {
+                            try {
+                                imageUrl = new URL(imageUrl, window.location.href).href;
+                            } catch {
+                                imageUrl = String(url || '');
+                            }
+                        }
+
+                        return await new Promise(resolve => {
+                            const img = new Image();
+                            try {
+                                const parsed = new URL(imageUrl);
+                                if (parsed.origin !== window.location.origin) {
+                                    img.crossOrigin = 'anonymous';
+                                }
+                            } catch {}
+                            img.onerror = () => resolve(placeholderJpeg1x1);
+                            img.onload = () => {
+                                try {
+                                    const canvas = document.createElement('canvas');
+                                    let w = img.width;
+                                    let h = img.height;
+                                    if (!w || !h) return resolve(placeholderJpeg1x1);
+                                    if (w > maxWidth || h > maxHeight) {
+                                        const r = Math.min(maxWidth / w, maxHeight / h);
+                                        w = Math.floor(w * r);
+                                        h = Math.floor(h * r);
+                                    }
+                                    canvas.width = w;
+                                    canvas.height = h;
+                                    const ctx = canvas.getContext('2d');
+                                    ctx.imageSmoothingEnabled = true;
+                                    ctx.imageSmoothingQuality = 'high';
+                                    ctx.drawImage(img, 0, 0, w, h);
+                                    resolve(canvas.toDataURL(mimeType, quality));
+                                } catch {
+                                    resolve(placeholderJpeg1x1);
+                                }
+                            };
+                            img.src = imageUrl;
+                        });
+                    } catch {
+                        return placeholderJpeg1x1;
+                    }
+                };
+
+                const downloadText = (filename, text) => {
+                    const blob = new Blob([text], { type: 'text/html;charset=utf-8' });
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+                };
+
+                try {
+                    logOutput('=== EXPORT: preparing optimized images ===');
+
+                    const cssText = document.querySelector('style')?.textContent || '';
+
+                    const uniqueImages = new Set();
+                    ARCHETYPES.forEach(k => uniqueImages.add(BG_IMAGE_BY_KEY[k] || 'img/drifter.png'));
+                    (ALL_BADGES || []).forEach(b => {
+                        if (b.img) uniqueImages.add(b.img);
+                    });
+
+                    // assets referenced in generateParentCardHTML()
+                    uniqueImages.add('img/phav.png');
+                    uniqueImages.add('img/FBSYM.png');
+
+                    const imageToDataUrl = new Map();
+                    for (const imgPath of uniqueImages) {
+                        const p = String(imgPath);
+                        const isBg =
+                            p.includes('drifter.png') ||
+                            p.includes('walker.png') ||
+                            p.includes('merchant.png') ||
+                            p.includes('engineer.png') ||
+                            p.includes('shaman.png') ||
+                            p.includes('keeper.png') ||
+                            p.includes('oasis.png') ||
+                            p.includes('prime.png') ||
+                            p.includes('singularity.png');
+
+                        const isAvatar = p.includes('phav.png');
+                        const isWatermark = p.includes('FBSYM.png');
+
+                        const opts = isBg
+                            ? { maxWidth: 450, maxHeight: 700, mimeType: 'image/jpeg', quality: 0.82 }
+                            : isAvatar
+                              ? { maxWidth: 64, maxHeight: 64, mimeType: 'image/jpeg', quality: 0.85 }
+                              : isWatermark
+                                ? { maxWidth: 256, maxHeight: 256, mimeType: 'image/png', quality: 0.92 }
+                                : { maxWidth: 56, maxHeight: 56, mimeType: 'image/png', quality: 0.92 };
+
+                        const dataUrl = await getOptimizedDataUrl(imgPath, opts);
+                        imageToDataUrl.set(imgPath, dataUrl);
+                    }
+
+                    for (const archetypeKey of ARCHETYPES) {
+                        const identity = buildMaxIdentity(archetypeKey);
+                        identity.metrics.address = '';
+
+                        identity.archetype.badges = (identity.archetype.badges || []).map(b => {
+                            const dataUrl = b.img ? imageToDataUrl.get(b.img) : '';
+                            return { ...b, img: dataUrl || '' };
+                        });
+
+                        const bgPath = BG_IMAGE_BY_KEY[archetypeKey] || 'img/drifter.png';
+                        const bgDataUrl = imageToDataUrl.get(bgPath) || bgPath;
+                        let cardMarkup = generateParentCardHTML(identity, bgDataUrl);
+
+                        // Replace shared assets inside markup
+                        const phavData = imageToDataUrl.get('img/phav.png') || 'img/phav.png';
+                        const symData = imageToDataUrl.get('img/FBSYM.png') || 'img/FBSYM.png';
+                        cardMarkup = cardMarkup.split('img/phav.png').join(phavData);
+                        cardMarkup = cardMarkup.split('img/FBSYM.png').join(symData);
+
+                        const html = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fennec Parent — ${archetypeKey}</title>
+    <style>${cssText}</style>
+  </head>
+  <body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#1a0f0a 0%,#2c1a12 100%);">
+    ${cardMarkup}
+    <script>
+      ${initVfxWebgl.toString()}
+      ${updateVfxWebgl.toString()}
+      (function(){
+        const container = document;
+        const card = container.querySelector('.card-object');
+        if(!card) return;
+
+        const glare = card.querySelector('.card-glare');
+        initVfxWebgl(card);
+
+        const tier = Number(card.getAttribute('data-tier') || 3);
+        const tiltStrength = tier === 0 ? 6 : tier === 1 ? 9 : tier === 2 ? 13 : 17;
+        const idleAmp = tier === 0 ? 2 : tier === 1 ? 3 : tier === 2 ? 4.5 : 6;
+        const glareIntensity = tier === 0 ? 0.025 : tier === 1 ? 0.035 : tier === 2 ? 0.045 : 0.055;
+        const idleState = { hover: false, raf: 0, start: performance.now(), lastMove: 0 };
+
+        const clearTilt = () => {
+          card.style.removeProperty('transition');
+          card.style.removeProperty('--mxp');
+          card.style.removeProperty('--myp');
+          card.style.removeProperty('--px');
+          card.style.removeProperty('--py');
+          card.style.removeProperty('--npx');
+          card.style.removeProperty('--npy');
+          card.style.setProperty('--tiltX', '0deg');
+          card.style.setProperty('--tiltY', '0deg');
+          if (glare) glare.style.opacity = '0';
+        };
+
+        const idleLoop = () => {
+          idleState.raf = requestAnimationFrame(idleLoop);
+          if (!idleState.hover) return;
+          if (card.__flipAnimating) return;
+          if (card.classList.contains('is-flipped')) return;
+          if (performance.now() - idleState.lastMove < 180) return;
+
+          const t = (performance.now() - idleState.start) / 1000;
+          const mxp = 50 + Math.sin(t * 0.55) * idleAmp;
+          const myp = 50 + Math.cos(t * 0.43) * (idleAmp * 0.85);
+          const nx = (mxp - 50) / 50;
+          const ny = (myp - 50) / 50;
+          const px = nx * 11;
+          const py = ny * 11;
+          const rx = (-ny * tiltStrength).toFixed(2);
+          const ry = (nx * tiltStrength).toFixed(2);
+
+          card.style.transition = 'transform 220ms ease-out';
+          card.style.setProperty('--mxp', mxp + '%');
+          card.style.setProperty('--myp', myp + '%');
+          card.style.setProperty('--px', px + 'px');
+          card.style.setProperty('--py', py + 'px');
+          card.style.setProperty('--npx', (px * 0.75) + 'px');
+          card.style.setProperty('--npy', (py * 0.75) + 'px');
+          card.style.setProperty('--tiltX', rx + 'deg');
+          card.style.setProperty('--tiltY', ry + 'deg');
+
+          updateVfxWebgl(card, mxp / 100, 1 - myp / 100, nx, -ny);
+          if (glare) {
+            const dist = Math.min(1, Math.sqrt(nx * nx + ny * ny));
+            glare.style.opacity = (glareIntensity * (0.25 + dist * 0.75)).toFixed(3);
+          }
+        };
+
+        card.addEventListener('click', (e) => {
+          const t = e.target;
+          const isTabBtn = t && t.classList && t.classList.contains('card-tab-btn');
+          if (isTabBtn) return;
+
+          if (card.__flipAnimating) return;
+          card.__flipAnimating = true;
+          clearTilt();
+          idleState.lastMove = performance.now();
+
+          const onFlipEnd = (ev) => {
+            if (ev && ev.propertyName && ev.propertyName !== 'transform') return;
+            card.__flipAnimating = false;
+            card.removeEventListener('transitionend', onFlipEnd);
+          };
+          card.addEventListener('transitionend', onFlipEnd);
+          setTimeout(() => {
+            if (card.__flipAnimating) {
+              card.__flipAnimating = false;
+              card.removeEventListener('transitionend', onFlipEnd);
+            }
+          }, 1200);
+
+          requestAnimationFrame(() => {
+            card.classList.toggle('is-flipped');
+          });
+        });
+
+        const tabBtns = container.querySelectorAll('.card-tab-btn');
+        tabBtns.forEach(btn => {
+          btn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            tabBtns.forEach(b => {
+              b.classList.remove('active');
+              b.style.background = 'rgba(255,255,255,0.05)';
+              b.style.color = 'rgba(156,163,175,1)';
+              b.style.borderColor = 'rgba(255,255,255,0.08)';
+            });
+            btn.classList.add('active');
+            btn.style.background = 'rgba(255,107,53,0.20)';
+            btn.style.color = '#FF6B35';
+            btn.style.borderColor = 'rgba(255,107,53,0.25)';
+            const which = btn.getAttribute('data-tab');
+            const tabBadges = container.querySelector('.card-tab-badges');
+            const tabStats = container.querySelector('.card-tab-stats');
+            if (tabBadges) tabBadges.style.display = which === 'badges' ? 'block' : 'none';
+            if (tabStats) tabStats.style.display = which === 'stats' ? 'block' : 'none';
+          });
+        });
+
+        card.addEventListener('mousemove', (ev) => {
+          if (card.__flipAnimating) return;
+          if (card.classList.contains('is-flipped')) return;
+          card.style.transition = 'transform 90ms linear';
+          idleState.lastMove = performance.now();
+          const rect = card.getBoundingClientRect();
+          const mx = (ev.clientX - rect.left) / rect.width;
+          const my = (ev.clientY - rect.top) / rect.height;
+          const mxp = Math.max(0, Math.min(100, mx * 100));
+          const myp = Math.max(0, Math.min(100, my * 100));
+          const px = (mx - 0.5) * 22;
+          const py = (my - 0.5) * 22;
+          const nx = (mx - 0.5) * 2;
+          const ny = (my - 0.5) * 2;
+          const rx = (-ny * tiltStrength).toFixed(2);
+          const ry = (nx * tiltStrength).toFixed(2);
+          card.style.setProperty('--mxp', mxp + '%');
+          card.style.setProperty('--myp', myp + '%');
+          card.style.setProperty('--px', px + 'px');
+          card.style.setProperty('--py', py + 'px');
+          card.style.setProperty('--npx', (px * 0.75) + 'px');
+          card.style.setProperty('--npy', (py * 0.75) + 'px');
+          card.style.setProperty('--tiltX', rx + 'deg');
+          card.style.setProperty('--tiltY', ry + 'deg');
+
+          updateVfxWebgl(card, mx, 1 - my, nx, -ny);
+          if (glare) {
+            const dist = Math.min(1, Math.sqrt(nx * nx + ny * ny));
+            glare.style.opacity = (glareIntensity * (0.25 + dist * 0.75)).toFixed(3);
+          }
+        });
+
+        card.addEventListener('mouseenter', () => {
+          idleState.hover = true;
+          idleState.start = performance.now();
+          idleState.lastMove = performance.now();
+          if (!idleState.raf) idleLoop();
+        });
+
+        card.addEventListener('mouseleave', () => {
+          idleState.hover = false;
+          if (idleState.raf) {
+            cancelAnimationFrame(idleState.raf);
+            idleState.raf = 0;
+          }
+          clearTilt();
+        });
+      })();
+    ${closeScriptTag}
+  </body>
+</html>`;
+
+                        downloadText(`fennec-parent-${archetypeKey.toLowerCase()}.html`, html);
+                        logOutput(`✅ Exported: fennec-parent-${archetypeKey.toLowerCase()}.html`);
+                        await new Promise(r => setTimeout(r, 120));
+                    }
+
+                    logOutput('=== EXPORT DONE ===');
+                } catch (e) {
+                    logOutput(`❌ Export failed: ${e?.message || String(e)}`);
+                    console.error(e);
+                } finally {
+                    if (btn) {
+                        btn.textContent = originalText;
+                        btn.disabled = false;
+                    }
+                }
+            }
+
+            window.connectWallet = connectWallet;
+            window.mintParent = mintParent;
+            window.exportAllParentHtml = exportAllParentHtml;
+
+            document.addEventListener('DOMContentLoaded', () => {
+                setWalletStatus('Not connected');
+                renderAllParentCards();
+            });
+        </script>
+    </body>
+</html>

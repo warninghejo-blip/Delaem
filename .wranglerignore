@@ -1,0 +1,40 @@
+# Files to ignore during Pages deploy
+
+img.rar
+*.rar
+
+# Dependencies
+node_modules/
+package.json
+package-lock.json
+
+# Worker files (not needed for Pages)
+worker.js
+worker.txt
+wrangler.toml
+
+# Scripts and configs
+*.bat
+*.ps1
+*.sh
+.gitignore
+vercel.json
+
+# Documentation
+*.md
+*.txt
+README.md
+DEPLOY.txt
+
+# Directories
+backup/
+api/
+.git/
+.wrangler/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db

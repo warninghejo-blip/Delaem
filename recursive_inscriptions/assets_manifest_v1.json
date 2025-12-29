@@ -1,0 +1,30 @@
+{
+    "version": 1,
+    "notes": "Mint each listed file as a separate inscription (each file must be <= 365 KB). Backgrounds/badges in img/ are currently source-resolution; first run recursive_inscriptions/asset_prep_v1.html to export resized/compressed versions, then inscribe those exported files and paste their inscription IDs into fennec_config_v1.json under assets.backgrounds/assets.badges/assets.misc.",
+    "backgrounds": [
+        { "key": "DRIFTER", "file": "img/drifter.png" },
+        { "key": "WALKER", "file": "img/walker.png" },
+        { "key": "KEEPER", "file": "img/keeper.png" },
+        { "key": "ENGINEER", "file": "img/engineer.png" },
+        { "key": "MERCHANT", "file": "img/merchant.png" },
+        { "key": "SHAMAN", "file": "img/shaman.png" },
+        { "key": "LORD", "file": "img/oasis.png" },
+        { "key": "PRIME", "file": "img/prime.png" },
+        { "key": "SINGULARITY", "file": "img/singularity.png" }
+    ],
+    "badges": [
+        { "key": "GENESIS", "file": "img/badge_genesis.png" },
+        { "key": "WHALE", "file": "img/badge_whale.png" },
+        { "key": "PROVIDER", "file": "img/badge_provider.png" },
+        { "key": "FENNEC MAXI", "file": "img/badge_maxi.png" },
+        { "key": "ARTIFACT HUNTER", "file": "img/badge_collector.png" },
+        { "key": "RUNE KEEPER", "file": "img/badge_rune.png" },
+        { "key": "MEMPOOL RIDER", "file": "img/badge_mempool_rider.png" },
+        { "key": "SAND SWEEPER", "file": "img/badge_sweeper.png" }
+    ],
+    "misc": [
+        { "key": "LOGO", "file": "img/phav.png" },
+        { "key": "WATERMARK", "file": "img/FBSYM.png" }
+    ],
+    "recommended_optional": [{ "key": "PHAV", "file": "img/phav.png", "why": "favicon / small UI icon" }]
+}

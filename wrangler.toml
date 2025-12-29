@@ -1,0 +1,14 @@
+# Cloudflare Worker Configuration
+name = "fennec-api"
+main = "worker.js"
+compatibility_date = "2024-12-05"
+
+# Pages Configuration
+
+kv_namespaces = [
+  { binding = "FENNEC_DB", id = "5f3166bbef7d4104921a24de3fe6fe20" }
+]
+
+[vars]
+# Environment variables (if needed)
+

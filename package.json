@@ -1,0 +1,38 @@
+{
+    "name": "fennec-swap",
+    "version": "1.0.0",
+    "description": "Fennec Swap - Fractal Bitcoin Token Exchange",
+    "dependencies": {
+        "@scure/base": "^1.2.6",
+        "@scure/btc-signer": "^1.7.0"
+    },
+    "scripts": {
+        "deploy:worker": "wrangler deploy",
+        "deploy:pages": "wrangler pages deploy . --project-name=fennec-swap --commit-dirty=true",
+        "deploy-worker": "npm run deploy:worker",
+        "deploy-pages": "npm run deploy:pages",
+        "deploy": "npm run deploy:worker && npm run deploy:pages",
+        "dev:worker": "wrangler dev",
+        "dev": "live-server --port=3000 --open=/index.html --watch=index.html,worker.js,api",
+        "dev:all": "concurrently \"npm run dev\" \"npm run dev:worker\"",
+        "stats:snapshot": "node scripts/fractal_stats_snapshot.mjs",
+        "login": "wrangler login",
+        "lint": "eslint worker.js api/*.js --fix",
+        "lint:html": "htmlhint index.html",
+        "format": "prettier --write \"**/*.{js,html,css,json}\" --ignore-path .prettierignore",
+        "format:check": "prettier --check \"**/*.{js,html,css,json}\"",
+        "validate": "npm run lint && npm run lint:html && npm run format:check",
+        "test:worker": "wrangler dev --local"
+    },
+    "devDependencies": {
+        "wrangler": "^4.54.0",
+        "live-server": "^1.2.2",
+        "concurrently": "^8.2.2",
+        "eslint": "^8.57.0",
+        "prettier": "^3.2.5",
+        "htmlhint": "^1.1.4"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    }
+}

@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+        <!-- Fill these after minting -->
+        <meta name="fennec-lib" content="INSCRIPTION_ID_LIB" />
+        <meta name="fennec-config" content="INSCRIPTION_ID_CONFIG" />
+
+        <meta name="fennec-manifest" content="https://fennecbtc.xyz/recursive_inscriptions/fennec_manifest_live.json" />
+
+        <!-- Optional: provenance parent id (if you want the child to know it at runtime) -->
+        <meta name="fennec-parent" content="INSCRIPTION_ID_PARENT" />
+
+        <title>Fennec ID</title>
+    </head>
+    <body>
+        <div id="fennec-root"></div>
+
+        <!-- Unique data for THIS user/card -->
+        <script id="dna-data" type="application/json">
+            {
+                "address": "bc1q...",
+                "archetype": {
+                    "baseKey": "DRIFTER",
+                    "title": "DRIFTER",
+                    "tierLabel": "",
+                    "tierLevel": 0,
+                    "badges": []
+                },
+                "badges": [],
+                "metrics": {
+                    "rarityName": "CUB",
+                    "wealth": "0.00",
+                    "txCount": 0,
+                    "hasFennecSoul": false
+                }
+            }
+        </script>
+
+        <!-- Recursive load: the LIB is a JS inscription. It will auto-render using dna-data. -->
+        <script>
+            (function () {
+                var fallbackManifestId = '8593e591de03ecbdd041121ee76256c22e51eaf670bfa0887358c6d3d50ad5ddi0';
+                var getMeta = function (name) {
+                    var el = document.querySelector('meta[name="' + name + '"]');
+                    return el ? el.getAttribute('content') || '' : '';
+                };
+
+                var setMeta = function (name, value) {
+                    var el = document.querySelector('meta[name="' + name + '"]');
+                    if (!el) {
+                        el = document.createElement('meta');
+                        el.setAttribute('name', name);
+                        document.head.appendChild(el);
+                    }
+                    el.setAttribute('content', String(value || ''));
+                };
+
+                var resolveRefToUrl = function (ref) {
+                    var s = String(ref || '').trim();
+                    if (!s) return '';
+                    if (s.indexOf('http://') === 0 || s.indexOf('https://') === 0) return s;
+                    if (s.indexOf('/') === 0) return s;
+                    return '/content/' + s;
+                };
+
+                var fetchJsonWithTimeout = function (url, timeoutMs) {
+                    var ms = typeof timeoutMs === 'number' ? timeoutMs : 4500;
+                    return new Promise(function (resolve, reject) {
+                        var done = false;
+                        var t = setTimeout(function () {
+                            if (done) return;
+                            done = true;
+                            reject(new Error('timeout'));
+                        }, ms);
+                        fetch(url, { cache: 'no-store' })
+                            .then(function (res) {
+                                if (!res.ok) throw new Error('http ' + res.status);
+                                return res.json();
+                            })
+                            .then(function (json) {
+                                if (done) return;
+                                done = true;
+                                clearTimeout(t);
+                                resolve(json);
+                            })
+                            .catch(function (err) {
+                                if (done) return;
+                                done = true;
+                                clearTimeout(t);
+                                reject(err);
+                            });
+                    });
+                };
+
+                var pinnedLib = getMeta('fennec-lib');
+                var pinnedConfig = getMeta('fennec-config');
+                var manifestRef = getMeta('fennec-manifest');
+
+                var resolved = {
+                    lib: pinnedLib,
+                    config: pinnedConfig
+                };
+
+                var applyManifest = function (m) {
+                    if (!m || typeof m !== 'object') return;
+                    var latest = m.latest && typeof m.latest === 'object' ? m.latest : m;
+                    var lib =
+                        latest.lib || latest.libId || latest.library || latest.libraryId || latest.fennecLib || '';
+                    var cfg =
+                        latest.config ||
+                        latest.configId ||
+                        latest.configuration ||
+                        latest.configurationId ||
+                        latest.fennecConfig ||
+                        '';
+                    if (typeof lib === 'string' && lib.trim()) resolved.lib = lib.trim();
+                    if (typeof cfg === 'string' && cfg.trim()) resolved.config = cfg.trim();
+                };
+
+                var loadLib = function () {
+                    if (!resolved.lib) {
+                        document.body.innerText = 'Missing fennec-lib meta';
+                        return;
+                    }
+                    if (resolved.config) setMeta('fennec-config', resolved.config);
+
+                    var s = document.createElement('script');
+                    s.src = resolveRefToUrl(resolved.lib);
+                    s.onload = function () {
+                        if (typeof window.initFennecID === 'function') window.initFennecID();
+                    };
+                    s.onerror = function () {
+                        document.body.innerText = 'Failed to load library inscription';
+                    };
+                    document.head.appendChild(s);
+                };
+
+                var skipManifestFetch = false;
+
+                if (manifestRef && String(manifestRef).trim()) {
+                    var manifestUrl = resolveRefToUrl(manifestRef);
+                    fetchJsonWithTimeout(manifestUrl, 4500)
+                        .then(function (m) {
+                            applyManifest(m);
+                            loadLib();
+                        })
+                        .catch(function () {
+                            try {
+                                if (
+                                    fallbackManifestId &&
+                                    String(fallbackManifestId).trim() &&
+                                    fallbackManifestId !== manifestRef &&
+                                    typeof resolveRefToUrl === 'function'
+                                ) {
+                                    var fbUrl = resolveRefToUrl(fallbackManifestId);
+                                    fetchJsonWithTimeout(fbUrl, 4500)
+                                        .then(function (m2) {
+                                            applyManifest(m2);
+                                            loadLib();
+                                        })
+                                        .catch(function () {
+                                            loadLib();
+                                        });
+                                    return;
+                                }
+                            } catch (_) {}
+                            loadLib();
+                        });
+                } else {
+                    loadLib();
+                }
+            })();
+        </script>
+    </body>
+</html>
