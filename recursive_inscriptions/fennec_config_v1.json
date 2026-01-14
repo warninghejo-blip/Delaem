@@ -9,8 +9,8 @@
         "launchDate": 1725840000,
         "genesisWindowSec": 86400,
         "points": {
-            "activityMax": 30,
-            "wealthMax": 20,
+            "activityMax": 25,
+            "wealthMax": 25,
             "timeMax": 15,
             "badgesMax": 35
         },
@@ -20,13 +20,13 @@
         },
         "wealth": {
             "curve": "sqrt",
-            "maxNetWorthUSD": 500
+            "maxNetWorthUSD": 1000
         },
         "time": {
             "maxDays": 365
         },
         "maxi": {
-            "multiplier": 1.2,
+            "multiplier": 1.15,
             "rules": {
                 "any": [
                     { "field": "fennecTotal", "op": ">=", "value": 10000 },
@@ -45,7 +45,7 @@
         "badgeDefinitions": [
             {
                 "name": "GENESIS",
-                "icon": "💎",
+                "icon": "",
                 "desc": "You witnessed the first sunrise over the Fractal dunes.",
                 "weight": 15,
                 "rules": {
@@ -61,21 +61,21 @@
             },
             {
                 "name": "WHALE",
-                "icon": "🐋",
+                "icon": "",
                 "desc": "When you move, the sands shift beneath you.",
                 "weight": 10,
-                "rules": { "field": "netWorthUSD", "op": ">=", "value": 500 }
+                "rules": { "field": "netWorthUSD", "op": ">=", "value": 1000 }
             },
             {
                 "name": "PROVIDER",
-                "icon": "💧",
+                "icon": "",
                 "desc": "The desert is thirsty, but your well runs deep.",
                 "weight": 8,
-                "rules": { "field": "lpValueUSD", "op": ">=", "value": 50 }
+                "rules": { "field": "lpValueUSD", "op": ">=", "value": 100 }
             },
             {
                 "name": "FENNEC MAXI",
-                "icon": "🔥",
+                "icon": "",
                 "desc": "The Spirit of the Fox guides your path.",
                 "weight": 0,
                 "rules": {
@@ -87,28 +87,28 @@
             },
             {
                 "name": "ARTIFACT HUNTER",
-                "icon": "🏺",
+                "icon": "",
                 "desc": "Your pockets are heavy with echoes of the chain.",
                 "weight": 3,
                 "rules": { "field": "inscriptionsTotal", "op": ">=", "value": 50 }
             },
             {
                 "name": "RUNE KEEPER",
-                "icon": "🧿",
+                "icon": "",
                 "desc": "You decipher the glyphs. The stones speak to you.",
                 "weight": 3,
                 "rules": { "field": "runesCount", "op": ">=", "value": 20 }
             },
             {
                 "name": "MEMPOOL RIDER",
-                "icon": "⚡",
+                "icon": "",
                 "desc": "Surfing the chaos of the 30-second block waves.",
                 "weight": 7,
                 "rules": { "field": "txCount", "op": ">=", "value": 10000 }
             },
             {
                 "name": "SAND SWEEPER",
-                "icon": "🧹",
+                "icon": "",
                 "desc": "Your UTXO set is clean. No trash left in the dunes.",
                 "weight": 3,
                 "rules": { "field": "abandonedUtxoCount", "op": "<", "value": 50 }
@@ -124,16 +124,52 @@
     },
     "assets": {
         "backgrounds": {
-            "*": "502e2e124567eefa31d7cff1f1c2b5e45bb2080a07590c2987c149ec8d2f4d48i0",
-            "DRIFTER": "502e2e124567eefa31d7cff1f1c2b5e45bb2080a07590c2987c149ec8d2f4d48i0",
-            "WALKER": "7294ab445af5264e72f3759df48f5d4ea2df51a60a4e17c175ecad4922a3d0e2i0",
-            "KEEPER": "146c8ac454895253bd1e3203de615ea73cc4579527269d9041c65f1dd4ce572ai0",
-            "ENGINEER": "23d34df2567e3605296c2ff240c158fbb354f1ab8df0e0675502d365bb860f33i0",
-            "MERCHANT": "8f247beadb1424c389b54b1945db78b12d93a52d7393744ccb8be65de516699ci0",
-            "SHAMAN": "40ec5ef844a7e778b47462d5627358d62361b3d85523c50faebb8d744b7cb671i0",
-            "LORD": "13086a8bc7fbc86389c2592b86941de4f992c564f0a2bb67356867c199439a28i0",
-            "PRIME": "5558eba690e45be7007b7697f285a369d7a11fd5f574892ef5c83a4f38c5bc3ci0",
-            "SINGULARITY": "00e02e303a6da675c00a2b215fb19d669391996822c0aac15759b673f9cd3144i0"
+            "*": "c483c2cc881f9dd87a7f11b3f3cef44c760d4371ed680fd7000bbc6fd27eb38di0",
+
+            "DRIFTER": "93fd82caf93eb4801196a68adea2af1eb1e58247504f6f06a3f6aede5ad0456bi0",
+            "DRIFTER_T0": "93fd82caf93eb4801196a68adea2af1eb1e58247504f6f06a3f6aede5ad0456bi0",
+            "DRIFTER_T1": "e87d18c1aa25a870506eb88119199af31360a3bf3820dff0d152d1f7c22eae93i0",
+            "DRIFTER_T2": "ca8a00b5085ab89132395b55ae9eca35510ec7a55e1eec0ef4159dbe8501a034i0",
+            "DRIFTER_T3": "2b9e6efb4d45b7752341683bc85976d8c48227e3b77d64b7e9db812920629cdai0",
+
+            "WALKER": "c16da3c7178297215183f9b3ad048be2af0e14eb90498a54f949018513b46bc8i0",
+            "WALKER_T0": "c16da3c7178297215183f9b3ad048be2af0e14eb90498a54f949018513b46bc8i0",
+            "WALKER_T1": "9e600974c5b171437b6b2852ce7256cd9b72ff2e60b34cbd6ba0fe15e6603b8ci0",
+            "WALKER_T2": "f7486257f765e39efa8882226052efdfd7511f987ef0a405b9c7a27def95b17bi0",
+            "WALKER_T3": "52fdb4ba5dcf86513647f6f7f0c6e0abb4dba47c6b012f598c5c0e4d45d2896ai0",
+
+            "MERCHANT": "d84ffcf97676e75a55f4c3de061491422d278a92101babe0191fb252665298e1i0",
+            "MERCHANT_T0": "d84ffcf97676e75a55f4c3de061491422d278a92101babe0191fb252665298e1i0",
+            "MERCHANT_T1": "92088d1f387d690bfbfb4cd710fc19b763455804653c028385f7e5bbedb3a8f4i0",
+            "MERCHANT_T2": "9dd19bef9ea5c22a59e59bc3f6e76dddc7e993643bd39769b63c64f27992ef12i0",
+            "MERCHANT_T3": "e34738614b5aadc959797640b730d8914efec32029fe6ea7130a5c7fa0fad6c3i0",
+
+            "ENGINEER": "6f5db7869fb4822ce18330cf7c8d90a34885f7cb7cafbec8cf74625b2a2c33fbi0",
+            "ENGINEER_T0": "6f5db7869fb4822ce18330cf7c8d90a34885f7cb7cafbec8cf74625b2a2c33fbi0",
+            "ENGINEER_T1": "adc4ea27665304244abfbe3d59dfbeb604d0722c2d7f3a9f3f09214ab40a23aci0",
+            "ENGINEER_T2": "948eda99846d127a0fe7c4cf81e346cd523b5dbb21d61c69fd7a41ca41d221e1i0",
+            "ENGINEER_T3": "b09d79aba79ce14ff023a39f24fd446e6f29ae3577491cff0f294a0d36535782i0",
+
+            "SHAMAN": "eb676b7d97336923b9c4d5c834e627aa5b4ba518fbdcdd4253dd53da49bd069ei0",
+            "SHAMAN_T0": "eb676b7d97336923b9c4d5c834e627aa5b4ba518fbdcdd4253dd53da49bd069ei0",
+            "SHAMAN_T1": "ad65a2d63dbe42a1ad9f0bdc653c15588ddd33291c3f4277e5689b8ed1461c38i0",
+            "SHAMAN_T2": "83d632380a52d1ac978d281de74282efbaa18eab0fa42922a3b62d215b94ec73i0",
+            "SHAMAN_T3": "fb2089230f00ab2d019456d48529cfbd06623cc347a470b806f43f668475f16di0",
+
+            "KEEPER": "863c3deb6942de491c9aa25d352e65499ed8f3ac9b56204ca1c13ccddd9df463i0",
+            "KEEPER_T0": "863c3deb6942de491c9aa25d352e65499ed8f3ac9b56204ca1c13ccddd9df463i0",
+            "KEEPER_T1": "0d19e68ce783600e1569aa0b572d25e0bfa7808dce85f302891aa778e4309338i0",
+            "KEEPER_T2": "10d599f4e5ed54824aff1785c195a7c29383315e34d20b250235a60edcd3d3c4i0",
+            "KEEPER_T3": "c49bdafe2d5f9a39ae24e2584b3eefae5e4eec03d4ec7065ddff1e9c1154d0d6i0",
+
+            "LORD": "7d14445c78cc369125905be43e2fe927e4b072b977508296b780a4c4122c2c5di0",
+            "LORD_T0": "7d14445c78cc369125905be43e2fe927e4b072b977508296b780a4c4122c2c5di0",
+            "LORD_T1": "8035fd69c194f8bc3bdf99ed857400288dd1d7e422c8cc491d7504f107773e23i0",
+            "LORD_T2": "689265190a0225959c1c7e0a099e0cb6364ac205d2d11d6fb26a18ec90b17211i0",
+            "LORD_T3": "dc8ed5fbf0e73000864ae727f91febdde60dfaf2cc62b3f26d881be6484f4eeci0",
+
+            "PRIME": "bc3094e99505e7cca912e8a26bc5d04ebce528857439fdaadada6c813a7a3e90i0",
+            "SINGULARITY": "6944bf8680117a1edbd59b1c423eddba37e9b5ea7e0fe39e50fd97956a340919i0"
         },
         "badges": {
             "GENESIS": "00a00f50484b94ddae3fbb69475d53ed24a4cbeb9f02eae5ab1846d296e988cbi0",
@@ -148,7 +184,9 @@
         "misc": {
             "LOGO": "2e0185f2bdcc068289680574c98982d24e4bc3e3ae9d048ce160c7978ad8b44bi0",
             "WATERMARK": "4d94e7ef01d8b40c58d02a83d232494bc4cc856b98b27a18f81a45bf6c670923i0",
-            "HEART": "f58cdcb410c17074019380f13c4bad10bbeacb79e5e1be78a0f8213c127a4e1fi0"
+            "HEART": "f58cdcb410c17074019380f13c4bad10bbeacb79e5e1be78a0f8213c127a4e1fi0",
+            "PHAV": "cdcf7ec0fbe5a5ef8631453743f4f23a4af154b7251fa94ac4e4e8bb82c693fdi0",
+            "FBSYM": "8f4b941f8257128e678082e9753eb13cd478a4bce4cf07cb6675805c899dbb01i0"
         }
     }
 }

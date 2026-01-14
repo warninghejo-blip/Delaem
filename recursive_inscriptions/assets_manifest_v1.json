@@ -2,13 +2,41 @@
     "version": 1,
     "notes": "Mint each listed file as a separate inscription (each file must be <= 365 KB). Backgrounds/badges in img/ are currently source-resolution; first run recursive_inscriptions/asset_prep_v1.html to export resized/compressed versions, then inscribe those exported files and paste their inscription IDs into fennec_config_v1.json under assets.backgrounds/assets.badges/assets.misc.",
     "backgrounds": [
-        { "key": "DRIFTER", "file": "img/drifter.png" },
-        { "key": "WALKER", "file": "img/walker.png" },
-        { "key": "KEEPER", "file": "img/keeper.png" },
-        { "key": "ENGINEER", "file": "img/engineer.png" },
-        { "key": "MERCHANT", "file": "img/merchant.png" },
-        { "key": "SHAMAN", "file": "img/shaman.png" },
-        { "key": "LORD", "file": "img/oasis.png" },
+        { "key": "DRIFTER_T0", "file": "img/drifter_t0.png" },
+        { "key": "DRIFTER_T1", "file": "img/drifter_t1.png" },
+        { "key": "DRIFTER_T2", "file": "img/drifter_t2.png" },
+        { "key": "DRIFTER_T3", "file": "img/drifter_t3.png" },
+
+        { "key": "WALKER_T0", "file": "img/walker_t0.png" },
+        { "key": "WALKER_T1", "file": "img/walker_t1.png" },
+        { "key": "WALKER_T2", "file": "img/walker_t2.png" },
+        { "key": "WALKER_T3", "file": "img/walker_t3.png" },
+
+        { "key": "MERCHANT_T0", "file": "img/merchant_t0.png" },
+        { "key": "MERCHANT_T1", "file": "img/merchant_t1.png" },
+        { "key": "MERCHANT_T2", "file": "img/merchant_t2.png" },
+        { "key": "MERCHANT_T3", "file": "img/merchant_t3.png" },
+
+        { "key": "ENGINEER_T0", "file": "img/engineer_t0.png" },
+        { "key": "ENGINEER_T1", "file": "img/engineer_t1.png" },
+        { "key": "ENGINEER_T2", "file": "img/engineer_t2.png" },
+        { "key": "ENGINEER_T3", "file": "img/engineer_t3.png" },
+
+        { "key": "SHAMAN_T0", "file": "img/shaman_t0.png" },
+        { "key": "SHAMAN_T1", "file": "img/shaman_t1.png" },
+        { "key": "SHAMAN_T2", "file": "img/shaman_t2.png" },
+        { "key": "SHAMAN_T3", "file": "img/shaman_t3.png" },
+
+        { "key": "KEEPER_T0", "file": "img/keeper_t0.png" },
+        { "key": "KEEPER_T1", "file": "img/keeper_t1.png" },
+        { "key": "KEEPER_T2", "file": "img/keeper_t2.png" },
+        { "key": "KEEPER_T3", "file": "img/keeper_t3.png" },
+
+        { "key": "LORD_T0", "file": "img/lord_t0.png" },
+        { "key": "LORD_T1", "file": "img/lord_t1.png" },
+        { "key": "LORD_T2", "file": "img/lord_t2.png" },
+        { "key": "LORD_T3", "file": "img/lord_t3.png" },
+
         { "key": "PRIME", "file": "img/prime.png" },
         { "key": "SINGULARITY", "file": "img/singularity.png" }
     ],
@@ -24,7 +52,7 @@
     ],
     "misc": [
         { "key": "LOGO", "file": "img/phav.png" },
-        { "key": "WATERMARK", "file": "img/FBSYM.png" }
+        { "key": "WATERMARK", "file": "img/phav.png" }
     ],
     "recommended_optional": [{ "key": "PHAV", "file": "img/phav.png", "why": "favicon / small UI icon" }]
 }

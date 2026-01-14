@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Fennec ID • All Classes • Tier Matrix</title>
+        <link rel="stylesheet" href="./_shared.css" />
+        <style>
+            html,
+            body {
+                overflow: auto;
+                height: auto;
+            }
+            .container {
+                max-width: 100%;
+            }
+            .matrix {
+                display: grid;
+                grid-template-columns: 140px repeat(4, minmax(210px, 1fr));
+                gap: 14px;
+                align-items: start;
+                overflow: visible;
+                padding: 28px 14px 48px;
+            }
+            .matrix .head {
+                font-size: 11px;
+                font-weight: 900;
+                letter-spacing: 0.18em;
+                text-transform: uppercase;
+                color: rgba(229, 231, 235, 0.86);
+                padding: 6px 0;
+            }
+            .matrix .row-label {
+                position: sticky;
+                top: 0;
+                align-self: start;
+                padding-top: 12px;
+                font-size: 12px;
+                font-weight: 900;
+                letter-spacing: 0.18em;
+                text-transform: uppercase;
+                color: rgba(255, 255, 255, 0.92);
+            }
+            .matrix .cell {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }
+            .matrix .cell .card-host {
+                display: flex;
+                justify-content: center;
+            }
+            .matrix .cell .card-host > .card-scene {
+                transform: scale(0.78);
+                transform-origin: top center;
+            }
+            .matrix .cell .cell-title {
+                display: flex;
+                align-items: baseline;
+                justify-content: space-between;
+                gap: 10px;
+            }
+            .matrix .cell .cell-title .tier-name {
+                font-size: 11px;
+            }
+            .matrix .cell .cell-title .tier-note {
+                font-size: 10px;
+            }
+            @media (max-width: 1100px) {
+                .matrix {
+                    grid-template-columns: 1fr;
+                }
+                .matrix .row-label {
+                    position: relative;
+                    top: auto;
+                    padding-top: 18px;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="topbar">
+                <div class="title">All Classes</div>
+                <div class="nav">
+                    <a href="./index.html">INDEX</a>
+                    <a href="./all.html">ALL</a>
+                    <a href="./drifter.html">DRIFTER</a>
+                    <a href="./walker.html">WALKER</a>
+                    <a href="./merchant.html">MERCHANT</a>
+                    <a href="./engineer.html">ENGINEER</a>
+                    <a href="./shaman.html">SHAMAN</a>
+                    <a href="./keeper.html">KEEPER</a>
+                    <a href="./lord.html">LORD</a>
+                    <a href="./prime.html">PRIME</a>
+                    <a href="./singularity.html">SINGULARITY</a>
+                </div>
+            </div>
+
+            <p class="subtitle">
+                Matrix preview of Tier 0-3 for every class. Cards are rendered via <code>FennecIDLib.createCard()</code>
+                (same as live).
+            </p>
+
+            <div class="matrix" id="matrix">
+                <div></div>
+                <div class="head">Tier 0</div>
+                <div class="head">Tier 1</div>
+                <div class="head">Tier 2</div>
+                <div class="head">Tier 3</div>
+            </div>
+
+            <div class="footer">
+                Tip: open DevTools and compare <code>anim-*</code> + <code>overlay-*</code> across tiers.
+            </div>
+        </div>
+
+        <script src="../recursive_inscriptions/fennec_lib_v2.js"></script>
+        <script>
+            (function () {
+                const path = (location.pathname || '').toLowerCase();
+                document.querySelectorAll('.nav a').forEach(a => {
+                    const href = (a.getAttribute('href') || '').toLowerCase();
+                    if (href && path.endsWith(href.replace('./', '/'))) a.classList.add('active');
+                });
+            })();
+
+            (function () {
+                const ARCHETYPES = [
+                    'DRIFTER',
+                    'WALKER',
+                    'MERCHANT',
+                    'ENGINEER',
+                    'SHAMAN',
+                    'KEEPER',
+                    'LORD',
+                    'PRIME',
+                    'SINGULARITY'
+                ];
+
+                const BADGES = [
+                    'GENESIS',
+                    'WHALE',
+                    'PROVIDER',
+                    'FENNEC MAXI',
+                    'ARTIFACT HUNTER',
+                    'RUNE KEEPER',
+                    'MEMPOOL RIDER',
+                    'SAND SWEEPER'
+                ];
+
+                function tierBadges(tier) {
+                    if (tier === 0) return [];
+                    if (tier === 1) return BADGES.slice(0, 2);
+                    if (tier === 2) return BADGES.slice(0, 4);
+                    return BADGES.slice(0, 6);
+                }
+
+                function tierNote(tier) {
+                    if (tier === 0) return 'Dormant';
+                    if (tier === 1) return 'Awakening';
+                    if (tier === 2) return 'Empowered';
+                    return 'Unleashed';
+                }
+
+                function makeDna(baseKey, tier) {
+                    return {
+                        inscriptionNumber: `${baseKey} • T${tier}`,
+                        archetype: { baseKey, title: baseKey },
+                        badges: tierBadges(tier),
+                        metrics: {
+                            activityScore: 55,
+                            daysAlive: 478,
+                            txCount: 12988,
+                            netWorthUSD: 123.45,
+                            lpValueUSD: 157,
+                            inscriptionStats: {
+                                runes: 7,
+                                brc20: 5,
+                                ordinals: 99,
+                                totalCollections: 42
+                            }
+                        }
+                    };
+                }
+
+                async function init() {
+                    const root = document.getElementById('matrix');
+                    if (!root) return;
+
+                    const lib = window.FennecIDLib;
+                    if (!lib || typeof lib.createCard !== 'function') {
+                        root.innerHTML = '<div class="subtitle">FennecIDLib not available.</div>';
+                        return;
+                    }
+
+                    let config = null;
+                    try {
+                        config = typeof lib.loadConfig === 'function' ? await lib.loadConfig() : null;
+                    } catch (_) {}
+
+                    ARCHETYPES.forEach(baseKey => {
+                        const label = document.createElement('div');
+                        label.className = 'row-label';
+                        label.textContent = baseKey;
+                        root.appendChild(label);
+
+                        for (let tier = 0; tier <= 3; tier++) {
+                            const cell = document.createElement('div');
+                            cell.className = 'cell';
+                            cell.innerHTML = `
+                                <div class="cell-title">
+                                    <div class="tier-name">Tier ${tier}</div>
+                                    <div class="tier-note">${tierNote(tier)}</div>
+                                </div>
+                                <div class="card-host"></div>
+                            `;
+                            cell.querySelector('.card-host').appendChild(
+                                lib.createCard(makeDna(baseKey, tier), config || undefined)
+                            );
+                            root.appendChild(cell);
+                        }
+                    });
+                }
+
+                if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+                else init();
+            })();
+        </script>
+    </body>
+</html>

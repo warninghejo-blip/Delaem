@@ -5,7 +5,23 @@
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Fennec ID • MERCHANT • Evolution Preview</title>
         <link rel="stylesheet" href="./_shared.css" />
-        <link rel="stylesheet" href="./archetype-effects.css" />
+        <style>
+            html,
+            body {
+                overflow: auto;
+                height: auto;
+            }
+            .grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+                gap: 16px;
+                align-items: start;
+            }
+            .tile .card-host {
+                display: flex;
+                justify-content: center;
+            }
+        </style>
     </head>
     <body>
         <div class="container">
@@ -25,58 +41,11 @@
                 </div>
             </div>
 
-            <p class="subtitle">Side-by-side preview of Tier 0 → Tier 3 (same animations/overlays as live).</p>
+            <p class="subtitle">Live-render Tier 0 → Tier 3 (generated via <code>FennecIDLib.createCard()</code>).</p>
 
-            <div class="grid">
-                <div class="tile">
-                    <div class="tile-head">
-                        <div class="tier-name">Tier 0</div>
-                        <div class="tier-note">Dormant</div>
-                    </div>
-                    <div class="preview-card">
-                        <img src="../img/merchant.png" class="img-tier-0" alt="MERCHANT Tier 0" />
-                        <div class="shade"></div>
-                    </div>
-                </div>
+            <div class="grid" id="grid"></div>
 
-                <div class="tile">
-                    <div class="tile-head">
-                        <div class="tier-name">Tier 1</div>
-                        <div class="tier-note">Awakening</div>
-                    </div>
-                    <div class="preview-card">
-                        <img src="../img/merchant.png" class="anim-tier-1" alt="MERCHANT Tier 1" />
-                        <div class="overlay-MERCHANT" style="opacity: 0.18"></div>
-                        <div class="shade"></div>
-                    </div>
-                </div>
-
-                <div class="tile">
-                    <div class="tile-head">
-                        <div class="tier-name">Tier 2</div>
-                        <div class="tier-note">Empowered</div>
-                    </div>
-                    <div class="preview-card">
-                        <img src="../img/merchant.png" class="anim-tier-2-shine" alt="MERCHANT Tier 2" />
-                        <div class="overlay-MERCHANT" style="opacity: 0.3"></div>
-                        <div class="shade"></div>
-                    </div>
-                </div>
-
-                <div class="tile">
-                    <div class="tile-head">
-                        <div class="tier-name">Tier 3</div>
-                        <div class="tier-note">Unleashed</div>
-                    </div>
-                    <div class="preview-card">
-                        <img src="../img/merchant.png" class="anim-MERCHANT" alt="MERCHANT Tier 3" />
-                        <div class="overlay-MERCHANT"></div>
-                        <div class="shade"></div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="footer">Note: MERCHANT is the global VFX profile used for all classes except ENGINEER.</div>
+            <div class="footer">Tip: hover for tilt, click to flip.</div>
         </div>
 
         <script>
@@ -89,6 +58,96 @@
             })();
         </script>
 
-        <script src="./_shared.js"></script>
+        <script src="../recursive_inscriptions/fennec_lib_v2.js"></script>
+        <script>
+            (function () {
+                const BADGES = [
+                    'GENESIS',
+                    'WHALE',
+                    'PROVIDER',
+                    'FENNEC MAXI',
+                    'ARTIFACT HUNTER',
+                    'RUNE KEEPER',
+                    'MEMPOOL RIDER',
+                    'SAND SWEEPER'
+                ];
+
+                function fixPage() {
+                    try {
+                        document.documentElement.style.setProperty('overflow', 'auto', 'important');
+                        document.body.style.setProperty('overflow', 'auto', 'important');
+                        document.documentElement.style.setProperty('height', 'auto', 'important');
+                        document.body.style.setProperty('height', 'auto', 'important');
+                        document.documentElement.style.setProperty('background', '#050505', 'important');
+                        document.body.style.setProperty('background', '#050505', 'important');
+                    } catch (_) {}
+                }
+
+                function tierBadges(tier) {
+                    if (tier === 0) return [];
+                    if (tier === 1) return BADGES.slice(0, 2);
+                    if (tier === 2) return BADGES.slice(0, 4);
+                    return BADGES.slice(0, 6);
+                }
+
+                function makeDna(baseKey, tier) {
+                    return {
+                        inscriptionNumber: `${baseKey} • T${tier}`,
+                        archetype: { baseKey, title: baseKey },
+                        badges: tierBadges(tier),
+                        metrics: {
+                            activityScore: 55,
+                            daysAlive: 478,
+                            txCount: 12988,
+                            netWorthUSD: 123.45,
+                            lpValueUSD: 157,
+                            inscriptionStats: {
+                                runes: 7,
+                                brc20: 5,
+                                ordinals: 99,
+                                totalCollections: 42
+                            }
+                        }
+                    };
+                }
+
+                async function init() {
+                    const root = document.getElementById('grid');
+                    if (!root) return;
+
+                    const lib = window.FennecIDLib;
+                    if (!lib || typeof lib.createCard !== 'function') {
+                        root.innerHTML = '<div class="subtitle">FennecIDLib not available.</div>';
+                        return;
+                    }
+
+                    let config = null;
+                    try {
+                        config = typeof lib.loadConfig === 'function' ? await lib.loadConfig() : null;
+                    } catch (_) {}
+
+                    const baseKey = 'MERCHANT';
+                    for (let tier = 0; tier <= 3; tier++) {
+                        const tile = document.createElement('div');
+                        tile.className = 'tile';
+                        tile.innerHTML = `
+                            <div class="tile-head">
+                                <div class="tier-name">Tier ${tier}</div>
+                                <div class="tier-note">Badges: ${tierBadges(tier).length}</div>
+                            </div>
+                            <div class="card-host"></div>
+                        `;
+                        const host = tile.querySelector('.card-host');
+                        host.appendChild(lib.createCard(makeDna(baseKey, tier), config || undefined));
+                        root.appendChild(tile);
+                    }
+
+                    fixPage();
+                }
+
+                if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+                else init();
+            })();
+        </script>
     </body>
 </html>

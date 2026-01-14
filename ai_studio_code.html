@@ -1,0 +1,653 @@
+--- START OF FILE asset_prep_v2.html ---
+
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Fennec ID - Asset Prep V2 (Fixed)</title>
+        <style>
+            :root {
+                --bg: #060607;
+                --panel: rgba(255, 255, 255, 0.06);
+                --line: rgba(255, 255, 255, 0.1);
+                --text: rgba(255, 255, 255, 0.92);
+                --muted: rgba(255, 255, 255, 0.65);
+                --fennec: #ff6b35;
+                --tier0: #a1a1aa;
+                --tier1: #4ade80;
+                --tier2: #60a5fa;
+                --tier3: #facc15;
+                --unique: #d8b4fe; /* Purple for Prime/Singularity */
+            }
+            html,
+            body {
+                margin: 0;
+                padding: 0;
+                background:
+                    radial-gradient(1200px 900px at 50% -20%, rgba(255, 107, 53, 0.15), transparent 60%),
+                    radial-gradient(900px 700px at 30% 120%, rgba(59, 130, 246, 0.12), transparent 60%), var(--bg);
+                color: var(--text);
+                font-family:
+                    system-ui,
+                    -apple-system,
+                    sans-serif;
+            }
+            .wrap {
+                max-width: 1100px;
+                margin: 0 auto;
+                padding: 20px 16px 48px;
+            }
+            h1 {
+                margin: 0;
+                font-size: 18px;
+                letter-spacing: 0.1em;
+                text-transform: uppercase;
+                color: var(--fennec);
+            }
+            .sub {
+                margin-top: 8px;
+                color: var(--muted);
+                font-size: 13px;
+                line-height: 1.5;
+            }
+            .panel {
+                margin-top: 14px;
+                background: var(--panel);
+                border: 1px solid var(--line);
+                border-radius: 16px;
+                padding: 16px;
+            }
+            .row {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 12px;
+                align-items: center;
+            }
+            label {
+                display: flex;
+                gap: 8px;
+                align-items: center;
+                font-size: 12px;
+                color: var(--muted);
+                font-weight: 600;
+                text-transform: uppercase;
+            }
+            input[type='number'],
+            select {
+                width: 80px;
+                padding: 8px 10px;
+                border-radius: 8px;
+                border: 1px solid rgba(255, 255, 255, 0.14);
+                background: rgba(0, 0, 0, 0.3);
+                color: var(--text);
+                font-family: monospace;
+            }
+            button {
+                cursor: pointer;
+                padding: 12px 16px;
+                border-radius: 10px;
+                border: 1px solid rgba(255, 255, 255, 0.14);
+                background: rgba(255, 107, 53, 0.15);
+                color: var(--text);
+                font-weight: 800;
+                letter-spacing: 0.05em;
+                text-transform: uppercase;
+                transition: all 0.2s;
+            }
+            button:hover {
+                background: rgba(255, 107, 53, 0.25);
+                border-color: var(--fennec);
+            }
+            .log {
+                margin-top: 14px;
+                white-space: pre-wrap;
+                font-size: 11px;
+                font-family: monospace;
+                color: rgba(255, 255, 255, 0.7);
+                line-height: 1.4;
+                max-height: 200px;
+                overflow-y: auto;
+                background: rgba(0, 0, 0, 0.3);
+                padding: 10px;
+                border-radius: 8px;
+            }
+            .grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+                gap: 10px;
+                margin-top: 12px;
+            }
+            .card {
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 12px;
+                padding: 8px;
+                background: rgba(0, 0, 0, 0.2);
+                transition: 0.2s;
+            }
+            .card.found {
+                border-color: rgba(34, 197, 94, 0.4);
+                background: rgba(34, 197, 94, 0.05);
+            }
+            .card.missing {
+                opacity: 0.5;
+            }
+            .card b {
+                display: block;
+                font-size: 10px;
+                letter-spacing: 0.05em;
+                text-transform: uppercase;
+                margin-bottom: 4px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .card span {
+                display: block;
+                color: var(--muted);
+                font-size: 9px;
+                font-family: monospace;
+                word-break: break-all;
+            }
+            .thumb {
+                margin-top: 6px;
+                width: 100%;
+                aspect-ratio: 1/1;
+                border-radius: 8px;
+                border: 1px solid rgba(255, 255, 255, 0.05);
+                background: rgba(0, 0, 0, 0.3);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                overflow: hidden;
+                position: relative;
+            }
+            .thumb img {
+                width: 100%;
+                height: 100%;
+                object-fit: contain;
+            }
+            .t0 {
+                color: var(--tier0);
+            }
+            .t1 {
+                color: var(--tier1);
+            }
+            .t2 {
+                color: var(--tier2);
+            }
+            .t3 {
+                color: var(--tier3);
+            }
+            .unique {
+                color: var(--unique);
+            }
+
+            h2 {
+                margin: 24px 0 10px;
+                font-size: 14px;
+                text-transform: uppercase;
+                border-bottom: 1px solid var(--line);
+                padding-bottom: 6px;
+                color: var(--muted);
+            }
+        </style>
+    </head>
+    <body>
+        <div class="wrap">
+            <h1>Fennec ID — Asset Prep V2</h1>
+            <div class="sub">
+                Prepares images for inscription.<br />
+                <b>Evolution Classes:</b> Expects <code>name_t0.png</code> to <code>name_t3.png</code>.<br />
+                <b>Ultimate Classes (Prime/Singularity):</b> Expects just <code>prime.png</code> /
+                <code>singularity.png</code>.
+            </div>
+
+            <div class="panel">
+                <div class="row">
+                    <label>BG Width <input id="bgW" type="number" value="368" min="128" step="1" /></label>
+                    <label>BG Height <input id="bgH" type="number" value="656" min="128" step="1" /></label>
+                    <label>Max KB <input id="maxKB" type="number" value="365" min="32" step="1" /></label>
+                    <label
+                        >BG Format
+                        <select id="bgFmt">
+                            <option value="image/jpeg" selected>JPEG (Photo)</option>
+                            <option value="image/webp">WEBP (Efficient)</option>
+                            <option value="image/png">PNG (Lossless)</option>
+                        </select>
+                    </label>
+                    <label
+                        >BG Quality <input id="bgQ" type="number" value="0.82" min="0.3" max="0.98" step="0.01"
+                    /></label>
+                </div>
+                <div class="row">
+                    <label>Badge Size <input id="bdS" type="number" value="128" min="32" step="1" /></label>
+                    <label
+                        >Badge Format
+                        <select id="bdFmt">
+                            <option value="image/png" selected>PNG</option>
+                            <option value="image/webp">WEBP</option>
+                        </select>
+                    </label>
+                    <label
+                        >Badge Quality <input id="bdQ" type="number" value="0.92" min="0.3" max="0.98" step="0.01"
+                    /></label>
+                </div>
+
+                <div class="row" style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line)">
+                    <label style="flex-grow: 1">
+                        1. Select local "img" folder
+                        <input
+                            id="pickDir"
+                            type="file"
+                            webkitdirectory
+                            directory
+                            multiple
+                            style="
+                                width: 100%;
+                                margin-top: 5px;
+                                padding: 10px;
+                                background: rgba(255, 255, 255, 0.05);
+                                border-radius: 8px;
+                                border: 1px dashed var(--line);
+                            "
+                        />
+                    </label>
+                </div>
+
+                <div class="row" style="margin-top: 16px">
+                    <button id="dlBg">Download Backgrounds</button>
+                    <button id="dlBgT3">Download T3 (736x1312)</button>
+                    <button id="dlBd">Download Badges</button>
+                    <button id="dlMisc">Download Misc</button>
+                    <button id="dlAll" style="margin-left: auto; border-color: var(--fennec)">Download ALL</button>
+                </div>
+                <div id="log" class="log">Waiting for folder selection...</div>
+            </div>
+
+            <h2>Tiered Backgrounds (T0-T3)</h2>
+            <div id="list-bg-tiered" class="grid"></div>
+
+            <h2>Ultimate Backgrounds (Single)</h2>
+            <div id="list-bg-single" class="grid"></div>
+
+            <h2>Badges</h2>
+            <div id="list-bd" class="grid"></div>
+
+            <h2>Misc Assets</h2>
+            <div id="list-misc" class="grid"></div>
+        </div>
+
+        <script>
+            // --- CONFIGURATION ---
+
+            // 1. Tiered Archetypes (Will generate T0-T3)
+            const TIERED_ARCHETYPES = ['DRIFTER', 'MERCHANT', 'ENGINEER', 'SHAMAN', 'KEEPER', 'WALKER', 'LORD'];
+
+            // 2. Single Image Archetypes (Ultimate)
+            const SINGLE_ARCHETYPES = ['PRIME', 'SINGULARITY'];
+
+            // 3. Badges List (Old list only)
+            const BADGES_CONFIG = [
+                { key: 'GENESIS', file: 'badge_genesis.png' },
+                { key: 'WHALE', file: 'badge_whale.png' },
+                { key: 'PROVIDER', file: 'badge_provider.png' },
+                { key: 'FENNEC_MAXI', file: 'badge_maxi.png' },
+                { key: 'ARTIFACT_HUNTER', file: 'badge_collector.png' },
+                { key: 'RUNE_KEEPER', file: 'badge_rune.png' },
+                { key: 'MEMPOOL_RIDER', file: 'badge_mempool_rider.png' },
+                { key: 'SAND_SWEEPER', file: 'badge_sweeper.png' }
+            ];
+
+            // 4. Misc Assets
+            const MISC_CONFIG = [
+                { key: 'LOGO', file: 'phav.png' },
+                { key: 'HEART', file: 'heart.png' },
+                { key: 'WATERMARK', file: 'watermark.png' }
+            ];
+
+            // --- GENERATE LISTS ---
+
+            const BACKGROUNDS_TIERED = [];
+            TIERED_ARCHETYPES.forEach(arch => {
+                for (let i = 0; i <= 3; i++) {
+                    BACKGROUNDS_TIERED.push({
+                        key: `${arch}_T${i}`,
+                        file: `${arch.toLowerCase()}_t${i}.png`, // e.g. engineer_t0.png
+                        tier: i
+                    });
+                }
+            });
+
+            const BACKGROUNDS_SINGLE = [];
+            SINGLE_ARCHETYPES.forEach(arch => {
+                BACKGROUNDS_SINGLE.push({
+                    key: arch,
+                    file: `${arch.toLowerCase()}.png`, // e.g. prime.png
+                    isUnique: true
+                });
+            });
+
+            const ALL_BACKGROUNDS = [...BACKGROUNDS_TIERED, ...BACKGROUNDS_SINGLE];
+
+            // --- STATE & HELPERS ---
+
+            let pickedFilesByName = null;
+            let pickedThumbUrls = [];
+
+            function baseName(path) {
+                const s = String(path || '');
+                const parts = s.split(/[/\\]/);
+                return parts[parts.length - 1] || s;
+            }
+
+            function setPickedFiles(fileList) {
+                pickedFilesByName = {};
+                for (const f of Array.from(fileList || [])) {
+                    if (!f || !f.name) continue;
+                    pickedFilesByName[String(f.name).toLowerCase()] = f;
+                }
+            }
+
+            function pickedFileForPath(filename) {
+                if (!pickedFilesByName) return null;
+                const key = baseName(filename).toLowerCase();
+                return pickedFilesByName[key] || null;
+            }
+
+            function logLine(s) {
+                const el = document.getElementById('log');
+                el.textContent = (el.textContent ? el.textContent + '\n' : '') + s;
+                el.scrollTop = el.scrollHeight;
+            }
+
+            function clearLog() {
+                document.getElementById('log').textContent = '';
+            }
+
+            async function loadImg(filename) {
+                const picked = pickedFileForPath(filename);
+                if (picked) {
+                    const dataUrl = await new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(String(reader.result || ''));
+                        reader.onerror = () => reject(new Error('Read error: ' + picked.name));
+                        reader.readAsDataURL(picked);
+                    });
+                    return await new Promise((resolve, reject) => {
+                        const img = new Image();
+                        img.onload = () => resolve(img);
+                        img.onerror = () => reject(new Error('Decode error: ' + picked.name));
+                        img.src = dataUrl;
+                    });
+                }
+                throw new Error(`File not found: ${filename}`);
+            }
+
+            function drawContainBottom(ctx, img, outW, outH) {
+                ctx.clearRect(0, 0, outW, outH);
+                // Contain (no crop, centered)
+                const s = Math.min(outW / img.naturalWidth, outH / img.naturalHeight);
+                const w = img.naturalWidth * s;
+                const h = img.naturalHeight * s;
+                const x = (outW - w) / 2;
+                const y = (outH - h) / 2;
+                ctx.drawImage(img, x, y, w, h);
+            }
+
+            function drawContainCenter(ctx, img, outW, outH) {
+                ctx.clearRect(0, 0, outW, outH);
+                const s = Math.min(outW / img.naturalWidth, outH / img.naturalHeight);
+                const w = img.naturalWidth * s;
+                const h = img.naturalHeight * s;
+                const x = (outW - w) / 2;
+                const y = (outH - h) / 2;
+                ctx.drawImage(img, x, y, w, h);
+            }
+
+            async function downloadBlob(blob, filename) {
+                if (!blob) throw new Error('Encoding failed: ' + filename);
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+            }
+
+            async function canvasToBlob(canvas, mimeType, quality) {
+                return await new Promise(resolve => canvas.toBlob(resolve, mimeType, quality));
+            }
+
+            async function encodeCanvasUnderLimit(canvas, { mimeType, quality, maxBytes }) {
+                const limit = Number(maxBytes || 0) || 0;
+                let q = typeof quality === 'number' ? quality : 0.9;
+                const minQ = 0.5;
+
+                for (let i = 0; i < 10; i++) {
+                    const blob = await canvasToBlob(canvas, mimeType, q);
+                    if (!limit || (blob && blob.size <= limit)) return { blob, quality: q, scaled: 1 };
+                    if (mimeType === 'image/png') return { blob, quality: 1, scaled: 1 };
+                    q = Math.max(minQ, q - 0.05);
+                }
+
+                let scale = 0.9;
+                for (let s = 0; s < 5; s++) {
+                    const w = Math.max(64, Math.round(canvas.width * scale));
+                    const h = Math.max(64, Math.round(canvas.height * scale));
+                    const tmp = document.createElement('canvas');
+                    tmp.width = w;
+                    tmp.height = h;
+                    const tctx = tmp.getContext('2d');
+                    tctx.imageSmoothingQuality = 'high';
+                    tctx.drawImage(canvas, 0, 0, w, h);
+                    const blob = await canvasToBlob(tmp, mimeType, q);
+                    if (!limit || (blob && blob.size <= limit)) return { blob, quality: q, scaled: scale };
+                    scale *= 0.9;
+                }
+                return { blob: await canvasToBlob(canvas, mimeType, q), quality: q, scaled: scale };
+            }
+
+            async function processList(items, outW, outH, maxKB, mimeType, quality, drawFn, namingFn) {
+                const maxBytes = Math.max(16 * 1024, Math.floor(maxKB * 1024));
+                const canvas = document.createElement('canvas');
+                canvas.width = outW;
+                canvas.height = outH;
+                const ctx = canvas.getContext('2d');
+
+                let count = 0;
+                for (const it of items) {
+                    try {
+                        if (!pickedFileForPath(it.file)) {
+                            logLine(`SKIP: ${it.file} (not found)`);
+                            continue;
+                        }
+                        logLine(`Processing ${it.file}...`);
+                        const img = await loadImg(it.file);
+                        drawFn(ctx, img, outW, outH);
+                        const encoded = await encodeCanvasUnderLimit(canvas, {
+                            mimeType,
+                            quality: mimeType === 'image/png' ? undefined : quality,
+                            maxBytes
+                        });
+                        const ext = mimeType === 'image/webp' ? 'webp' : mimeType === 'image/png' ? 'png' : 'jpg';
+                        const kb = (encoded.blob.size / 1024).toFixed(1);
+                        const outName = namingFn(it, ext);
+                        logLine(`  -> SAVED: ${outName} (${kb} KB)`);
+                        await downloadBlob(encoded.blob, outName);
+                        count++;
+                    } catch (e) {
+                        logLine(`  -> FAILED: ${it.file} - ${e.message}`);
+                    }
+                }
+                return count;
+            }
+
+            // --- ACTIONS ---
+
+            async function downloadBackgrounds() {
+                const outW = Number(document.getElementById('bgW').value) || 720;
+                const outH = Number(document.getElementById('bgH').value) || 1040;
+                const maxKB = Number(document.getElementById('maxKB').value) || 365;
+                const fmt = document.getElementById('bgFmt').value;
+                const q = Number(document.getElementById('bgQ').value);
+
+                logLine('--- Starting Backgrounds ---');
+                const n = await processList(
+                    ALL_BACKGROUNDS,
+                    outW,
+                    outH,
+                    maxKB,
+                    fmt,
+                    q,
+                    drawContainCenter,
+                    (it, ext) => {
+                        // if it has tier: bg_name_tx_WxH.ext
+                        // if single: bg_name_WxH.ext
+                        const base = it.key
+                            .toLowerCase()
+                            .replace('_t0', '')
+                            .replace('_t1', '')
+                            .replace('_t2', '')
+                            .replace('_t3', '');
+                        if (it.tier !== undefined) {
+                            return `bg_${base}_t${it.tier}_${outW}x${outH}.${ext}`;
+                        } else {
+                            return `bg_${base}_${outW}x${outH}.${ext}`;
+                        }
+                    }
+                );
+                logLine(`--- Finished Backgrounds (${n}) ---`);
+            }
+
+            async function downloadBadges() {
+                const size = Number(document.getElementById('bdS').value) || 128;
+                const maxKB = Number(document.getElementById('maxKB').value) || 365;
+                const fmt = document.getElementById('bdFmt').value;
+                const q = Number(document.getElementById('bdQ').value);
+
+                logLine('--- Starting Badges ---');
+                const n = await processList(BADGES_CONFIG, size, size, maxKB, fmt, q, drawContainCenter, (it, ext) => {
+                    return `badge_${it.key.toLowerCase()}_${size}x${size}.${ext}`;
+                });
+                logLine(`--- Finished Badges (${n}) ---`);
+            }
+
+            async function downloadMisc() {
+                const size = 256;
+                const maxKB = Number(document.getElementById('maxKB').value) || 365;
+                const fmt = 'image/png';
+                logLine('--- Starting Misc ---');
+                const n = await processList(MISC_CONFIG, size, size, maxKB, fmt, 1, drawContainCenter, (it, ext) => {
+                    if (it.key === 'LOGO') return `logo.${ext}`;
+                    if (it.key === 'HEART') return `heart.${ext}`;
+                    if (it.key === 'WATERMARK') return `watermark.${ext}`;
+                    return `misc_${it.key.toLowerCase()}.${ext}`;
+                });
+                logLine(`--- Finished Misc (${n}) ---`);
+            }
+
+            async function downloadBackgroundsT3() {
+                const outW = 736;
+                const outH = 1312;
+                const maxKB = Number(document.getElementById('maxKB').value) || 365;
+                const fmt = document.getElementById('bgFmt').value;
+                const q = Number(document.getElementById('bgQ').value);
+
+                logLine('--- Starting Tier 3 Backgrounds (736x1312) ---');
+                const tier3Items = ALL_BACKGROUNDS.filter(it => it.tier === 3 || it.isUnique);
+                const n = await processList(tier3Items, outW, outH, maxKB, fmt, q, drawContainCenter, (it, ext) => {
+                    const base = it.key.toLowerCase().replace('_t3', '');
+                    if (it.tier === 3) {
+                        return `bg_${base}_t3_${outW}x${outH}.${ext}`;
+                    } else {
+                        return `bg_${base}_${outW}x${outH}.${ext}`;
+                    }
+                });
+                logLine(`--- Finished Tier 3 Backgrounds (${n}) ---`);
+            }
+
+            async function downloadAll() {
+                clearLog();
+                await downloadBackgrounds();
+                await downloadBackgroundsT3();
+                await downloadBadges();
+                await downloadMisc();
+                logLine('=== ALL DOWNLOADS COMPLETE ===');
+            }
+
+            // --- UI ---
+
+            function renderGrid(containerId, items) {
+                const el = document.getElementById(containerId);
+                el.innerHTML = '';
+                for (const it of items) {
+                    const card = document.createElement('div');
+                    card.className = 'card';
+                    const picked = pickedFileForPath(it.file);
+                    if (picked) card.classList.add('found');
+                    else card.classList.add('missing');
+
+                    let label = it.key;
+                    if (it.tier !== undefined) label = `<span class="t${it.tier}">${it.key}</span>`;
+                    else if (it.isUnique) label = `<span class="unique">${it.key}</span>`;
+
+                    card.innerHTML = `<b>${label}</b><span>${it.file}</span>`;
+                    const thumb = document.createElement('div');
+                    thumb.className = 'thumb';
+                    if (picked) {
+                        const img = document.createElement('img');
+                        const u = URL.createObjectURL(picked);
+                        pickedThumbUrls.push(u);
+                        img.src = u;
+                        thumb.appendChild(img);
+                    } else {
+                        thumb.innerHTML = `<span style="font-size:20px; color:var(--line);">?</span>`;
+                    }
+                    card.appendChild(thumb);
+                    el.appendChild(card);
+                }
+            }
+
+            function refreshUI() {
+                for (const u of pickedThumbUrls) URL.revokeObjectURL(u);
+                pickedThumbUrls = [];
+                renderGrid('list-bg-tiered', BACKGROUNDS_TIERED);
+                renderGrid('list-bg-single', BACKGROUNDS_SINGLE);
+                renderGrid('list-bd', BADGES_CONFIG);
+                renderGrid('list-misc', MISC_CONFIG);
+            }
+
+            document
+                .getElementById('dlBg')
+                .addEventListener('click', () => downloadBackgrounds().catch(e => logLine('ERR: ' + e)));
+            document
+                .getElementById('dlBgT3')
+                .addEventListener('click', () => downloadBackgroundsT3().catch(e => logLine('ERR: ' + e)));
+            document
+                .getElementById('dlBd')
+                .addEventListener('click', () => downloadBadges().catch(e => logLine('ERR: ' + e)));
+            document
+                .getElementById('dlMisc')
+                .addEventListener('click', () => downloadMisc().catch(e => logLine('ERR: ' + e)));
+            document
+                .getElementById('dlAll')
+                .addEventListener('click', () => downloadAll().catch(e => logLine('ERR: ' + e)));
+
+            document.getElementById('pickDir').addEventListener('change', e => {
+                try {
+                    setPickedFiles(e.target.files);
+                    refreshUI();
+                    clearLog();
+                    logLine(`Loaded ${e.target.files.length} files.`);
+                } catch (err) {
+                    logLine('Error: ' + err.message);
+                }
+            });
+
+            refreshUI();
+        </script>
+    </body>
+</html>

@@ -196,6 +196,7 @@ a:hover {
     object-position: center top;
     transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
     will-change: transform, filter;
+    animation: none !important;
 }
 
 .card-glare {
@@ -225,6 +226,8 @@ a:hover {
 .preview-card [class^='overlay-'],
 .preview-card [class*=' overlay-'] {
     z-index: 12 !important;
+    display: block !important;
+    pointer-events: none;
 }
 
 .vfx-webgl {
@@ -582,6 +585,96 @@ a:hover {
     100% {
         filter: saturate(1.16) contrast(1.06) brightness(1.06);
     }
+}
+
+@keyframes imgTierTimeFlow {
+    0% {
+        filter: contrast(1.08) brightness(1.03) saturate(1.08) hue-rotate(0deg);
+        transform: scale(1.01) skewX(0deg);
+    }
+    50% {
+        filter: contrast(1.16) brightness(1.08) saturate(1.18) hue-rotate(6deg);
+        transform: scale(1.015) skewX(-0.6deg);
+    }
+    100% {
+        filter: contrast(1.08) brightness(1.03) saturate(1.08) hue-rotate(0deg);
+        transform: scale(1.01) skewX(0deg);
+    }
+}
+
+.anim-tier-2-time {
+    animation: imgTierTimeFlow 5.2s ease-in-out infinite;
+}
+
+@keyframes imgTierRunes {
+    0% {
+        filter: contrast(1.06) brightness(1.02) saturate(1.12) hue-rotate(0deg);
+    }
+    100% {
+        filter: contrast(1.14) brightness(1.07) saturate(1.26) hue-rotate(10deg);
+    }
+}
+
+.anim-tier-2-runes {
+    animation: imgTierRunes 4.6s ease-in-out infinite alternate;
+}
+
+@keyframes imgTierSmoke {
+    0% {
+        filter: contrast(1.06) brightness(1.02) saturate(1.16) hue-rotate(0deg) blur(0px);
+    }
+    50% {
+        filter: contrast(1.12) brightness(1.06) saturate(1.32) hue-rotate(-10deg) blur(0.3px);
+    }
+    100% {
+        filter: contrast(1.06) brightness(1.02) saturate(1.16) hue-rotate(0deg) blur(0px);
+    }
+}
+
+.anim-tier-2-smoke {
+    animation: imgTierSmoke 5.6s ease-in-out infinite;
+}
+
+@keyframes imgTierCrownTide {
+    0% {
+        filter: contrast(1.08) brightness(1.05) saturate(1.1);
+    }
+    100% {
+        filter: contrast(1.14) brightness(1.14) saturate(1.22);
+    }
+}
+
+.anim-tier-2-crown {
+    animation: imgTierCrownTide 4.2s ease-in-out infinite alternate;
+}
+
+@keyframes imgTierRadiance {
+    0% {
+        filter: brightness(1.08) contrast(1.06) saturate(1.08);
+    }
+    100% {
+        filter: brightness(1.22) contrast(1.12) saturate(1.16);
+    }
+}
+
+.anim-tier-2-radiance {
+    animation: imgTierRadiance 3.8s ease-in-out infinite alternate;
+}
+
+@keyframes imgTierDeepChaos {
+    0% {
+        filter: contrast(1.1) brightness(1.02) saturate(1.08) hue-rotate(0deg);
+    }
+    50% {
+        filter: contrast(1.26) brightness(1.06) saturate(1.18) hue-rotate(150deg);
+    }
+    100% {
+        filter: contrast(1.1) brightness(1.02) saturate(1.08) hue-rotate(360deg);
+    }
+}
+
+.anim-tier-2-chaos {
+    animation: imgTierDeepChaos 6.8s linear infinite;
 }
 
 .anim-DRIFTER {

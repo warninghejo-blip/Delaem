@@ -49,6 +49,9 @@ if not exist node_modules\ (
     echo [OK] Dependencies already installed.
 )
 
+echo.
+echo [BUILD] Skipping loading widget build (React widget deprecated).
+
 set "WRANGLER_LOCAL=node_modules\.bin\wrangler.cmd"
 set "WRANGLER_CMD="
 if exist "%WRANGLER_LOCAL%" (
@@ -98,12 +101,7 @@ echo.
 
 REM Deploy Pages
 echo [2/2] Deploying Pages (fennec-swap)...
-set "PAGES_DIR=.pages_upload"
-if exist "!PAGES_DIR!" rmdir /s /q "!PAGES_DIR!"
-robocopy . "!PAGES_DIR!" /E /XD node_modules backup .wrangler .git /XF img.rar *.rar >nul
-set "ROBO_EXIT_CODE=%errorlevel%"
-if errorlevel 8 goto :robocopy_fail
-
+set "PAGES_DIR=."
 set "PAGES_EXTRA_FLAGS=--commit-hash=0000000000000000000000000000000000000000 --commit-message=local --commit-dirty=true"
 where git >nul 2>&1
 if errorlevel 1 goto :skip_git_meta
@@ -113,8 +111,7 @@ set "PAGES_EXTRA_FLAGS=--commit-dirty=true"
 :skip_git_meta
 
 >>"%LOG_FILE%" echo.
->>"%LOG_FILE%" echo Prepared Pages upload dir: !PAGES_DIR!
->>"%LOG_FILE%" echo robocopy exit: !ROBO_EXIT_CODE!
+>>"%LOG_FILE%" echo Pages deploy dir: !PAGES_DIR!
 
 echo Command: wrangler pages deploy !PAGES_DIR! --project-name=fennec-swap !PAGES_EXTRA_FLAGS!
 echo.
@@ -136,15 +133,6 @@ if !PAGES_EXIT_CODE! neq 0 (
 )
 
 goto :after_pages
-
-:robocopy_fail
-echo.
-echo [ERROR] Failed to prepare Pages upload directory - robocopy exit !ROBO_EXIT_CODE!.
->>"%LOG_FILE%" echo.
->>"%LOG_FILE%" echo [ERROR] robocopy failed with exit !ROBO_EXIT_CODE!
-call :showlogtail
-pause
-goto :fail
 
 :after_pages
 

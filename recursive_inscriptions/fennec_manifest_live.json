@@ -1,26 +1,26 @@
-{
+﻿{
     "schema": "fennec.manifest.v1",
-    "version": 1,
-    "updated_at": "2025-12-29T11:00:00.000Z",
+    "version": 3,
+    "updated_at": "2025-12-30T13:41:00.0000000Z",
     "latest": {
-        "lib": "ec53f51e93f5d510cc8ba134b25ee016a8cae85294f18d8844b2469ef15e189di0",
-        "config": "e40e1bba154f3f5421ab727d6a92e92b10eda1670a122e293d6f8ce8867b54afi0"
+        "lib": "961a15289f9ec4fb594a7543a5bc4cd94ce6feed2c7df994e8bfa456ada28a5ai0",
+        "config": "ffc50199c26d7037f82ef6a3d8406e6eb483c8a24a3dc396a39768e171f58225i0"
     },
     "inscriptions": [
         {
-            "inscriptionId": "8593e591de03ecbdd041121ee76256c22e51eaf670bfa0887358c6d3d50ad5ddi0",
+            "inscriptionId": "961a15289f9ec4fb594a7543a5bc4cd94ce6feed2c7df994e8bfa456ada28a5ai0",
             "address": "bc1pnfcj0e6u6ca9x7lxxakezmp6322uupp374agwruus58ezvf6u4wsvlyvd5",
-            "filename": "fennec_manifest_live.json"
+            "filename": "fennec_lib_v2.js"
         },
         {
-            "inscriptionId": "1fef4177e5679f4f03655efa8d9a79d4add7a084cc440085ec6b8512da513fc6i0",
+            "inscriptionId": "4b53ad92c9d98ee7d6c053461d3752af4e6ff34e56029f4f9b14bae1800f2852i0",
             "address": "bc1pnfcj0e6u6ca9x7lxxakezmp6322uupp374agwruus58ezvf6u4wsvlyvd5",
             "filename": "fennec_child_template_v1.html"
         },
         {
-            "inscriptionId": "ec53f51e93f5d510cc8ba134b25ee016a8cae85294f18d8844b2469ef15e189di0",
+            "inscriptionId": "ffc50199c26d7037f82ef6a3d8406e6eb483c8a24a3dc396a39768e171f58225i0",
             "address": "bc1pnfcj0e6u6ca9x7lxxakezmp6322uupp374agwruus58ezvf6u4wsvlyvd5",
-            "filename": "fennec_lib_v1.js"
+            "filename": "fennec_config_v1.json"
         }
     ]
 }

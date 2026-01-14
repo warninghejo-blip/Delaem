@@ -15,6 +15,14 @@ module.exports = async (req, res) => {
     try {
         const originUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
         const targetUrl = new URL(BACKEND);
+        const originPath = String(originUrl.pathname || '/');
+        let upstreamPath = originPath;
+        if (upstreamPath.startsWith('/api/proxy.js')) upstreamPath = upstreamPath.slice('/api/proxy.js'.length);
+        else if (upstreamPath.startsWith('/api/proxy')) upstreamPath = upstreamPath.slice('/api/proxy'.length);
+        else if (upstreamPath.startsWith('/api')) upstreamPath = upstreamPath.slice('/api'.length);
+        upstreamPath = String(upstreamPath || '/');
+        if (!upstreamPath.startsWith('/')) upstreamPath = '/' + upstreamPath;
+        targetUrl.pathname = upstreamPath;
         targetUrl.search = originUrl.search;
 
         const method = (req.method || 'GET').toUpperCase();
@@ -22,6 +30,12 @@ module.exports = async (req, res) => {
         const headers = {};
         const contentType = req.headers['content-type'];
         if (contentType) headers['content-type'] = contentType;
+        const originHeader = req.headers['origin'];
+        if (originHeader) headers['origin'] = originHeader;
+        const refererHeader = req.headers['referer'];
+        if (refererHeader) headers['referer'] = refererHeader;
+        const userAgentHeader = req.headers['user-agent'];
+        if (userAgentHeader) headers['user-agent'] = userAgentHeader;
         if (req.headers['x-public-key']) headers['x-public-key'] = req.headers['x-public-key'];
         if (req.headers['x-address']) headers['x-address'] = req.headers['x-address'];
 

@@ -1,0 +1,1289 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta name="fennec-embed" content="0" />
+        <meta name="fennec-manifest" content="/recursive_inscriptions/fennec_manifest_live.json" />
+        <meta
+            name="description"
+            content="$FENNEC - The Desert Fox Protocol. Swap, deposit and withdraw on Fractal's fastest DEX with Fennec ID."
+        />
+        <title>$FENNEC | The Desert Fox Protocol</title>
+
+        <!-- FAVICONS -->
+        <link rel="icon" href="img/phav.png" type="image/png" />
+        <link rel="apple-touch-icon" href="img/phav.png" />
+
+        <!-- Цвет браузерной строки (чтобы на мобилках сливалось с шапкой) -->
+        <meta name="theme-color" content="#000000" />
+
+        <!-- Preconnect для ускорения загрузки -->
+        <link rel="preconnect" href="https://cdn.tailwindcss.com" />
+        <link rel="preconnect" href="https://cdnjs.cloudflare.com" />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link rel="dns-prefetch" href="https://fennec-api.warninghejo.workers.dev" />
+        <link rel="dns-prefetch" href="https://open-api-fractal.unisat.io" />
+
+        <!-- Критичные стили -->
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet" />
+        <link
+            href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&family=Outfit:wght@300;500;700;900&display=swap"
+            rel="stylesheet"
+            media="print"
+            onload="this.media = 'all'"
+        />
+        <noscript
+            ><link
+                href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&family=Outfit:wght@300;500;700;900&rel=stylesheet"
+        /></noscript>
+
+        <script src="assets/storage_shim.js?v=2026-01-13-1"></script>
+        <link rel="stylesheet" href="assets/app.css?v=2026-01-13-1" />
+    </head>
+    <body>
+        <!-- DEV CONSOLE INTERCEPTOR - AI Error Analysis -->
+        <script src="assets/dev_console_interceptor.js?v=2026-01-13-1"></script>
+        <div id="animatedBackground" class="fixed top-0 left-0 w-full h-full pointer-events-none" style="z-index: 0">
+            <canvas id="animatedBackgroundCanvas" class="w-full h-full"></canvas>
+        </div>
+
+        <!-- Notifications Container -->
+        <div
+            id="notificationsContainer"
+            style="
+                position: fixed;
+                top: 80px;
+                right: 20px;
+                z-index: 10000;
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+                align-items: flex-end;
+            "
+        ></div>
+
+        <!-- LIVE TICKER -->
+        <div
+            id="liveTickerBar"
+            class="fixed bottom-0 left-0 right-0 w-full z-[100] py-1 overflow-hidden pointer-events-none flex items-center"
+            style="
+                background: linear-gradient(
+                    90deg,
+                    rgba(13, 6, 4, 0.95) 0%,
+                    rgba(20, 10, 6, 0.98) 50%,
+                    rgba(13, 6, 4, 0.95) 100%
+                );
+                border-top: 1px solid rgba(255, 107, 53, 0.15);
+                box-shadow:
+                    0 -4px 20px rgba(255, 107, 53, 0.08),
+                    inset 0 1px 0 rgba(255, 107, 53, 0.1);
+                backdrop-filter: blur(12px);
+                height: 28px;
+            "
+        >
+            <div
+                class="ticker-container"
+                style="
+                    overflow: hidden;
+                    position: relative;
+                    width: 100%;
+                    height: 100%;
+                    display: flex;
+                    align-items: center;
+                "
+            >
+                <div
+                    class="ticker-content"
+                    id="liveTicker"
+                    style="
+                        display: inline-flex;
+                        align-items: center;
+                        white-space: nowrap;
+                        font-size: 13px;
+                        font-weight: 700;
+                        letter-spacing: 0.05em;
+                        text-shadow: 0 0 20px rgba(255, 107, 53, 0.3);
+                        line-height: 28px;
+                    "
+                >
+                    <div class="ticker-marquee">
+                        <span class="ticker-item text-fennec"
+                            ><img
+                                src="img/phav.png"
+                                class="w-5 h-5 inline-block object-contain"
+                                style="filter: drop-shadow(0 0 8px rgba(255, 107, 53, 0.5))"
+                            />
+                            <span>FENNEC SYSTEM ONLINE</span></span
+                        >
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- HEADER -->
+        <header class="fixed w-full z-50 border-b border-white/5 bg-[#2c1a12]/90 backdrop-blur-md">
+            <div class="max-w-6xl mx-auto px-4 h-16 grid grid-cols-[1fr_auto_1fr] items-center">
+                <a class="flex items-center gap-3 cursor-pointer group" href="index.html" data-link>
+                    <img
+                        src="img/phav.png"
+                        class="neon-logo w-9 h-9 rounded-full border border-fennec/50 group-hover:scale-110 transition shadow-lg shadow-fennec/20 object-contain"
+                    />
+                    <div>
+                        <h1
+                            class="font-display font-bold text-xl leading-none tracking-tight text-fennec"
+                            style="text-shadow: 0 0 18px rgba(255, 107, 53, 0.35)"
+                        >
+                            FENNEC
+                        </h1>
+                    </div>
+                </a>
+
+                <nav class="flex gap-8 text-xs font-bold text-gray-400 uppercase tracking-widest justify-self-center">
+                    <a
+                        href="index.html"
+                        class="nav-link hover:text-white transition py-5"
+                        id="nav-home"
+                        data-t="nav_home"
+                        data-link
+                    >
+                        VISION
+                    </a>
+                    <a
+                        href="terminal.html"
+                        class="nav-link hover:text-white transition py-5 active"
+                        id="nav-terminal"
+                        data-t="nav_terminal"
+                        data-link
+                    >
+                        TERMINAL
+                    </a>
+                    <a
+                        href="id.html"
+                        class="nav-link hover:text-white transition py-5"
+                        id="nav-audit"
+                        data-t="nav_audit"
+                        data-link
+                    >
+                        FENNEC ID
+                    </a>
+                </nav>
+
+                <div class="flex items-center gap-3 justify-self-end">
+                    <a
+                        href="https://x.com/FennecBTC"
+                        target="_blank"
+                        class="text-gray-400 hover:text-white transition flex items-center justify-center text-2xl w-10 h-10"
+                        aria-label="Twitter"
+                    >
+                        <i class="fab fa-twitter"></i>
+                    </a>
+                    <a
+                        href="https://t.me/FennecBTC"
+                        target="_blank"
+                        class="text-gray-400 hover:text-white transition flex items-center justify-center text-2xl w-10 h-10"
+                        aria-label="Telegram"
+                    >
+                        <i class="fab fa-telegram"></i>
+                    </a>
+                    <button
+                        onclick="window.manualRefresh()"
+                        id="refreshBtn"
+                        class="hidden bg-gradient-to-br from-fennec/25 via-orange-600/20 to-orange-700/15 text-fennec px-3.5 py-2 rounded-xl font-bold hover:brightness-125 hover:scale-105 transition-all duration-200 text-[11px] border border-fennec/40 flex items-center gap-2 shadow-[0_0_20px_rgba(255,107,53,0.3)] hover:shadow-[0_0_32px_rgba(255,107,53,0.5)] backdrop-blur-sm"
+                    >
+                        <i id="refreshIcon" class="fas fa-sync-alt"></i>
+                        <span id="refreshText">REFRESH</span>
+                        <span id="refreshTimer" class="hidden text-[10px] opacity-75"></span>
+                    </button>
+                    <button
+                        onclick="window.disconnectWallet()"
+                        id="disconnectBtn"
+                        class="hidden bg-red-600/20 text-red-400 px-4 py-2 rounded-lg font-bold hover:bg-red-600/30 transition text-xs border border-red-500/50 flex items-center gap-2"
+                    >
+                        <i class="fas fa-sign-out-alt"></i> <span id="disconnectBtnText">DISCONNECT</span>
+                    </button>
+                    <button
+                        onclick="window.connectWallet()"
+                        id="connectBtn"
+                        class="bg-gradient-to-r from-fennec to-orange-600 text-black px-4 py-2 rounded-lg font-bold hover:brightness-110 transition text-xs shadow-[0_0_20px_rgba(255,107,53,0.4)] flex items-center gap-2"
+                        data-t="connect"
+                    >
+                        <i class="fas fa-wallet"></i> <span>CONNECT</span>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <main id="router-view" class="router-view">
+            <!-- === SECTION 2: TERMINAL (SWAP) === -->
+            <section
+                id="sec-terminal"
+                class="page-section active flex flex-col justify-start pt-32 pb-20 px-4 max-w-4xl mx-auto relative z-10"
+            >
+                <!-- CHART -->
+                <div class="glass-panel p-6 rounded-2xl mb-6">
+                    <div class="flex justify-between items-end mb-4">
+                        <div>
+                            <div class="text-[10px] text-gray-500 uppercase tracking-widest font-bold">
+                                Market Price (FB)
+                            </div>
+                            <div class="flex items-baseline gap-3">
+                                <div class="text-3xl font-bold font-mono text-white tracking-tighter" id="chartPrice">
+                                    --
+                                </div>
+                                <div class="text-lg font-bold" id="chartPriceChange">--</div>
+                            </div>
+                        </div>
+                        <div class="flex gap-2">
+                            <button
+                                onclick="setChartTimeframe('1h')"
+                                class="text-xs px-2 py-1 rounded bg-white/5 hover:bg-fennec/20 transition"
+                            >
+                                1H
+                            </button>
+                            <button
+                                onclick="setChartTimeframe('24h')"
+                                class="text-xs px-2 py-1 rounded bg-white/5 hover:bg-fennec/20 transition"
+                            >
+                                24H
+                            </button>
+                            <button
+                                onclick="setChartTimeframe('7d')"
+                                class="text-xs px-2 py-1 rounded bg-white/5 hover:bg-fennec/20 transition"
+                            >
+                                7D
+                            </button>
+                            <button
+                                onclick="setChartTimeframe('30d')"
+                                class="text-xs px-2 py-1 rounded bg-white/5 hover:bg-fennec/20 transition"
+                            >
+                                30D
+                            </button>
+                            <button
+                                onclick="setChartTimeframe('all')"
+                                class="text-xs px-2 py-1 rounded bg-white/5 hover:bg-fennec/20 transition"
+                            >
+                                ALL
+                            </button>
+                        </div>
+                    </div>
+                    <div class="chart-container" style="height: 250px; width: 100%; position: relative">
+                        <canvas id="priceChart"></canvas>
+                    </div>
+                    <!-- Market Stats -->
+                    <div class="grid grid-cols-4 gap-4 mt-3 pt-4 border-t border-white/5">
+                        <div class="text-center">
+                            <div class="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">
+                                24h Volume
+                            </div>
+                            <div class="text-lg font-bold font-mono text-white" id="volume24h">--</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">
+                                7d Volume
+                            </div>
+                            <div class="text-lg font-bold font-mono text-white" id="volume7d">--</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">
+                                30d Volume
+                            </div>
+                            <div class="text-lg font-bold font-mono text-white" id="volume30d">--</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">
+                                Market Cap
+                            </div>
+                            <div class="text-lg font-bold font-mono text-white" id="marketCap">--</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MAIN INTERFACE -->
+                <div
+                    class="glass-panel p-6 rounded-2xl relative shadow-[0_0_50px_rgba(0,0,0,0.3)] border border-fennec/20"
+                >
+                    <div
+                        id="swapSuccessOverlay"
+                        class="absolute inset-0 z-40 items-center justify-center"
+                        style="display: none"
+                    >
+                        <div
+                            class="px-6 py-4 rounded-2xl bg-black/70 border border-fennec/30 backdrop-blur-md flex items-center gap-3"
+                        >
+                            <div
+                                class="w-10 h-10 rounded-full bg-fennec/15 border border-fennec/40 flex items-center justify-center text-fennec text-xl"
+                            >
+                                <i class="fas fa-check"></i>
+                            </div>
+                            <div>
+                                <div class="text-xs tracking-[0.25em] text-gray-300 uppercase font-bold">
+                                    Swap confirmed
+                                </div>
+                                <div class="text-[11px] text-gray-400">Balances are updating…</div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- TABS -->
+                    <div class="flex border-b border-white/10 mb-6">
+                        <button class="tab-btn active w-1/4" onclick="switchTab('swap')" id="tab-swap" data-t="swap">
+                            SWAP
+                        </button>
+                        <button class="tab-btn w-1/4" onclick="switchTab('deposit')" id="tab-deposit" data-t="deposit">
+                            DEPOSIT
+                        </button>
+                        <button
+                            class="tab-btn w-1/4"
+                            onclick="switchTab('withdraw')"
+                            id="tab-withdraw"
+                            data-t="withdraw"
+                        >
+                            WITHDRAW
+                        </button>
+                        <button class="tab-btn w-1/4" onclick="switchTab('pending')" id="tab-pending" data-t="activity">
+                            PENDING
+                        </button>
+                    </div>
+
+                    <!-- SWAP TAB -->
+                    <div id="view-swap" class="tab-content active">
+                        <div class="flex gap-2 mb-4">
+                            <div
+                                onclick="setSwapPair('FB_FENNEC')"
+                                id="pair-fb-fennec"
+                                class="flex-1 py-2 text-xs font-bold border border-fennec bg-fennec/10 text-fennec rounded-lg transition hover:bg-fennec/20 cursor-pointer"
+                                role="button"
+                                tabindex="0"
+                            >
+                                <div class="flex flex-col items-center justify-center leading-tight">
+                                    <div>FB / FENNEC</div>
+                                </div>
+                            </div>
+                            <div
+                                onclick="setSwapPair('BTC_FB')"
+                                id="pair-btc-fb"
+                                class="flex-1 py-2 text-xs font-bold border border-white/10 text-gray-500 hover:text-white rounded-lg transition hover:bg-white/5 cursor-pointer"
+                                role="button"
+                                tabindex="0"
+                            >
+                                <div class="flex flex-col items-center justify-center leading-tight">
+                                    <div>BTC / FB</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div
+                            class="bg-black/40 rounded-xl p-4 mb-2 border border-white/5 focus-within:border-fennec/50 transition"
+                        >
+                            <div class="flex justify-between text-xs mb-2 text-gray-400">
+                                <span data-t="you_pay" class="font-bold">YOU PAY</span>
+                                <div class="flex gap-2 items-center">
+                                    <span id="balIn" class="font-mono text-[10px] text-gray-500">Bal: --</span>
+                                    <button
+                                        onclick="setMaxAmount()"
+                                        class="text-[10px] text-fennec font-bold hover:text-white px-2 py-0.5 bg-fennec/10 rounded"
+                                    >
+                                        MAX
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="flex justify-between items-center relative">
+                                <input
+                                    type="number"
+                                    id="swapIn"
+                                    placeholder="0.0"
+                                    class="bg-transparent text-3xl font-bold w-full outline-none text-white placeholder-gray-700"
+                                    oninput="debounceQuote()"
+                                />
+                                <div class="flex flex-col items-center gap-1">
+                                    <div
+                                        class="flex items-center gap-2 px-3 py-1.5 cursor-pointer min-w-[80px] justify-center"
+                                    >
+                                        <img id="iconIn" src="img/FB.png" class="w-6 h-6 rounded-full flex-shrink-0" />
+                                        <span id="tickerIn" class="font-bold text-sm whitespace-nowrap">FB</span>
+                                    </div>
+                                    <!-- Liquidity Plus Button moved under the coins -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flex justify-center items-center gap-4 -my-5 relative z-10">
+                            <button
+                                onclick="switchDir()"
+                                class="bg-[#2b1d1a] border border-fennec/30 p-3 rounded-full text-fennec shadow-xl hover:scale-110 transition hover:border-fennec rotate-90"
+                                title="Switch direction"
+                            >
+                                <i class="fas fa-exchange-alt"></i>
+                            </button>
+                        </div>
+
+                        <div class="bg-black/40 rounded-xl p-4 mt-2 border border-white/5">
+                            <div class="flex justify-between text-xs mb-2 text-gray-400">
+                                <span data-t="you_receive" class="font-bold">YOU RECEIVE</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <input
+                                    type="number"
+                                    id="swapOut"
+                                    placeholder="0.0"
+                                    class="bg-transparent text-3xl font-bold w-full outline-none text-white placeholder-gray-700"
+                                    oninput="debounceReverse()"
+                                />
+                                <div class="flex items-center gap-2 px-3 py-1.5 min-w-[80px] justify-center">
+                                    <img id="iconOut" src="img/phav.png" class="w-6 h-6 rounded-full flex-shrink-0" />
+                                    <span id="tickerOut" class="font-bold text-sm whitespace-nowrap">FENNEC</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flex justify-between items-center text-xs text-gray-400 mt-4 px-2 font-mono gap-3">
+                            <span id="rateVal" class="font-semibold">Rate: --</span>
+                            <button
+                                type="button"
+                                onclick="openAddLiquidityModal(currentSwapPair)"
+                                class="px-4 py-2 text-[11px] font-black bg-fennec/15 text-fennec border border-fennec/30 rounded-lg hover:bg-fennec/25 transition shadow-lg tracking-widest"
+                                title="Manage Liquidity"
+                            >
+                                Liquidity
+                            </button>
+                        </div>
+
+                        <button
+                            onclick="doSwap()"
+                            id="swapBtn"
+                            class="w-full bg-fennec text-black font-black text-xl py-4 rounded-xl mt-6 hover:bg-white hover:scale-[1.01] transition shadow-[0_0_20px_rgba(255,107,53,0.3)] tracking-wide flex items-center justify-center gap-2"
+                            data-t="swap_action"
+                        >
+                            <img src="img/phav.png" class="w-6 h-6 inline-block object-contain" /> GET FENNEC
+                        </button>
+
+                        <!-- Recent Swaps -->
+                        <div class="mt-6 pt-4 border-t border-white/10">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="text-[10px] font-bold text-gray-500 uppercase tracking-widest"
+                                    >Recent Swaps</span
+                                >
+                            </div>
+                            <div id="swapHistory" class="space-y-2 max-h-40 overflow-y-auto scrollbar-thin">
+                                <div class="text-center py-4 text-gray-600 text-xs">No swaps yet</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- DEPOSIT TAB -->
+                    <div id="view-deposit" class="tab-content hidden">
+                        <div class="flex gap-2 mb-6">
+                            <button
+                                onclick="setDepositToken('BTC')"
+                                id="dep-btc"
+                                class="flex-1 py-2 text-xs font-bold border border-fennec bg-fennec/10 text-fennec rounded-lg"
+                            >
+                                BTC
+                            </button>
+                            <button
+                                onclick="setDepositToken('sFB')"
+                                id="dep-sfb"
+                                class="flex-1 py-2 text-xs font-bold border border-white/10 text-gray-500 hover:text-white rounded-lg"
+                            >
+                                FB
+                            </button>
+                            <button
+                                onclick="setDepositToken('FENNEC')"
+                                id="dep-fennec"
+                                class="flex-1 py-2 text-xs font-bold border border-white/10 text-gray-500 hover:text-white rounded-lg"
+                            >
+                                FENNEC
+                            </button>
+                        </div>
+
+                        <div id="dep-native-ui">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="text-xs text-gray-400" id="depBalance">Balance: --</span>
+                                <div class="flex items-center gap-2">
+                                    <button
+                                        onclick="setMaxDepositAmount()"
+                                        class="text-[10px] text-fennec font-bold hover:text-white px-2 py-0.5 bg-fennec/10 rounded"
+                                    >
+                                        MAX
+                                    </button>
+                                </div>
+                            </div>
+                            <div
+                                class="bg-black/40 rounded-xl p-4 mb-4 border border-white/5 flex justify-between items-center"
+                            >
+                                <input
+                                    type="number"
+                                    id="depAmount"
+                                    placeholder="0.001"
+                                    class="bg-transparent text-2xl font-bold w-full outline-none text-white"
+                                />
+                                <span class="font-bold text-gray-400" id="depTickerLabel">BTC</span>
+                            </div>
+
+                            <!-- Fee Selection -->
+                            <div class="mb-4">
+                                <div class="text-[10px] font-bold text-gray-400 tracking-wider mb-2">NETWORK FEE</div>
+                                <div class="flex gap-2" id="depFeeSelector">
+                                    <button
+                                        onclick="setDepositFee('medium')"
+                                        id="dep-fee-medium"
+                                        class="flex-1 py-2 text-xs font-bold border border-fennec bg-fennec/10 text-fennec rounded-lg transition"
+                                    >
+                                        <div>MEDIUM</div>
+                                        <div class="text-[10px] text-fennec/70" id="dep-fee-medium-value">--</div>
+                                    </button>
+                                    <button
+                                        onclick="setDepositFee('fast')"
+                                        id="dep-fee-fast"
+                                        class="flex-1 py-2 text-xs font-bold border border-white/10 text-gray-500 hover:text-white rounded-lg transition"
+                                    >
+                                        <div>FAST</div>
+                                        <div class="text-[10px] text-gray-600" id="dep-fee-fast-value">--</div>
+                                    </button>
+                                    <button
+                                        onclick="setDepositFee('custom')"
+                                        id="dep-fee-custom"
+                                        class="flex-1 py-2 text-xs font-bold border border-white/10 text-gray-500 hover:text-white rounded-lg transition"
+                                    >
+                                        <div>CUSTOM</div>
+                                        <input
+                                            type="number"
+                                            id="dep-fee-custom-input"
+                                            placeholder="sat/vB"
+                                            min="1"
+                                            step="1"
+                                            class="text-[10px] bg-black/40 border border-white/20 rounded w-full text-center mt-1 text-white px-1"
+                                            style="display: none"
+                                            onchange="setDepositFeeCustom(this.value)"
+                                        />
+                                    </button>
+                                </div>
+                            </div>
+
+                            <button
+                                onclick="doDeposit()"
+                                id="btnDeposit"
+                                class="w-full bg-fennec text-black font-black text-base py-4 rounded-xl hover:bg-white hover:scale-[1.01] transition shadow-[0_0_20px_rgba(255,107,53,0.3)] tracking-wide"
+                                data-t="deposit_btc_btn"
+                            >
+                                DEPOSIT
+                            </button>
+                        </div>
+                        <div id="dep-brc20-ui" style="display: none">
+                            <div class="mb-4">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="text-xs text-gray-400"
+                                        >Available: <span id="fennecAvailable">--</span></span
+                                    >
+                                    <span class="text-xs text-gray-400"
+                                        >Transferable: <span id="fennecTransferable">--</span></span
+                                    >
+                                </div>
+                            </div>
+                            <div id="inscriptionCards" class="grid grid-cols-3 gap-3 mb-4 max-h-64 overflow-y-auto">
+                                <div class="text-center py-8 text-gray-500 text-xs">Loading inscriptions...</div>
+                            </div>
+                            <div class="border-t border-white/10 pt-3 mb-4">
+                                <div class="flex items-center justify-between text-sm">
+                                    <span class="text-gray-400">Selected:</span>
+                                    <span class="text-white font-bold" id="selectedAmount">0</span>
+                                    <span class="text-fennec font-bold">FENNEC</span>
+                                </div>
+                            </div>
+                            <button
+                                onclick="depositSelectedInscriptions()"
+                                id="btnDepositSelected"
+                                class="w-full bg-fennec text-black font-black text-base py-4 rounded-xl hover:bg-white transition duration-200 shadow-lg mb-3"
+                                disabled
+                            >
+                                DEPOSIT
+                            </button>
+                            <div class="text-center py-2 border-t border-white/10">
+                                <div class="mb-3">
+                                    <div class="flex items-center justify-center gap-2 mb-2">
+                                        <input
+                                            type="number"
+                                            id="depFennecAmount"
+                                            placeholder="Enter amount"
+                                            min="0.00000001"
+                                            step="0.00000001"
+                                            class="bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-white text-sm w-32 text-center focus:border-fennec transition"
+                                            style="outline: none"
+                                        />
+                                        <span class="text-xs text-gray-400">FENNEC</span>
+                                    </div>
+                                    <button
+                                        onclick="setMaxFennecAmount()"
+                                        class="text-[10px] text-fennec hover:text-white bg-fennec/10 px-3 py-1 rounded border border-fennec/30 mb-2"
+                                    >
+                                        Use Max
+                                    </button>
+                                </div>
+                                <button
+                                    onclick="createFennecInscription()"
+                                    id="btnCreateInscription"
+                                    class="text-xs text-fennec hover:text-white bg-fennec/10 px-4 py-2 rounded-lg border border-fennec/30 transition hover:bg-fennec/20"
+                                >
+                                    Create Transfer Inscription
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Recent Deposits -->
+                        <div class="mt-6 pt-4 border-t border-white/10">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="text-[10px] font-bold text-gray-500 uppercase tracking-widest"
+                                    >Recent Deposits</span
+                                >
+                            </div>
+                            <div id="depositHistory" class="space-y-2 max-h-40 overflow-y-auto scrollbar-thin">
+                                <div class="text-center py-4 text-gray-600 text-xs">No deposits yet</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- WITHDRAW TAB -->
+                    <div id="view-withdraw" class="tab-content hidden">
+                        <div class="flex gap-2 mb-6">
+                            <button
+                                onclick="setWithdrawToken('sFB')"
+                                id="wd-sfb"
+                                class="flex-1 py-2 text-xs font-bold border border-fennec bg-fennec/10 text-fennec rounded-lg"
+                            >
+                                FB
+                            </button>
+                            <button
+                                onclick="setWithdrawToken('FENNEC')"
+                                id="wd-fennec"
+                                class="flex-1 py-2 text-xs font-bold border border-white/10 text-gray-500 hover:text-white rounded-lg"
+                            >
+                                FENNEC
+                            </button>
+                        </div>
+                        <div class="flex justify-between text-xs mb-2 text-gray-400">
+                            <span id="wd-bal">Available: --</span>
+                            <div class="flex items-center gap-2">
+                                <button
+                                    onclick="setMaxWithdrawAmount()"
+                                    class="text-[10px] text-fennec font-bold hover:text-white px-2 py-0.5 bg-fennec/10 rounded"
+                                >
+                                    MAX
+                                </button>
+                            </div>
+                        </div>
+                        <div
+                            class="bg-black/40 rounded-xl p-4 mb-4 border border-white/5 flex justify-between items-center"
+                        >
+                            <input
+                                type="number"
+                                id="wdAmount"
+                                placeholder="0.0"
+                                class="bg-transparent text-2xl font-bold w-full outline-none text-white"
+                            />
+                            <span class="font-bold text-gray-400" id="wdTickerLabel">FB</span>
+                        </div>
+
+                        <!-- Fee Selection -->
+                        <div class="mb-4">
+                            <div class="text-[10px] font-bold text-gray-400 tracking-wider mb-2">NETWORK FEE</div>
+                            <div class="flex gap-2" id="wdFeeSelector">
+                                <button
+                                    onclick="setWithdrawFee('medium')"
+                                    id="wd-fee-medium"
+                                    class="flex-1 py-2 text-xs font-bold border border-fennec bg-fennec/10 text-fennec rounded-lg transition"
+                                >
+                                    <div>MEDIUM</div>
+                                    <div class="text-[10px] text-fennec/70" id="wd-fee-medium-value">--</div>
+                                </button>
+                                <button
+                                    onclick="setWithdrawFee('fast')"
+                                    id="wd-fee-fast"
+                                    class="flex-1 py-2 text-xs font-bold border border-white/10 text-gray-500 hover:text-white rounded-lg transition"
+                                >
+                                    <div>FAST</div>
+                                    <div class="text-[10px] text-gray-600" id="wd-fee-fast-value">--</div>
+                                </button>
+                                <button
+                                    onclick="setWithdrawFee('custom')"
+                                    id="wd-fee-custom"
+                                    class="flex-1 py-2 text-xs font-bold border border-white/10 text-gray-500 hover:text-white rounded-lg transition"
+                                >
+                                    <div>CUSTOM</div>
+                                    <input
+                                        type="number"
+                                        id="wd-fee-custom-input"
+                                        placeholder="sat/vB"
+                                        min="1"
+                                        step="1"
+                                        class="text-[10px] bg-black/40 border border-white/20 rounded w-full text-center mt-1 text-white px-1"
+                                        style="display: none"
+                                        onchange="setWithdrawFeeCustom(this.value)"
+                                    />
+                                </button>
+                            </div>
+                        </div>
+
+                        <button
+                            onclick="doWithdraw()"
+                            id="btnWithdraw"
+                            class="w-full bg-fennec text-black font-black text-base py-4 rounded-xl hover:bg-white hover:scale-[1.01] transition shadow-[0_0_20px_rgba(255,107,53,0.3)] tracking-wide"
+                            data-t="withdraw_btn"
+                        >
+                            WITHDRAW
+                        </button>
+
+                        <!-- Recent Withdrawals -->
+                        <div class="mt-6 pt-4 border-t border-white/10">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="text-[10px] font-bold text-gray-500 uppercase tracking-widest"
+                                    >Recent Withdrawals</span
+                                >
+                            </div>
+                            <div id="withdrawHistory" class="space-y-2 max-h-40 overflow-y-auto scrollbar-thin">
+                                <div class="text-center py-4 text-gray-600 text-xs">No withdrawals yet</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- PENDING TAB -->
+                    <div id="view-pending" class="tab-content hidden">
+                        <div
+                            class="text-xs text-gray-500 font-bold uppercase mb-3 tracking-widest flex justify-between"
+                        >
+                            <span>Pending Operations</span>
+                        </div>
+                        <div id="pendingOperations" class="space-y-2 max-h-80 overflow-y-auto scrollbar-thin">
+                            <div class="text-center py-8 text-gray-600 text-xs">No pending operations</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- FOOTER SPACER -->
+        <div class="h-10"></div>
+
+        <!-- MODALS -->
+        <div
+            id="errorModal"
+            class="modal-overlay hidden"
+            onclick="document.getElementById('errorModal').classList.add('hidden')"
+        >
+            <div class="modal-box border-red-500/30" onclick="event.stopPropagation()">
+                <h3 class="text-lg font-bold text-red-500 mb-2">Error</h3>
+                <p id="errorMsg" class="text-gray-400 text-xs font-mono mb-4 break-all"></p>
+                <button
+                    onclick="document.getElementById('errorModal').classList.add('hidden')"
+                    class="w-full bg-white/10 py-2 rounded-lg hover:bg-white/20 text-white text-sm font-bold"
+                >
+                    CLOSE
+                </button>
+            </div>
+        </div>
+        <div
+            id="successModal"
+            class="modal-overlay hidden"
+            onclick="document.getElementById('successModal').classList.add('hidden')"
+        >
+            <div class="modal-box border-green-500/30 text-center" onclick="event.stopPropagation()">
+                <div class="text-4xl mb-3"></div>
+                <h3 class="text-lg font-bold text-green-500 mb-2">Success!</h3>
+                <p class="text-gray-400 text-xs mb-4 font-mono break-all bg-black/30 p-2 rounded" id="successTxId"></p>
+                <button
+                    onclick="document.getElementById('successModal').classList.add('hidden')"
+                    class="w-full bg-green-600 text-black font-bold py-2 rounded-lg hover:bg-green-500 transition"
+                >
+                    OK
+                </button>
+            </div>
+        </div>
+        <div
+            id="depositLinkModal"
+            class="modal-overlay hidden"
+            onclick="document.getElementById('depositLinkModal').classList.add('hidden')"
+        >
+            <div class="modal-box border-fennec/30 text-center" onclick="event.stopPropagation()">
+                <i class="fas fa-wallet text-3xl text-fennec mb-4"></i>
+                <h3 class="text-xl font-bold text-white mb-2">Insufficient Funds</h3>
+                <button
+                    onclick="
+                        switchTab('deposit');
+                        document.getElementById('depositLinkModal').classList.add('hidden');
+                    "
+                    class="w-full bg-fennec text-black py-3 rounded-xl font-bold hover:bg-white transition"
+                >
+                    GO TO DEPOSIT
+                </button>
+            </div>
+        </div>
+
+        <div id="addLiquidityModal" class="modal-overlay hidden" onclick="closeAddLiquidityModal()">
+            <div
+                class="modal-box border-fennec/30"
+                style="max-width: 560px; width: 92%; padding: 22px"
+                onclick="event.stopPropagation()"
+            >
+                <div class="flex justify-between items-center mb-4">
+                    <div>
+                        <div class="text-[10px] text-gray-400 uppercase tracking-widest font-bold">Liquidity</div>
+                        <div class="text-lg font-black text-white">Manage Liquidity</div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <button type="button" onclick="closeAddLiquidityModal()" class="text-gray-500 hover:text-white">
+                            ✕
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Tabs -->
+                <div class="flex gap-2 mb-3">
+                    <button
+                        id="liqTabAdd"
+                        onclick="switchLiquidityTab('add')"
+                        class="flex-1 px-4 py-2 rounded-xl bg-fennec/15 border border-fennec/30 text-white font-black transition"
+                    >
+                        ADD
+                    </button>
+                    <button
+                        id="liqTabRemove"
+                        onclick="switchLiquidityTab('remove')"
+                        class="flex-1 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-gray-400 font-black transition"
+                    >
+                        REMOVE
+                    </button>
+                </div>
+
+                <!-- Pair selector hidden - pair is fixed when modal opens -->
+                <div class="hidden grid grid-cols-2 gap-2" id="liqPairSwitcher">
+                    <button
+                        id="liqPairFBF"
+                        onclick="selectLiquidityPair('FB_FENNEC')"
+                        class="px-4 py-3 rounded-xl bg-fennec/10 border border-fennec/25 text-white font-black hover:bg-fennec/15 hover:border-fennec/45 transition"
+                    >
+                        FB / FENNEC
+                    </button>
+                    <button
+                        id="liqPairBFB"
+                        onclick="selectLiquidityPair('BTC_FB')"
+                        class="px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white font-black hover:bg-white/10 hover:border-white/20 transition"
+                    >
+                        BTC / FB
+                    </button>
+                </div>
+
+                <!-- Add Liquidity Tab Content -->
+                <div id="liqAddContent">
+                    <!-- Display fixed pair -->
+                    <div class="text-center py-3 px-4 bg-fennec/10 border border-fennec/30 rounded-xl">
+                        <div class="text-xs text-gray-400 uppercase tracking-widest mb-1">Selected Pair</div>
+                        <div id="liqFixedPairDisplay" class="text-xl font-black text-white">FB / FENNEC</div>
+                    </div>
+
+                    <div id="liqSideRow" class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div
+                            id="liqMyPos"
+                            class="hidden bg-black/40 border border-white/10 rounded-xl p-3 md:col-span-2"
+                        >
+                            <div class="flex items-center justify-between gap-3">
+                                <div class="text-[10px] text-gray-400 uppercase tracking-widest font-bold">
+                                    Your Position
+                                </div>
+                                <button
+                                    type="button"
+                                    onclick="refreshMyLiquidityForSelectedPair(true)"
+                                    class="text-[10px] text-fennec hover:text-white underline decoration-dotted"
+                                >
+                                    Refresh
+                                </button>
+                            </div>
+                            <div id="liqMyPosBody" class="mt-3 text-gray-200">--</div>
+                        </div>
+
+                        <div
+                            id="liqWithdrawPanel"
+                            class="hidden bg-black/40 border border-white/10 rounded-xl p-3 md:col-span-1"
+                        >
+                            <div class="flex items-center justify-between gap-3">
+                                <div class="text-[10px] text-gray-400 uppercase tracking-widest font-bold">
+                                    Liquidity
+                                </div>
+                                <button
+                                    id="liqWithdrawBtn"
+                                    type="button"
+                                    onclick="openRemoveLiquidityModal()"
+                                    class="text-[10px] font-black bg-fennec/15 text-fennec border border-fennec/30 px-2 py-1 rounded-lg hover:bg-fennec/25 transition"
+                                >
+                                    Withdraw
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div class="bg-black/40 border border-white/10 rounded-xl p-3">
+                            <div class="flex items-center justify-between text-[10px] text-gray-400 font-bold">
+                                <span id="liqTick0Label">FENNEC</span>
+                                <button
+                                    onclick="setMaxLiqAmount(0)"
+                                    class="text-[10px] text-fennec font-bold hover:text-white px-2 py-0.5 bg-fennec/10 rounded"
+                                    type="button"
+                                >
+                                    MAX
+                                </button>
+                            </div>
+                            <input
+                                id="liqAmount0"
+                                type="number"
+                                inputmode="decimal"
+                                placeholder="0.0"
+                                class="mt-2 w-full bg-transparent text-2xl font-black outline-none text-white placeholder-gray-700"
+                                oninput="syncLiquidityAmounts(0)"
+                            />
+                            <div class="text-[10px] text-gray-500 mt-1">Bal: <span id="liqBal0">--</span></div>
+                        </div>
+                        <div class="bg-black/40 border border-white/10 rounded-xl p-3">
+                            <div class="flex items-center justify-between text-[10px] text-gray-400 font-bold">
+                                <span id="liqTick1Label">FB</span>
+                                <button
+                                    onclick="setMaxLiqAmount(1)"
+                                    class="text-[10px] text-fennec font-bold hover:text-white px-2 py-0.5 bg-fennec/10 rounded"
+                                    type="button"
+                                >
+                                    MAX
+                                </button>
+                            </div>
+                            <input
+                                id="liqAmount1"
+                                type="number"
+                                inputmode="decimal"
+                                placeholder="0.0"
+                                class="mt-2 w-full bg-transparent text-2xl font-black outline-none text-white placeholder-gray-700"
+                                oninput="syncLiquidityAmounts(1)"
+                            />
+                            <div class="text-[10px] text-gray-500 mt-1">Bal: <span id="liqBal1">--</span></div>
+                        </div>
+                    </div>
+
+                    <div class="mt-3 flex items-center justify-between text-[10px] text-gray-500 font-mono px-1">
+                        <span>Expected LP: <span id="liqExpectedLP" class="text-white font-bold">--</span></span>
+                    </div>
+
+                    <button
+                        onclick="doAddLiquidity()"
+                        id="liqSupplyBtn"
+                        class="mt-3 w-full bg-gradient-to-r from-fennec to-orange-400 text-black font-black text-base py-3 rounded-xl hover:brightness-110 transition opacity-50 cursor-not-allowed"
+                        disabled
+                    >
+                        SUPPLY
+                    </button>
+                </div>
+
+                <!-- Remove Liquidity Tab Content -->
+                <div id="liqRemoveContent" class="hidden">
+                    <div class="bg-black/40 border border-white/10 rounded-xl p-3">
+                        <div class="flex items-center justify-between text-[10px] text-gray-400 font-bold">
+                            <span>LP Amount</span>
+                            <button
+                                type="button"
+                                onclick="setMaxRemoveLp()"
+                                class="text-[10px] text-fennec font-bold hover:text-white px-2 py-0.5 bg-fennec/10 rounded"
+                            >
+                                MAX
+                            </button>
+                        </div>
+                        <input
+                            id="removeLpAmount"
+                            type="number"
+                            inputmode="decimal"
+                            placeholder="0.0"
+                            class="mt-2 w-full bg-transparent text-2xl font-black outline-none text-white placeholder-gray-700"
+                        />
+                        <div class="text-[10px] text-gray-500 mt-1">Your LP: <span id="removeLpBalance">--</span></div>
+                    </div>
+
+                    <div class="mt-3 flex items-center justify-between text-[10px] text-gray-500 font-mono px-1">
+                        <span>Est. Receive: <span id="removeReceive" class="text-white font-bold">--</span></span>
+                        <span class="text-gray-600">Fees in FB</span>
+                    </div>
+
+                    <button
+                        onclick="doRemoveLiquidity()"
+                        id="removeLiqBtn"
+                        class="mt-3 w-full bg-gradient-to-r from-fennec to-orange-400 text-black font-black text-base py-3 rounded-xl hover:brightness-110 transition opacity-50 cursor-not-allowed"
+                        disabled
+                    >
+                        WITHDRAW
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div id="removeLiquidityModal" class="modal-overlay hidden" onclick="closeRemoveLiquidityModal()">
+            <div
+                class="modal-box border-fennec/30"
+                style="max-width: 520px; width: 92%; padding: 22px"
+                onclick="event.stopPropagation()"
+            >
+                <div class="flex justify-between items-center mb-4">
+                    <div>
+                        <div class="text-[10px] text-gray-400 uppercase tracking-widest font-bold">
+                            Withdraw Liquidity
+                        </div>
+                        <div class="text-lg font-black text-white">Remove Liquidity</div>
+                    </div>
+                    <button type="button" onclick="closeRemoveLiquidityModal()" class="text-gray-500 hover:text-white">
+                        ✕
+                    </button>
+                </div>
+
+                <div class="bg-black/40 border border-white/10 rounded-xl p-3">
+                    <div class="flex items-center justify-between text-[10px] text-gray-400 font-bold">
+                        <span>LP Amount</span>
+                        <button
+                            type="button"
+                            onclick="setMaxRemoveLp()"
+                            class="text-[10px] text-fennec font-bold hover:text-white px-2 py-0.5 bg-fennec/10 rounded"
+                        >
+                            MAX
+                        </button>
+                    </div>
+                    <input
+                        id="removeLpAmount"
+                        type="number"
+                        inputmode="decimal"
+                        placeholder="0.0"
+                        class="mt-2 w-full bg-transparent text-2xl font-black outline-none text-white placeholder-gray-700"
+                    />
+                    <div class="text-[10px] text-gray-500 mt-1">Your LP: <span id="removeLpBalance">--</span></div>
+                </div>
+
+                <div class="mt-3 flex items-center justify-between text-[10px] text-gray-500 font-mono px-1">
+                    <span>Est. Receive: <span id="removeReceive" class="text-white font-bold">--</span></span>
+                    <span class="text-gray-600">Fees in FB</span>
+                </div>
+
+                <button
+                    onclick="doRemoveLiquidity()"
+                    id="removeLiqBtn"
+                    class="mt-3 w-full bg-white/10 border border-white/10 text-white font-black text-base py-3 rounded-xl hover:bg-white/15 transition"
+                >
+                    WITHDRAW
+                </button>
+            </div>
+        </div>
+
+        <div
+            id="inscriptionModal"
+            class="modal-overlay hidden"
+            onclick="document.getElementById('inscriptionModal').classList.add('hidden')"
+        >
+            <div class="modal-box" onclick="event.stopPropagation()">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-bold text-white">Select Inscription</h3>
+                    <button
+                        onclick="document.getElementById('inscriptionModal').classList.add('hidden')"
+                        class="text-gray-500 hover:text-white"
+                    >
+                        ✕
+                    </button>
+                </div>
+                <div id="inscList" class="max-h-60 overflow-y-auto space-y-2">
+                    <div class="text-center py-4 text-gray-500 text-xs">Loading...</div>
+                </div>
+            </div>
+        </div>
+        <div
+            id="switchWalletModal"
+            class="modal-overlay hidden"
+            onclick="document.getElementById('switchWalletModal').classList.add('hidden')"
+        >
+            <div class="modal-box border-fennec/30 text-center" onclick="event.stopPropagation()">
+                <i class="fas fa-exchange-alt text-3xl text-fennec mb-4"></i>
+                <h3 class="text-xl font-bold text-white mb-2">Switch Wallet?</h3>
+                <p class="text-gray-400 text-sm mb-4">
+                    You are about to switch from:<br /><span
+                        class="text-fennec font-mono text-xs"
+                        id="currentWalletAddress"
+                    ></span
+                    ><br /><br />Please confirm to continue.
+                </p>
+                <div class="flex gap-3">
+                    <button
+                        onclick="
+                            document.getElementById('switchWalletModal').classList.add('hidden');
+                            switchWalletConfirmed = true;
+                            window.connectWallet();
+                        "
+                        class="flex-1 bg-fennec text-black py-3 rounded-xl font-bold hover:bg-white transition"
+                    >
+                        CONFIRM</button
+                    ><button
+                        onclick="
+                            document.getElementById('switchWalletModal').classList.add('hidden');
+                            switchWalletConfirmed = false;
+                        "
+                        class="flex-1 bg-white/10 text-white py-3 rounded-xl font-bold hover:bg-white/20 transition"
+                    >
+                        CANCEL
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- WHALE WATCHER NOTIFICATION -->
+        <div
+            id="whaleWatcher"
+            class="whale-alert fixed bottom-4 right-4 bg-black/90 border border-fennec/50 p-4 rounded-xl shadow-[0_0_30px_rgba(255,107,53,0.3)] transform translate-y-[200%] transition-transform duration-500 z-50 flex items-center gap-4 max-w-sm hidden"
+        >
+            <div class="text-4xl"></div>
+            <div>
+                <div class="text-xs text-fennec font-bold uppercase tracking-widest mb-1">Whale Alert</div>
+                <div id="whaleMsg" class="text-sm text-white font-mono leading-tight">Someone just swapped 500 FB!</div>
+            </div>
+            <button
+                onclick="document.getElementById('whaleWatcher').classList.add('translate-y-[200%]')"
+                class="absolute top-2 right-2 text-gray-500 hover:text-white"
+            >
+                ×
+            </button>
+        </div>
+
+        <!-- Progress Tracking Modal -->
+        <div id="progressModal" class="modal-overlay hidden">
+            <div class="modal-box border-fennec/30 text-center" onclick="event.stopPropagation()">
+                <div class="text-4xl mb-4"><i class="fas fa-spinner fa-spin text-fennec"></i></div>
+                <h3 class="text-lg font-bold text-white mb-3" id="progressTitle">Processing...</h3>
+                <div class="bg-black/40 rounded-lg p-4 mb-4">
+                    <div class="flex justify-between text-xs mb-2">
+                        <span class="text-gray-400" id="progressStep">Waiting...</span
+                        ><span class="text-fennec font-bold" id="progressPercent">0%</span>
+                    </div>
+                    <div class="w-full bg-white/10 rounded-full h-2 overflow-hidden">
+                        <div
+                            id="progressBar"
+                            class="bg-gradient-to-r from-fennec to-sand h-full transition-all duration-300"
+                            style="width: 0%"
+                        ></div>
+                    </div>
+                </div>
+                <p class="text-gray-400 text-xs font-mono break-all bg-black/30 p-2 rounded mb-4" id="progressTxId"></p>
+                <button
+                    onclick="closeProgress()"
+                    class="w-full bg-white/10 py-2 rounded-lg hover:bg-white/20 text-white text-sm font-bold"
+                >
+                    CLOSE
+                </button>
+            </div>
+        </div>
+
+        <script src="js/router.js?v=2026-01-14-1"></script>
+        <script src="assets/app.js?v=2026-01-14-1"></script>
+
+        <!-- CHAT WIDGET -->
+        <div id="chatWidget" class="fixed bottom-12 right-6 z-50 flex flex-col items-end pointer-events-none">
+            <div
+                id="chatWindow"
+                class="mb-4 w-80 bg-[#1a100c]/95 backdrop-blur-xl border border-fennec/30 rounded-2xl shadow-[0_0_50px_rgba(255,107,53,0.15)] overflow-hidden transform origin-bottom-right scale-90 opacity-0 transition-all duration-300 pointer-events-auto hidden"
+            >
+                <div
+                    class="bg-gradient-to-r from-fennec/20 to-transparent p-3 border-b border-white/5 flex justify-between items-center"
+                >
+                    <div class="flex items-center gap-2">
+                        <div class="w-5 h-5 flex-shrink-0">
+                            <img src="img/FENNECAI.png" class="w-full h-full object-contain ai-avatar" />
+                        </div>
+                        <span class="text-xs font-mono font-bold text-fennec tracking-widest">ASSISTANT</span>
+                    </div>
+                    <button onclick="window.toggleChat()" class="text-gray-500 hover:text-white">✕</button>
+                </div>
+                <div class="px-3 py-2 border-b border-white/5 bg-black/10">
+                    <div class="flex flex-wrap gap-2 justify-center">
+                        <button
+                            onclick="oracleQuick('help')"
+                            class="text-[10px] font-bold px-2 py-1 rounded-full bg-white/5 border border-white/10 text-gray-300 hover:text-white hover:border-fennec/40 hover:bg-fennec/10 transition"
+                        >
+                            HELP
+                        </button>
+                        <button
+                            onclick="oracleQuick('prices')"
+                            class="text-[10px] font-bold px-2 py-1 rounded-full bg-white/5 border border-white/10 text-gray-300 hover:text-white hover:border-fennec/40 hover:bg-fennec/10 transition"
+                        >
+                            PRICE
+                        </button>
+                        <button
+                            onclick="oracleQuick('swap')"
+                            class="text-[10px] font-bold px-2 py-1 rounded-full bg-white/5 border border-white/10 text-gray-300 hover:text-white hover:border-fennec/40 hover:bg-fennec/10 transition"
+                        >
+                            SWAP
+                        </button>
+                        <button
+                            onclick="oracleQuick('id')"
+                            class="text-[10px] font-bold px-2 py-1 rounded-full bg-white/5 border border-white/10 text-gray-300 hover:text-white hover:border-fennec/40 hover:bg-fennec/10 transition"
+                        >
+                            FENNEC ID
+                        </button>
+                        <button
+                            onclick="oracleQuick('deposit')"
+                            class="text-[10px] font-bold px-2 py-1 rounded-full bg-white/5 border border-white/10 text-gray-300 hover:text-white hover:border-fennec/40 hover:bg-fennec/10 transition"
+                        >
+                            DEPOSIT
+                        </button>
+                        <button
+                            onclick="oracleQuick('withdraw')"
+                            class="text-[10px] font-bold px-2 py-1 rounded-full bg-white/5 border border-white/10 text-gray-300 hover:text-white hover:border-fennec/40 hover:bg-fennec/10 transition"
+                        >
+                            WITHDRAW
+                        </button>
+                        <button
+                            onclick="oracleQuick('clear')"
+                            class="text-[10px] font-bold px-2 py-1 rounded-full bg-white/5 border border-white/10 text-gray-300 hover:text-white hover:border-red-500/40 hover:bg-red-500/10 transition"
+                        >
+                            CLEAR
+                        </button>
+                    </div>
+                    <div id="chatLoading" class="hidden mt-2 text-[10px] text-gray-500 font-mono">
+                        Scanning the dunes...
+                    </div>
+                </div>
+                <div id="chatMessages" class="h-80 overflow-y-auto p-4 space-y-3 scrollbar-thin text-xs text-gray-300">
+                    <div class="flex gap-2 items-start">
+                        <div class="w-6 h-6 flex-shrink-0">
+                            <img src="img/FENNECAI.png" class="w-full h-full object-contain ai-avatar" />
+                        </div>
+                        <div class="bg-white/5 p-3 rounded-lg rounded-tl-none flex-1">
+                            Ask me anything about Fennec.
+                        </div>
+                    </div>
+                </div>
+                <div class="p-3 border-t border-white/10 bg-black/20 relative">
+                    <input
+                        type="text"
+                        id="chatInput"
+                        placeholder="Ask..."
+                        class="w-full bg-black/50 border border-white/10 rounded-lg pl-3 pr-12 py-3 text-xs text-white outline-none focus:border-fennec/50 transition"
+                        onkeypress="if (event.key === 'Enter') sendMessage();"
+                    />
+                    <button
+                        onclick="sendMessage()"
+                        id="chatSendBtn"
+                        class="absolute right-2 top-1/2 -translate-y-1/2 text-fennec w-9 h-9 flex items-center justify-center rounded-md bg-white/5 border border-white/10 hover:bg-fennec/10 hover:border-fennec/30"
+                    >
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+            </div>
+            <button
+                onclick="window.toggleChat()"
+                id="chatTrigger"
+                class="pointer-events-auto w-14 h-14 bg-[#2b1d1a] rounded-full border border-fennec/50 shadow-lg flex items-center justify-center hover:scale-110 transition hover:bg-fennec hover:text-black overflow-hidden"
+            >
+                <img src="img/FENNECAI.png" class="w-10 h-10 object-contain ai-avatar" />
+            </button>
+        </div>
+
+        <script src="assets/bg.js?v=2026-01-13-1"></script>
+    </body>
+</html>

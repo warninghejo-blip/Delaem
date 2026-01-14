@@ -1,7 +1,9 @@
 # Cloudflare Worker Configuration
 name = "fennec-api"
+account_id = "81cbc5b7d6c703bae35387c133b3c10d"
 main = "worker.js"
 compatibility_date = "2024-12-05"
+workers_dev = true
 
 # Pages Configuration
 

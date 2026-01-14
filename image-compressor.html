@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Fennec Image Compressor</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+        <style>
+            body {
+                background: #0a0a0f;
+                color: white;
+                font-family: sans-serif;
+            }
+            .fennec-gradient {
+                background: linear-gradient(90deg, #ff6b35, #ff9d5c);
+            }
+            .drop-zone {
+                border: 2px dashed rgba(255, 107, 53, 0.3);
+                transition: all 0.3s ease;
+            }
+            .drop-zone:hover {
+                border-color: #ff6b35;
+                background: rgba(255, 107, 53, 0.05);
+            }
+        </style>
+    </head>
+    <body class="min-h-screen flex items-center justify-center p-4">
+        <div class="max-w-2xl w-full bg-[#16161d] rounded-2xl p-8 border border-white/5 shadow-2xl">
+            <div class="text-center mb-8">
+                <h1
+                    class="text-3xl font-black mb-2 fennec-gradient bg-clip-text text-transparent uppercase tracking-tighter"
+                >
+                    Image Compressor
+                </h1>
+                <p class="text-gray-400 text-sm">Target size: <span class="text-fennec font-bold">&lt; 365 KB</span></p>
+            </div>
+
+            <!-- Upload Area -->
+            <div id="dropZone" class="drop-zone rounded-xl p-8 text-center cursor-pointer mb-6">
+                <input type="file" id="fileInput" class="hidden" accept="image/*" />
+                <i class="fas fa-cloud-upload-alt text-4xl text-fennec mb-4"></i>
+                <p class="text-lg font-bold mb-1">Click or Drop Image Here</p>
+                <p class="text-gray-500 text-sm">Supports JPG, PNG, WebP</p>
+            </div>
+
+            <!-- Preview Area (Hidden by default) -->
+            <div id="previewArea" class="hidden space-y-6">
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="space-y-2 text-center">
+                        <p class="text-xs text-gray-500 uppercase font-bold">Original</p>
+                        <div class="aspect-video bg-black/50 rounded-lg overflow-hidden border border-white/5">
+                            <img id="originalImg" class="w-full h-full object-contain" />
+                        </div>
+                        <p id="originalSize" class="text-sm font-mono"></p>
+                    </div>
+                    <div class="space-y-2 text-center">
+                        <p class="text-xs text-gray-500 uppercase font-bold">Compressed</p>
+                        <div class="aspect-video bg-black/50 rounded-lg overflow-hidden border border-white/5">
+                            <img id="compressedImg" class="w-full h-full object-contain" />
+                        </div>
+                        <p id="compressedSize" class="text-sm font-mono text-fennec font-bold"></p>
+                    </div>
+                </div>
+
+                <div class="flex flex-col gap-3">
+                    <button
+                        id="compressBtn"
+                        class="w-full py-4 bg-[#ff6b35] text-black font-black rounded-xl hover:scale-[1.02] transition shadow-lg flex items-center justify-center gap-2"
+                    >
+                        <i class="fas fa-compress-arrows-alt"></i>
+                        COMPRESS NOW
+                    </button>
+                    <a
+                        id="downloadBtn"
+                        class="hidden w-full py-4 border border-fennec/30 text-fennec font-black rounded-xl hover:bg-fennec/10 transition flex items-center justify-center gap-2"
+                    >
+                        <i class="fas fa-download"></i>
+                        DOWNLOAD
+                    </a>
+                </div>
+            </div>
+
+            <div id="status" class="mt-4 text-center text-sm text-gray-500 italic"></div>
+        </div>
+
+        <script>
+            const dropZone = document.getElementById('dropZone');
+            const fileInput = document.getElementById('fileInput');
+            const previewArea = document.getElementById('previewArea');
+            const originalImg = document.getElementById('originalImg');
+            const compressedImg = document.getElementById('compressedImg');
+            const originalSizeText = document.getElementById('originalSize');
+            const compressedSizeText = document.getElementById('compressedSize');
+            const compressBtn = document.getElementById('compressBtn');
+            const downloadBtn = document.getElementById('downloadBtn');
+            const status = document.getElementById('status');
+
+            const TARGET_SIZE_KB = 364; // Slightly under 365
+            let currentFile = null;
+
+            dropZone.onclick = () => fileInput.click();
+
+            fileInput.onchange = e => {
+                const file = e.target.files[0];
+                if (file) handleFile(file);
+            };
+
+            dropZone.ondragover = e => {
+                e.preventDefault();
+                dropZone.classList.add('bg-fennec/10');
+            };
+
+            dropZone.ondragleave = () => {
+                dropZone.classList.remove('bg-fennec/10');
+            };
+
+            dropZone.ondrop = e => {
+                e.preventDefault();
+                dropZone.classList.remove('bg-fennec/10');
+                const file = e.dataTransfer.files[0];
+                if (file && file.type.startsWith('image/')) handleFile(file);
+            };
+
+            function formatSize(bytes) {
+                if (bytes === 0) return '0 B';
+                const k = 1024;
+                const sizes = ['B', 'KB', 'MB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            }
+
+            function handleFile(file) {
+                currentFile = file;
+                const reader = new FileReader();
+                reader.onload = e => {
+                    originalImg.src = e.target.result;
+                    originalSizeText.innerText = formatSize(file.size);
+                    previewArea.classList.remove('hidden');
+                    compressedImg.src = '';
+                    compressedSizeText.innerText = '';
+                    downloadBtn.classList.add('hidden');
+                    status.innerText = 'Image loaded. Click compress.';
+                };
+                reader.readAsDataURL(file);
+            }
+
+            compressBtn.onclick = async () => {
+                if (!currentFile) return;
+                status.innerText = 'Compressing...';
+
+                try {
+                    const blob = await compressImage(originalImg.src, TARGET_SIZE_KB);
+                    compressedImg.src = URL.createObjectURL(blob);
+                    compressedSizeText.innerText = formatSize(blob.size);
+
+                    downloadBtn.href = compressedImg.src;
+                    downloadBtn.download = `compressed_${currentFile.name}`;
+                    downloadBtn.classList.remove('hidden');
+
+                    if (blob.size / 1024 < TARGET_SIZE_KB) {
+                        status.innerText = 'Success! Image is now under 365 KB.';
+                    } else {
+                        status.innerText = 'Warning: Could not get below 365 KB without losing too much quality.';
+                    }
+                } catch (err) {
+                    console.error(err);
+                    status.innerText = 'Error during compression.';
+                }
+            };
+
+            async function compressImage(src, targetKb) {
+                return new Promise(resolve => {
+                    const img = new Image();
+                    img.src = src;
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        let width = img.width;
+                        let height = img.height;
+
+                        // Initial scale down if very large
+                        const MAX_DIM = 2000;
+                        if (width > MAX_DIM || height > MAX_DIM) {
+                            const ratio = Math.min(MAX_DIM / width, MAX_DIM / height);
+                            width *= ratio;
+                            height *= ratio;
+                        }
+
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+
+                        let quality = 0.9;
+                        let step = 0.1;
+
+                        function attempt() {
+                            canvas.toBlob(
+                                blob => {
+                                    const kb = blob.size / 1024;
+                                    if (kb > targetKb && quality > 0.1) {
+                                        quality -= step;
+                                        attempt();
+                                    } else {
+                                        resolve(blob);
+                                    }
+                                },
+                                'image/jpeg',
+                                quality
+                            );
+                        }
+                        attempt();
+                    };
+                });
+            }
+        </script>
+    </body>
+</html>

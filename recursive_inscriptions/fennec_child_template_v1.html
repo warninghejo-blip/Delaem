@@ -5,10 +5,10 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
         <!-- Fill these after minting -->
-        <meta name="fennec-lib" content="INSCRIPTION_ID_LIB" />
-        <meta name="fennec-config" content="INSCRIPTION_ID_CONFIG" />
+        <meta name="fennec-lib" content="961a15289f9ec4fb594a7543a5bc4cd94ce6feed2c7df994e8bfa456ada28a5ai0" />
+        <meta name="fennec-config" content="ffc50199c26d7037f82ef6a3d8406e6eb483c8a24a3dc396a39768e171f58225i0" />
 
-        <meta name="fennec-manifest" content="https://fennecbtc.xyz/recursive_inscriptions/fennec_manifest_live.json" />
+        <meta name="fennec-manifest" content="9327b39aa5676ce0be200ce41e3eebe91569fddb0e6c92ec946f996618a54d45i0" />
 
         <!-- Optional: provenance parent id (if you want the child to know it at runtime) -->
         <meta name="fennec-parent" content="INSCRIPTION_ID_PARENT" />
@@ -42,7 +42,7 @@
         <!-- Recursive load: the LIB is a JS inscription. It will auto-render using dna-data. -->
         <script>
             (function () {
-                var fallbackManifestId = '8593e591de03ecbdd041121ee76256c22e51eaf670bfa0887358c6d3d50ad5ddi0';
+                var fallbackManifestId = '9327b39aa5676ce0be200ce41e3eebe91569fddb0e6c92ec946f996618a54d45i0';
                 var getMeta = function (name) {
                     var el = document.querySelector('meta[name="' + name + '"]');
                     return el ? el.getAttribute('content') || '' : '';
@@ -63,6 +63,16 @@
                     if (!s) return '';
                     if (s.indexOf('http://') === 0 || s.indexOf('https://') === 0) return s;
                     if (s.indexOf('/') === 0) return s;
+                    try {
+                        var h =
+                            typeof window !== 'undefined' &&
+                            window.location &&
+                            window.location.hostname &&
+                            String(window.location.hostname).toLowerCase();
+                        if (h === 'uniscan.cc' || (h && h.endsWith('.uniscan.cc'))) {
+                            return '/fractal/content/' + s;
+                        }
+                    } catch (_) {}
                     return '/content/' + s;
                 };
 

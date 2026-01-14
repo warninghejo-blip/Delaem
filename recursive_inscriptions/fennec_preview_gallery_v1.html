@@ -162,7 +162,7 @@
                     <h1>Fennec ID — Preview Gallery</h1>
                     <div class="sub">
                         Local preview for archetypes, tiers and badges using
-                        <code>recursive_inscriptions/fennec_lib_v1.js</code>.<br />It uses local images from
+                        <code>recursive_inscriptions/fennec_lib_v2.js</code>.<br />It uses local images from
                         <code>../img/</code> so you can verify visuals before minting assets on-chain.
                     </div>
                 </div>
@@ -226,14 +226,14 @@
             <div class="hint">
                 Files you will mint:
                 <div style="margin-top: 8px">
-                    1) <code>recursive_inscriptions/fennec_lib_v1.js</code> (JS inscription)<br />
+                    1) <code>recursive_inscriptions/fennec_lib_v2.js</code> (JS inscription)<br />
                     2) <code>recursive_inscriptions/fennec_config_v1.json</code> (config inscription)<br />
                     3) Images listed in <code>recursive_inscriptions/assets_manifest_v1.json</code>
                 </div>
             </div>
         </div>
 
-        <script src="./fennec_lib_v1.js"></script>
+        <script src="./fennec_lib_v2.js"></script>
         <script>
             function setMeta(name, value) {
                 let el = document.querySelector(`meta[name="${name}"]`);
@@ -287,8 +287,8 @@
                             'SAND SWEEPER': '../img/badge_sweeper.png'
                         },
                         misc: {
-                            LOGO: '../img/phav.png',
-                            WATERMARK: '../img/FBSYM.png'
+                            LOGO: '',
+                            WATERMARK: ''
                         }
                     }
                 };
@@ -660,7 +660,7 @@
                     },
                     {
                         label: 'WATERMARK (back)',
-                        detail: 'Flip card to see FBSYM watermark + header',
+                        detail: 'Flip card to see watermark + header',
                         dna: (() => {
                             const d = buildDna('DRIFTER', 1, 707);
                             d.fxKey = 'sandstorm';

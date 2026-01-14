@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Fennec ID • Premium Borders & Titles Preview</title>
+        <link rel="stylesheet" href="./_shared.css" />
+        <style>
+            .matrix-grid {
+                display: grid;
+                grid-template-columns: 140px repeat(6, 1fr);
+                gap: 12px;
+                margin-top: 24px;
+                align-items: center;
+            }
+            .matrix-header {
+                font-family: var(--font-tactical, monospace);
+                font-size: 11px;
+                font-weight: 900;
+                letter-spacing: 0.08em;
+                text-align: center;
+                color: rgba(255, 255, 255, 0.75);
+                text-transform: uppercase;
+            }
+            .matrix-tier-label {
+                font-family: var(--font-tactical, monospace);
+                font-size: 12px;
+                font-weight: 700;
+                text-align: right;
+                padding-right: 16px;
+                color: rgba(255, 255, 255, 0.85);
+                text-transform: uppercase;
+            }
+            .matrix-card-cell {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                min-height: 340px;
+            }
+            .matrix-card-cell .card-scene {
+                transform: scale(0.75);
+            }
+            .section-title {
+                font-family: var(--font-display, sans-serif);
+                font-size: 28px;
+                font-weight: 900;
+                text-transform: uppercase;
+                margin: 48px 0 16px 0;
+                color: #ff6b35;
+                text-align: center;
+                letter-spacing: 0.02em;
+            }
+            .section-note {
+                text-align: center;
+                font-size: 13px;
+                color: rgba(255, 255, 255, 0.65);
+                margin-bottom: 24px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="topbar">
+                <div class="title">Premium Borders & Titles</div>
+                <div class="nav">
+                    <a href="./index.html">INDEX</a>
+                    <a href="./rarities.html">RARITIES</a>
+                    <a href="./borders-and-titles.html">BORDERS & TITLES</a>
+                    <a href="./all.html">ALL</a>
+                </div>
+            </div>
+
+            <p class="subtitle">
+                Premium rarity borders with materials, complex gradients, and tier-based archetype title styles.
+            </p>
+
+            <div class="section-title">Rarity × Tier Matrix</div>
+            <div class="section-note">Hover to see material effects and animations. Click to flip.</div>
+
+            <div class="matrix-grid" id="matrix"></div>
+
+            <div class="footer">
+                <strong>Borders:</strong> CUB (Steel), SCOUT (Bio-Neon), HUNTER (Plasma), ALPHA (Laser), ELDER (Gold),
+                SPIRIT (Hologram)<br />
+                <strong>Titles:</strong> Tier 0 (Gray), Tier 1 (White Glow), Tier 2 (Molten), Tier 3 (Holographic Flow)
+            </div>
+        </div>
+
+        <script>
+            (function () {
+                const path = (location.pathname || '').toLowerCase();
+                document.querySelectorAll('.nav a').forEach(a => {
+                    const href = (a.getAttribute('href') || '').toLowerCase();
+                    if (href && path.endsWith(href.replace('./', '/'))) a.classList.add('active');
+                });
+            })();
+        </script>
+
+        <script src="../recursive_inscriptions/fennec_lib_v2.js"></script>
+        <script>
+            (function () {
+                const RARITIES = [
+                    { name: 'CUB', score: 10 },
+                    { name: 'SCOUT', score: 35 },
+                    { name: 'HUNTER', score: 55 },
+                    { name: 'ALPHA', score: 70 },
+                    { name: 'ELDER', score: 85 },
+                    { name: 'SPIRIT', score: 97 }
+                ];
+
+                const TIERS = [
+                    { name: 'Tier 0', badgeCount: 0 },
+                    { name: 'Tier 1', badgeCount: 2 },
+                    { name: 'Tier 2', badgeCount: 4 },
+                    { name: 'Tier 3', badgeCount: 6 }
+                ];
+
+                const BADGE_NAMES = ['GENESIS', 'EVOLVE', 'PIONEER', 'PROVIDER', 'VETERAN', 'COLLECTOR'];
+
+                function makeDna(rarity, tier) {
+                    const badges = BADGE_NAMES.slice(0, tier.badgeCount).map(name => ({ name }));
+                    return {
+                        inscriptionNumber: `${rarity.name[0]}${tier.badgeCount}`,
+                        archetype: { baseKey: 'DRIFTER', title: 'STORM SURFER' },
+                        badges: badges,
+                        metrics: {
+                            activityScore: rarity.score,
+                            daysAlive: 120,
+                            txCount: 420,
+                            netWorthUSD: 123.45,
+                            lpValueUSD: tier.badgeCount >= 4 ? 60 : 12.34,
+                            inscriptionStats: {
+                                runes: 7,
+                                brc20: 5,
+                                ordinals: 99,
+                                totalCollections: 42,
+                                lp: tier.badgeCount >= 4 ? 1 : 0
+                            }
+                        }
+                    };
+                }
+
+                async function init() {
+                    const root = document.getElementById('matrix');
+                    if (!root) return;
+
+                    const lib = window.FennecIDLib;
+                    if (!lib || typeof lib.createCard !== 'function') {
+                        root.innerHTML = '<div class="subtitle">FennecIDLib not available.</div>';
+                        return;
+                    }
+
+                    let config = null;
+                    try {
+                        config = typeof lib.loadConfig === 'function' ? await lib.loadConfig() : null;
+                    } catch (_) {}
+
+                    root.innerHTML = '<div></div>';
+                    RARITIES.forEach(r => {
+                        const header = document.createElement('div');
+                        header.className = 'matrix-header';
+                        header.textContent = r.name;
+                        root.appendChild(header);
+                    });
+
+                    TIERS.forEach(tier => {
+                        const label = document.createElement('div');
+                        label.className = 'matrix-tier-label';
+                        label.textContent = tier.name;
+                        root.appendChild(label);
+
+                        RARITIES.forEach(rarity => {
+                            const cell = document.createElement('div');
+                            cell.className = 'matrix-card-cell';
+                            const scene = lib.createCard(makeDna(rarity, tier), config || undefined);
+                            cell.appendChild(scene);
+                            root.appendChild(cell);
+                        });
+                    });
+                }
+
+                if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+                else init();
+            })();
+        </script>
+    </body>
+</html>

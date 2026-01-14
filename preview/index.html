@@ -11,6 +11,8 @@
             <div class="topbar">
                 <div class="title">Class Evolution Preview</div>
                 <div class="nav">
+                    <a href="./all.html">ALL</a>
+                    <a href="./rarities.html">RARITIES</a>
                     <a href="./drifter.html">DRIFTER</a>
                     <a href="./walker.html">WALKER</a>
                     <a href="./merchant.html">MERCHANT</a>
@@ -20,27 +22,15 @@
                     <a href="./lord.html">LORD</a>
                     <a href="./prime.html">PRIME</a>
                     <a href="./singularity.html">SINGULARITY</a>
-                    <script>
-                        (function () {
-                            const path = (location.pathname || '').toLowerCase();
-                            document.querySelectorAll('.nav a').forEach(a => {
-                                const href = (a.getAttribute('href') || '').toLowerCase();
-                                if (href && path.endsWith(href.replace('./', '/'))) a.classList.add('active');
-                            });
-                        })();
-                    </script>
                 </div>
             </div>
 
-            <p class="subtitle">
-                Open any class to compare Tier 0-3 side-by-side. VFX profile is MERCHANT for all classes except
-                ENGINEER. Glare/gloss is disabled.
-            </p>
+            <p class="subtitle">Live-render preview pages (uses <code>FennecIDLib.createCard()</code>).</p>
 
             <div class="footer">
-                Tip: if you want to check how strong the effect is, keep two tabs open and switch between classes.
+                Tip: open <a href="./rarities.html">RARITIES</a> to compare frames, or open any class to compare Tier
+                0-3.
             </div>
-            <script src="./_shared.js"></script>
         </div>
     </body>
 </html>

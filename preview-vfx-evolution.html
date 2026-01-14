@@ -1,0 +1,702 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Fennec VFX Evolution Matrix - Production Grade</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+
+            body {
+                background: linear-gradient(135deg, #0a0a0f 0%, #1a1428 50%, #0a0a0f 100%);
+                min-height: 100vh;
+                padding: 40px 20px;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                color: white;
+            }
+
+            .page-title {
+                font-size: 2.5rem;
+                font-weight: 900;
+                text-align: center;
+                margin-bottom: 0.5rem;
+                text-transform: uppercase;
+                letter-spacing: 0.1em;
+                background: linear-gradient(90deg, #ff6b35, #8a2be2, #00ffff);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                background-clip: text;
+            }
+
+            .page-subtitle {
+                text-align: center;
+                color: rgba(255, 255, 255, 0.5);
+                font-size: 0.875rem;
+                margin-bottom: 3rem;
+                letter-spacing: 0.05em;
+            }
+
+            .section-title {
+                font-size: 1.75rem;
+                font-weight: 800;
+                margin: 3rem auto 1.5rem;
+                text-transform: uppercase;
+                letter-spacing: 0.08em;
+                color: #ff6b35;
+                text-shadow: 0 0 20px rgba(255, 107, 53, 0.5);
+                max-width: 1600px;
+            }
+
+            .border-showcase {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+                gap: 40px;
+                max-width: 1600px;
+                margin: 0 auto 60px;
+                padding: 20px;
+            }
+
+            .matrix-grid {
+                display: grid;
+                grid-template-columns: 150px repeat(4, 1fr);
+                gap: 20px;
+                max-width: 1600px;
+                margin: 0 auto 30px;
+            }
+
+            .matrix-label {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-weight: 700;
+                font-size: 0.875rem;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                background: rgba(255, 107, 53, 0.1);
+                border-radius: 8px;
+                border: 1px solid rgba(255, 107, 53, 0.2);
+                padding: 1rem;
+            }
+
+            .card-wrapper {
+                position: relative;
+                aspect-ratio: 2.5 / 3.5;
+            }
+
+            .card-wrapper::before {
+                content: '';
+                position: absolute;
+                inset: -4px;
+                border-radius: calc(20px + 4px);
+                z-index: -1;
+                pointer-events: none;
+            }
+
+            .card-face {
+                position: relative;
+                width: 100%;
+                height: 100%;
+                border-radius: 20px;
+                overflow: hidden;
+                background-color: #1a1a1a;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+            }
+
+            .card-image {
+                position: absolute;
+                inset: 0;
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                z-index: 1;
+            }
+
+            .card-vfx {
+                position: absolute;
+                inset: 0;
+                z-index: 2;
+                pointer-events: none;
+                overflow: hidden;
+            }
+
+            .tier-2 .card-vfx {
+                opacity: 0.4;
+            }
+
+            .tier-3 .card-vfx {
+                opacity: 0.9;
+            }
+
+            .showcase-content {
+                position: absolute;
+                inset: 0;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                z-index: 60;
+            }
+
+            .border-title {
+                font-size: 1.25rem;
+                font-weight: 800;
+                text-transform: uppercase;
+                letter-spacing: 0.1em;
+                margin-bottom: 0.5rem;
+                text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+            }
+
+            .border-desc {
+                font-size: 0.75rem;
+                opacity: 0.7;
+                text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
+            }
+
+            @property --scout-angle {
+                syntax: '<angle>';
+                initial-value: 0deg;
+                inherits: false;
+            }
+
+            @property --hunter-angle {
+                syntax: '<angle>';
+                initial-value: 0deg;
+                inherits: false;
+            }
+
+            @property --spirit-angle {
+                syntax: '<angle>';
+                initial-value: 0deg;
+                inherits: false;
+            }
+
+            .border-cub::before {
+                background: linear-gradient(135deg, #3a3a3a, #5a5a5a, #6a6a6a, #5a5a5a, #3a3a3a);
+                box-shadow: 0 0 15px rgba(90, 90, 90, 0.5);
+            }
+
+            .border-scout::before {
+                background: conic-gradient(
+                    from var(--scout-angle),
+                    rgba(34, 197, 94, 0.6) 0%,
+                    rgba(34, 197, 94, 0.6) 70%,
+                    rgba(34, 197, 94, 1) 85%,
+                    #22c55e 100%
+                );
+                animation: scoutBeam 4s linear infinite;
+                box-shadow:
+                    0 0 15px rgba(34, 197, 94, 0.5),
+                    inset 0 0 10px rgba(34, 197, 94, 0.3);
+            }
+
+            @keyframes scoutBeam {
+                0% {
+                    --scout-angle: 0deg;
+                }
+                100% {
+                    --scout-angle: 360deg;
+                }
+            }
+
+            .border-hunter::before {
+                background: conic-gradient(
+                    from var(--hunter-angle),
+                    rgba(14, 165, 233, 0.6) 0%,
+                    rgba(14, 165, 233, 0.6) 70%,
+                    rgba(14, 165, 233, 1) 85%,
+                    #0ea5e9 100%
+                );
+                animation: hunterBeam 4s linear infinite;
+                box-shadow:
+                    0 0 15px rgba(14, 165, 233, 0.5),
+                    inset 0 0 10px rgba(14, 165, 233, 0.3);
+            }
+
+            @keyframes hunterBeam {
+                0% {
+                    --hunter-angle: 0deg;
+                }
+                100% {
+                    --hunter-angle: 360deg;
+                }
+            }
+
+            .border-alpha::before {
+                background: conic-gradient(
+                    from var(--hunter-angle),
+                    #450a0a 0deg,
+                    #7f1d1d 60deg,
+                    #dc2626 120deg,
+                    #f97316 180deg,
+                    #dc2626 240deg,
+                    #7f1d1d 300deg,
+                    #450a0a 360deg
+                );
+                animation: hunterBeam 8s linear infinite;
+                filter: blur(2px);
+                box-shadow: 0 0 25px rgba(255, 0, 0, 0.8);
+            }
+
+            .border-elder::before {
+                background: linear-gradient(135deg, #a47e1b 0%, #f9d976 25%, #ffffff 50%, #f9d976 75%, #a47e1b 100%);
+                background-size: 200% 200%;
+                animation: goldShimmer 5s ease-in-out infinite;
+                box-shadow: 0 0 30px rgba(255, 215, 0, 0.7);
+            }
+
+            @keyframes goldShimmer {
+                0%,
+                100% {
+                    background-position: 0% 50%;
+                }
+                50% {
+                    background-position: 100% 50%;
+                }
+            }
+
+            .border-spirit::before {
+                background: conic-gradient(
+                    from var(--spirit-angle),
+                    #ff0000 0deg,
+                    #ff7f00 51deg,
+                    #ffff00 102deg,
+                    #00ff00 153deg,
+                    #00ffff 204deg,
+                    #0000ff 255deg,
+                    #8b00ff 306deg,
+                    #ff0000 360deg
+                );
+                animation: spiritSpinGradient 3s linear infinite;
+                box-shadow:
+                    0 0 40px rgba(255, 255, 255, 0.8),
+                    0 0 60px rgba(138, 43, 226, 0.6);
+            }
+
+            @keyframes spiritSpinGradient {
+                0% {
+                    --spirit-angle: 0deg;
+                }
+                100% {
+                    --spirit-angle: 360deg;
+                }
+            }
+
+            .tier-0 .card-image {
+                filter: grayscale(40%) sepia(10%) brightness(95%) contrast(90%);
+            }
+
+            .tier-1 .card-image {
+                filter: none;
+            }
+
+            .tier-2 .card-image {
+                filter: contrast(105%) brightness(102%) saturate(110%);
+            }
+
+            .tier-3 .card-image {
+                filter: contrast(110%) brightness(105%) saturate(120%);
+            }
+
+            .vfx-drifter::before {
+                content: '';
+                position: absolute;
+                inset: -200%;
+                background:
+                    radial-gradient(ellipse at 50% 150%, rgba(255, 107, 53, 0.8) 0%, transparent 35%),
+                    linear-gradient(to top, rgba(255, 107, 53, 0.5) 0%, transparent 45%);
+                animation: heatHaze 3s ease-in-out infinite;
+                mix-blend-mode: hard-light;
+                filter: blur(12px);
+                opacity: 0.6;
+            }
+
+            @keyframes heatHaze {
+                0%,
+                100% {
+                    transform: scale(1) translateY(0);
+                }
+                50% {
+                    transform: scale(1.05) translateY(-8px);
+                }
+            }
+
+            .vfx-walker::before {
+                content: '';
+                position: absolute;
+                inset: -200%;
+                background:
+                    radial-gradient(ellipse at 0% 50%, rgba(59, 130, 246, 0.7) 0%, transparent 40%),
+                    radial-gradient(ellipse at 100% 50%, rgba(59, 130, 246, 0.7) 0%, transparent 40%);
+                animation: phaseShift 6s ease-in-out infinite;
+                mix-blend-mode: screen;
+                opacity: 0.6;
+            }
+
+            @keyframes phaseShift {
+                0%,
+                100% {
+                    transform: translate(0, 0) rotate(0deg);
+                }
+                50% {
+                    transform: translate(30px, -30px) rotate(180deg);
+                }
+            }
+
+            .vfx-merchant::before {
+                content: '';
+                position: absolute;
+                inset: -200%;
+                background: linear-gradient(
+                    120deg,
+                    transparent 0%,
+                    transparent 48%,
+                    rgba(255, 215, 0, 0.9) 50%,
+                    transparent 52%,
+                    transparent 100%
+                );
+                animation: razorSweep 15s ease-in-out infinite;
+                mix-blend-mode: screen;
+            }
+
+            @keyframes razorSweep {
+                0% {
+                    transform: translateX(-150%) translateY(-150%);
+                }
+                100% {
+                    transform: translateX(150%) translateY(150%);
+                }
+            }
+
+            .vfx-engineer::before {
+                content: '';
+                position: absolute;
+                inset: 0;
+                background: repeating-linear-gradient(
+                    0deg,
+                    transparent 0px,
+                    rgba(0, 255, 255, 0.25) 2px,
+                    transparent 4px
+                );
+                animation: scanlineMove 8s linear infinite;
+                mix-blend-mode: screen;
+                opacity: 0.2;
+            }
+
+            .vfx-engineer::after {
+                content: '';
+                position: absolute;
+                inset: -200%;
+                background: linear-gradient(
+                    90deg,
+                    rgba(255, 0, 0, 0.4) 0%,
+                    rgba(0, 255, 0, 0.4) 50%,
+                    rgba(0, 0, 255, 0.4) 100%
+                );
+                animation: engineerGlitch 5s ease-in-out infinite;
+                mix-blend-mode: screen;
+            }
+
+            @keyframes scanlineMove {
+                0% {
+                    transform: translateY(0);
+                }
+                100% {
+                    transform: translateY(100%);
+                }
+            }
+
+            @keyframes engineerGlitch {
+                0%,
+                90% {
+                    transform: translateX(0);
+                    opacity: 0;
+                }
+                91%,
+                93%,
+                95% {
+                    transform: translateX(-4px);
+                    opacity: 0.7;
+                }
+                92%,
+                94%,
+                96% {
+                    transform: translateX(4px);
+                    opacity: 0.7;
+                }
+                97%,
+                100% {
+                    opacity: 0;
+                }
+            }
+
+            .vfx-shaman::before {
+                content: '';
+                position: absolute;
+                inset: -100%;
+                background: conic-gradient(
+                    from 0deg,
+                    rgba(138, 43, 226, 0.6) 0deg,
+                    transparent 60deg,
+                    rgba(147, 51, 234, 0.7) 120deg,
+                    transparent 180deg,
+                    rgba(186, 85, 211, 0.5) 240deg,
+                    transparent 300deg,
+                    rgba(138, 43, 226, 0.6) 360deg
+                );
+                animation: spiritMist 8s linear infinite;
+                mix-blend-mode: color-dodge;
+                filter: blur(10px);
+            }
+
+            @keyframes spiritMist {
+                0% {
+                    transform: rotate(0deg);
+                }
+                100% {
+                    transform: rotate(360deg);
+                }
+            }
+
+            .vfx-keeper::before {
+                content: '';
+                position: absolute;
+                inset: -200%;
+                background: radial-gradient(
+                    circle at 50% 100%,
+                    rgba(251, 146, 60, 0.8) 0%,
+                    rgba(255, 193, 7, 0.6) 15%,
+                    rgba(251, 191, 36, 0.4) 30%,
+                    transparent 50%
+                );
+                animation: flameFlicker 2.5s ease-in-out infinite;
+                mix-blend-mode: screen;
+                opacity: 0.6;
+            }
+
+            @keyframes flameFlicker {
+                0%,
+                100% {
+                    transform: translateY(0) scale(1);
+                }
+                50% {
+                    transform: translateY(-15px) scale(1.1);
+                }
+            }
+
+            .vfx-lord::before {
+                content: '';
+                position: absolute;
+                inset: -150%;
+                background: radial-gradient(
+                    ellipse at 50% 120%,
+                    rgba(0, 100, 200, 0.8) 0%,
+                    rgba(0, 200, 255, 0.6) 25%,
+                    rgba(0, 255, 255, 0.4) 40%,
+                    transparent 60%
+                );
+                animation: deepOcean 5s ease-in-out infinite;
+                mix-blend-mode: screen;
+            }
+
+            @keyframes deepOcean {
+                0%,
+                100% {
+                    transform: translateY(10%) scale(1);
+                    filter: brightness(0.8);
+                }
+                50% {
+                    transform: translateY(-5%) scale(1.05);
+                    filter: brightness(1.2);
+                }
+            }
+
+            .vfx-prime::before {
+                content: '';
+                position: absolute;
+                inset: -100%;
+                background: radial-gradient(
+                    circle at 50% 30%,
+                    rgba(255, 255, 255, 0.95) 0%,
+                    rgba(240, 240, 255, 0.7) 12%,
+                    transparent 40%
+                );
+                opacity: 0.3;
+                animation: platinumGlow 4s ease-in-out infinite;
+                mix-blend-mode: soft-light;
+            }
+
+            .tier-3 .vfx-prime {
+                opacity: 0.3;
+            }
+
+            @keyframes platinumGlow {
+                0%,
+                100% {
+                    transform: scale(0.9);
+                    opacity: 0.7;
+                }
+                50% {
+                    transform: scale(1.15);
+                    opacity: 1;
+                }
+            }
+
+            .vfx-singularity::before {
+                content: '';
+                position: absolute;
+                inset: -200%;
+                background: radial-gradient(
+                    ellipse at 50% 50%,
+                    rgba(138, 43, 226, 1) 0%,
+                    rgba(0, 255, 255, 0.8) 22%,
+                    rgba(255, 215, 0, 0.6) 45%,
+                    transparent 70%
+                );
+                opacity: 0.25;
+                animation: voidChaos 14s linear infinite;
+                mix-blend-mode: exclusion;
+            }
+
+            @keyframes voidChaos {
+                0% {
+                    transform: rotate(0deg) scale(1);
+                    filter: hue-rotate(0deg);
+                }
+                100% {
+                    transform: rotate(360deg) scale(1.15);
+                    filter: hue-rotate(180deg);
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="max-w-[1700px] mx-auto">
+            <h1 class="page-title">FENNEC VFX EVOLUTION MATRIX</h1>
+            <p class="page-subtitle">
+                Static Border Containers • Animated Gradients • Refined VFX Intensity • Perfect Geometry
+            </p>
+
+            <h2 class="section-title">🔥 RARITY BORDERS (PRODUCTION GRADE)</h2>
+            <div class="border-showcase">
+                <div class="card-wrapper border-cub">
+                    <div class="card-face" style="background: linear-gradient(135deg, #1a1428, #0f0c1d)">
+                        <div class="showcase-content">
+                            <div class="border-title" style="color: #6a6a6a">CUB</div>
+                            <div class="border-desc">Static Grey</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card-wrapper border-scout">
+                    <div class="card-face" style="background: linear-gradient(135deg, #0f3d2f, #0a1f1a)">
+                        <div class="showcase-content">
+                            <div class="border-title" style="color: #22c55e">SCOUT</div>
+                            <div class="border-desc">Gradient Beam</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card-wrapper border-hunter">
+                    <div class="card-face" style="background: linear-gradient(135deg, #1e3a5f, #0f1d2f)">
+                        <div class="showcase-content">
+                            <div class="border-title" style="color: #0ea5e9">HUNTER</div>
+                            <div class="border-desc">Gradient Beam</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card-wrapper border-alpha">
+                    <div class="card-face" style="background: linear-gradient(135deg, #3d0f0f, #1f0a0a)">
+                        <div class="showcase-content">
+                            <div class="border-title" style="color: #ff4444">ALPHA</div>
+                            <div class="border-desc">Lava Flow</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card-wrapper border-elder">
+                    <div class="card-face" style="background: linear-gradient(135deg, #3d2f0f, #1f180a)">
+                        <div class="showcase-content">
+                            <div class="border-title" style="color: #f9d976">ELDER</div>
+                            <div class="border-desc">Shimmer Gold</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card-wrapper border-spirit">
+                    <div class="card-face" style="background: linear-gradient(135deg, #2d1a3d, #1a0f2f)">
+                        <div class="showcase-content">
+                            <div class="border-title" style="color: #8b00ff">SPIRIT</div>
+                            <div class="border-desc">Prismatic</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <h2 class="section-title">📊 ARCHETYPE EVOLUTION (T0→T3)</h2>
+            <div id="matrixContainer"></div>
+        </div>
+
+        <script>
+            const archetypes = [
+                { name: 'DRIFTER', img: 'img/drifter.png', border: 'alpha' },
+                { name: 'WALKER', img: 'img/walker.png', border: 'hunter' },
+                { name: 'MERCHANT', img: 'img/merchant.png', border: 'elder' },
+                { name: 'ENGINEER', img: 'img/engineer.png', border: 'hunter' },
+                { name: 'SHAMAN', img: 'img/shaman.png', border: 'scout' },
+                { name: 'KEEPER', img: 'img/keeper.png', border: 'alpha' },
+                { name: 'LORD', img: 'img/oasis.png', border: 'elder' },
+                { name: 'PRIME', img: 'img/prime.png', border: 'spirit' },
+                { name: 'SINGULARITY', img: 'img/singularity.png', border: 'spirit' }
+            ];
+
+            const container = document.getElementById('matrixContainer');
+
+            archetypes.forEach(arch => {
+                const row = document.createElement('div');
+                row.className = 'matrix-grid';
+
+                const label = document.createElement('div');
+                label.className = 'matrix-label';
+                label.textContent = arch.name;
+                row.appendChild(label);
+
+                for (let tier = 0; tier <= 3; tier++) {
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'card-wrapper';
+
+                    if (tier === 0) {
+                        wrapper.classList.add('border-cub');
+                    } else if (tier === 3) {
+                        wrapper.classList.add(`border-${arch.border}`);
+                    }
+
+                    const face = document.createElement('div');
+                    face.className = `card-face tier-${tier}`;
+
+                    const img = document.createElement('img');
+                    img.className = 'card-image';
+                    img.src = arch.img;
+                    img.alt = arch.name;
+                    face.appendChild(img);
+
+                    if (tier >= 2) {
+                        const vfx = document.createElement('div');
+                        vfx.className = `card-vfx vfx-${arch.name.toLowerCase()}`;
+                        face.appendChild(vfx);
+                    }
+
+                    wrapper.appendChild(face);
+                    row.appendChild(wrapper);
+                }
+
+                container.appendChild(row);
+            });
+        </script>
+    </body>
+</html>

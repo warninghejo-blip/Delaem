@@ -2,7 +2,7 @@
 
 img.rar
 *.rar
-
+img.rar
 # Dependencies
 node_modules/
 package.json
@@ -22,7 +22,6 @@ vercel.json
 
 # Documentation
 *.md
-*.txt
 README.md
 DEPLOY.txt
 

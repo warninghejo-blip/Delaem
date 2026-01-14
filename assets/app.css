@@ -1,0 +1,2994 @@
+@keyframes marquee {
+    0% {
+        transform: translateX(0);
+    }
+    100% {
+        transform: translateX(-100%);
+    }
+}
+
+@keyframes tickerMarquee {
+    0% {
+        transform: translateX(100%);
+    }
+    100% {
+        transform: translateX(-100%);
+    }
+}
+
+.ticker-content {
+    display: block;
+    white-space: nowrap;
+}
+
+#liveTicker {
+    animation: none !important;
+    padding-left: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+}
+
+#liveTicker .ticker-marquee {
+    display: flex;
+    align-items: center;
+    width: max-content;
+    will-change: transform;
+    animation: tickerMarquee 35s linear infinite;
+}
+
+#liveTicker .ticker-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+#liveTicker .ticker-divider {
+    display: inline-flex;
+    align-items: center;
+    width: 1px;
+    height: 14px;
+    background: rgba(255, 255, 255, 0.28);
+    border-radius: 1px;
+    margin: 0 16px;
+    position: relative;
+    top: -1px;
+    flex: 0 0 auto;
+}
+
+#liveTicker .ticker-item img {
+    width: 16px;
+    height: 16px;
+    object-fit: contain;
+    flex: 0 0 auto;
+}
+
+:root {
+    --bg-primary: #000;
+    --bg-secondary: #0c0c0c;
+    --bg-tertiary: #1e1f24;
+    --text-primary: #fff;
+    --text-secondary: rgba(255, 255, 255, 0.8);
+    --text-muted: rgba(255, 255, 255, 0.5);
+    --border-color: rgba(255, 255, 255, 0.1);
+    --overlay-bg: rgba(0, 0, 0, 0.92);
+}
+
+[data-theme='light'] {
+    --bg-primary: #f5f5f5;
+    --bg-secondary: #fff;
+    --bg-tertiary: #fafafa;
+    --text-primary: #1a1a1a;
+    --text-secondary: rgba(0, 0, 0, 0.8);
+    --text-muted: rgba(0, 0, 0, 0.5);
+    --border-color: rgba(0, 0, 0, 0.1);
+    --overlay-bg: rgba(255, 255, 255, 0.95);
+}
+
+/* DESIGN: GOLDEN HOUR DESERT */
+body {
+    background:
+        radial-gradient(circle at 25% 20%, rgba(255, 107, 53, 0.12) 0%, transparent 55%),
+        radial-gradient(circle at 70% 80%, rgba(255, 180, 120, 0.08) 0%, transparent 60%),
+        radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.03) 0%, transparent 70%), #090706;
+    color: #f3f3f3;
+    min-height: 100vh;
+    overflow-x: hidden;
+}
+
+body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.06'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 1;
+    mix-blend-mode: soft-light;
+    filter: sepia(0.35) saturate(1.35) brightness(1.1);
+}
+
+.hero-fox-bg {
+    display: none; /* Убран фоновый логотип */
+    -webkit-mask-image: radial-gradient(circle, black 30%, transparent 70%);
+    mask-image: radial-gradient(circle, black 30%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+    filter: sepia(0.5) contrast(1.2);
+}
+
+.glass-panel {
+    background: rgba(60, 48, 42, 0.32);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 107, 53, 0.1);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.text-glow {
+    text-shadow: 0 0 30px rgba(255, 107, 53, 0.4);
+}
+
+/* GLASS CARD */
+.glass {
+    background: rgba(20, 20, 20, 0.85);
+    backdrop-filter: blur(30px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 30px 80px -10px rgba(0, 0, 0, 0.9);
+    border-radius: 24px;
+}
+/* Fallback CSS Ears if image missing */
+.fennec-art:empty::before,
+.fennec-art:empty::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    background: linear-gradient(to top, #5d4037, #ff6b35);
+    border-radius: 50% 100% 0 0;
+    border: 3px solid #3e2723;
+    box-shadow: 0 0 20px rgba(255, 107, 53, 0.3);
+}
+.fennec-art:empty::before {
+    right: 80px;
+    width: 80px;
+    height: 220px;
+    transform: rotate(-15deg);
+}
+.fennec-art:empty::after {
+    right: 10px;
+    width: 90px;
+    height: 200px;
+    transform: rotate(10deg);
+}
+
+/* UI */
+.glass-card {
+    background: rgba(20, 20, 20, 0.85);
+    backdrop-filter: blur(30px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 30px 80px -10px rgba(0, 0, 0, 0.9);
+}
+.input-box {
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    transition: all 0.2s;
+}
+.input-box:focus-within {
+    border-color: #ff6b35;
+    background: rgba(0, 0, 0, 0.7);
+}
+
+/* Hide number input spinners */
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    appearance: none;
+    margin: 0;
+}
+input[type='number'] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+.tab-btn {
+    cursor: pointer;
+    padding: 14px;
+    font-weight: 800;
+    color: #999;
+    border-bottom: 2px solid transparent;
+    transition: 0.3s;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-size: 12px;
+}
+.tab-btn:hover {
+    color: #fff;
+}
+.tab-btn.active {
+    color: #ff6b35;
+    border-color: #ff6b35;
+    background: linear-gradient(to top, rgba(255, 107, 53, 0.1), transparent);
+}
+
+.tab-content {
+    display: none;
+    animation: fadeIn 0.3s ease-out;
+}
+.tab-content.active {
+    display: block;
+}
+.tab-content.hidden {
+    display: none !important;
+}
+
+.card-tab-btn {
+    cursor: pointer;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+}
+.card-tab-btn.active {
+    color: #ff6b35;
+    border-color: rgba(255, 107, 53, 0.32);
+}
+
+.card-tab-content {
+    display: block;
+    animation: fadeIn 0.3s ease-out;
+}
+.card-tab-content.hidden {
+    display: none !important;
+}
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Page Sections */
+.page-section {
+    display: none !important;
+}
+.page-section.active {
+    display: flex !important;
+}
+.nav-link.active {
+    color: #ff6b35;
+    border-bottom: 2px solid #ff6b35;
+}
+.roadmap-line {
+    position: absolute;
+    left: 23px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: linear-gradient(to bottom, #ff6b35, transparent);
+}
+
+/* Mobile Navigation - Always show VISION/TERMINAL/FENNEC ID */
+@media (max-width: 768px) {
+    header .max-w-6xl {
+        grid-template-columns: 1fr;
+        gap: 8px;
+        height: auto;
+        padding-top: 12px;
+        padding-bottom: 12px;
+    }
+
+    header nav {
+        display: flex !important;
+        gap: 16px !important;
+        justify-content: center;
+        order: 2;
+    }
+
+    header .flex.items-center.gap-3.cursor-pointer {
+        order: 1;
+        justify-self: center;
+    }
+
+    header .flex.items-center.gap-3.justify-self-end {
+        order: 3;
+        justify-self: center;
+        flex-wrap: wrap;
+        gap: 8px !important;
+    }
+
+    .nav-link {
+        font-size: 10px !important;
+        padding: 8px 0 !important;
+    }
+
+    /* Hide social icons on very small screens to prioritize navigation */
+    header a[href*='twitter'],
+    header a[href*='telegram'] {
+        display: none;
+    }
+}
+
+/* Responsive adjustments for all sections */
+@media (max-width: 768px) {
+    .glass-panel {
+        padding: 16px !important;
+    }
+
+    #chartPrice {
+        font-size: 24px !important;
+    }
+
+    .chart-container {
+        height: 200px !important;
+    }
+
+    /* Market stats responsive */
+    #volume24h,
+    #volume7d,
+    #volume30d,
+    #marketCap {
+        font-size: 14px !important;
+    }
+
+    /* Terminal tabs */
+    .tab-btn {
+        font-size: 10px !important;
+        padding: 10px 4px !important;
+    }
+
+    /* Input boxes */
+    .input-box input {
+        font-size: 14px !important;
+    }
+
+    /* Buttons */
+    button {
+        font-size: 12px !important;
+        padding: 12px 16px !important;
+    }
+
+    /* Hero section */
+    .hero-fox-bg {
+        display: none;
+    }
+
+    /* Hero title */
+    .text-5xl.md\:text-7xl {
+        font-size: 2.5rem !important;
+        line-height: 1.2 !important;
+    }
+
+    /* Hero description */
+    .text-lg {
+        font-size: 1rem !important;
+    }
+
+    /* Features grid - stack on mobile */
+    .grid.grid-cols-1.md\:grid-cols-4 {
+        grid-template-columns: 1fr !important;
+    }
+
+    /* Page sections padding */
+    .page-section {
+        padding-top: 100px !important;
+        padding-bottom: 60px !important;
+    }
+
+    /* Fennec ID card container */
+    #fennecIdIframeContainer {
+        width: 320px !important;
+        height: 460px !important;
+        min-width: 320px !important;
+        min-height: 460px !important;
+    }
+
+    /* Swap interface adjustments */
+    .flex.flex-col.md\:flex-row {
+        flex-direction: column !important;
+    }
+
+    /* Market stats grid */
+    .grid.grid-cols-3 {
+        grid-template-columns: repeat(3, 1fr) !important;
+        gap: 8px !important;
+    }
+
+    .grid.grid-cols-4 {
+        grid-template-columns: repeat(4, 1fr) !important;
+        gap: 8px !important;
+    }
+
+    .grid.grid-cols-3 > div {
+        padding: 8px !important;
+    }
+
+    .grid.grid-cols-3 .text-lg {
+        font-size: 0.9rem !important;
+    }
+
+    /* Timeframe buttons */
+    .flex.gap-2 button {
+        padding: 6px 10px !important;
+        font-size: 10px !important;
+    }
+
+    /* Vision Features cards */
+    .grid.gap-6 > div {
+        padding: 16px !important;
+    }
+
+    .grid.gap-6 h3 {
+        font-size: 1.1rem !important;
+    }
+
+    .grid.gap-6 p {
+        font-size: 0.9rem !important;
+    }
+
+    /* Roadmap items */
+    .roadmap-item {
+        padding: 16px !important;
+    }
+
+    .roadmap-item h4 {
+        font-size: 1rem !important;
+    }
+
+    /* Live ticker */
+    #liveTickerBar {
+        height: 24px !important;
+    }
+
+    #liveTicker {
+        font-size: 11px !important;
+        line-height: 24px !important;
+    }
+
+    #liveTicker img {
+        width: 16px !important;
+        height: 16px !important;
+    }
+
+    /* Swap pairs */
+    .flex.gap-2.mb-4 > div {
+        padding: 12px 8px !important;
+        font-size: 11px !important;
+    }
+
+    /* Swap input containers */
+    .bg-black\/40.rounded-xl {
+        padding: 12px !important;
+    }
+
+    .bg-black\/40 input {
+        font-size: 24px !important;
+    }
+
+    /* Token icons and tickers */
+    #iconIn,
+    #iconOut {
+        width: 20px !important;
+        height: 20px !important;
+    }
+
+    #tickerIn,
+    #tickerOut {
+        font-size: 12px !important;
+    }
+
+    /* Switch direction button */
+    button[onclick='switchDir()'] {
+        padding: 10px !important;
+    }
+
+    /* Liquidity info */
+    #liquidityInfo {
+        font-size: 10px !important;
+    }
+
+    /* Wallet button */
+    #walletBtn {
+        font-size: 11px !important;
+        padding: 8px 12px !important;
+    }
+
+    /* Language switcher */
+    #languageBtn {
+        font-size: 10px !important;
+        padding: 6px 10px !important;
+    }
+}
+
+/* Tablet responsive (768px - 1024px) */
+@media (min-width: 769px) and (max-width: 1024px) {
+    .max-w-4xl,
+    .max-w-5xl,
+    .max-w-6xl {
+        padding-left: 24px !important;
+        padding-right: 24px !important;
+    }
+
+    /* Hero title on tablets */
+    .text-5xl.md\:text-7xl {
+        font-size: 3.5rem !important;
+    }
+
+    /* Navigation */
+    .nav-link {
+        font-size: 11px !important;
+    }
+
+    /* Chart container */
+    .chart-container {
+        height: 250px !important;
+    }
+
+    /* Glass panels */
+    .glass-panel {
+        padding: 20px !important;
+    }
+
+    /* Fennec ID card */
+    #fennecIdIframeContainer {
+        width: 360px !important;
+        height: 520px !important;
+    }
+}
+
+@media (max-width: 480px) {
+    body {
+        font-size: 14px;
+    }
+
+    h1 {
+        font-size: 20px !important;
+    }
+
+    h2 {
+        font-size: 18px !important;
+    }
+
+    h3 {
+        font-size: 16px !important;
+    }
+
+    .max-w-4xl,
+    .max-w-5xl,
+    .max-w-6xl {
+        padding-left: 12px !important;
+        padding-right: 12px !important;
+    }
+
+    /* Hero title on very small screens */
+    .text-5xl.md\:text-7xl {
+        font-size: 2rem !important;
+    }
+
+    /* Hero buttons */
+    .flex.flex-col.md\:flex-row button {
+        padding: 14px 20px !important;
+        font-size: 14px !important;
+    }
+
+    /* Fennec ID card - even smaller */
+    #fennecIdIframeContainer {
+        width: 280px !important;
+        height: 400px !important;
+        min-width: 280px !important;
+        min-height: 400px !important;
+    }
+
+    /* Market stats - stack vertically */
+    .grid.grid-cols-2 {
+        grid-template-columns: 1fr !important;
+        gap: 12px !important;
+    }
+
+    /* Market stats in terminal - smaller font */
+    .grid.grid-cols-3 {
+        gap: 6px !important;
+    }
+
+    .grid.grid-cols-3 .text-lg {
+        font-size: 0.8rem !important;
+    }
+
+    .grid.grid-cols-3 .text-\[10px\] {
+        font-size: 8px !important;
+    }
+
+    /* Chart price */
+    #chartPrice {
+        font-size: 20px !important;
+    }
+
+    /* Navigation links even smaller */
+    .nav-link {
+        font-size: 9px !important;
+        gap: 12px !important;
+    }
+
+    /* Features grid - stack vertically */
+    .grid.grid-cols-1.md\:grid-cols-4 {
+        grid-template-columns: 1fr !important;
+        gap: 12px !important;
+    }
+
+    .grid.grid-cols-1.md\:grid-cols-4 .glass-panel {
+        padding: 16px !important;
+    }
+
+    .grid.grid-cols-1.md\:grid-cols-4 h3 {
+        font-size: 16px !important;
+    }
+
+    .grid.grid-cols-1.md\:grid-cols-4 p {
+        font-size: 12px !important;
+    }
+
+    /* Fennec ID section */
+    #sec-audit h2 {
+        font-size: 28px !important;
+    }
+
+    #auditContainer {
+        transform: scale(0.75) !important;
+        transform-origin: center top !important;
+    }
+
+    /* Burrow canvas */
+    #sec-burrow h2 {
+        font-size: 28px !important;
+    }
+
+    .glass-panel.h-\[400px\] {
+        height: 250px !important;
+    }
+
+    /* Modal boxes */
+    .modal-box {
+        max-width: 90vw !important;
+        padding: 20px !important;
+    }
+
+    .modal-box h3 {
+        font-size: 16px !important;
+    }
+
+    .modal-box p {
+        font-size: 11px !important;
+    }
+
+    /* Buttons */
+    button.px-8.py-4 {
+        padding: 12px 24px !important;
+        font-size: 14px !important;
+    }
+
+    /* Hero heading */
+    h1.text-5xl {
+        font-size: 36px !important;
+    }
+
+    /* Hero description */
+    .text-gray-300.text-lg {
+        font-size: 14px !important;
+    }
+
+    /* Section titles */
+    h2.text-4xl {
+        font-size: 24px !important;
+    }
+
+    h2.text-5xl {
+        font-size: 28px !important;
+    }
+
+    /* Padding adjustments */
+    .pt-32 {
+        padding-top: 80px !important;
+    }
+
+    .pb-24 {
+        padding-bottom: 60px !important;
+    }
+
+    /* Max widths */
+    .max-w-5xl,
+    .max-w-4xl {
+        padding-left: 16px !important;
+        padding-right: 16px !important;
+    }
+
+    /* Vision page buttons */
+    #visionFennecIdBtn,
+    button[onclick*="showSection('terminal')"] {
+        padding: 12px 20px !important;
+        font-size: 14px !important;
+    }
+
+    /* Grid layouts */
+    .grid-cols-2 {
+        grid-template-columns: 1fr !important;
+    }
+
+    .grid-cols-3 {
+        grid-template-columns: 1fr !important;
+    }
+
+    /* Gap adjustments */
+    .gap-8 {
+        gap: 16px !important;
+    }
+
+    .gap-6 {
+        gap: 12px !important;
+    }
+
+    /* Terminal sections */
+    .glass-panel {
+        padding: 16px !important;
+    }
+
+    /* Swap interface */
+    .swap-section {
+        padding: 12px !important;
+    }
+
+    /* Text sizes in swap */
+    .swap-section .text-4xl {
+        font-size: 24px !important;
+    }
+
+    .swap-section .text-2xl {
+        font-size: 18px !important;
+    }
+}
+
+/* Modals */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.92);
+    backdrop-filter: blur(8px);
+    z-index: 9999;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow-y: auto;
+    padding: 24px 16px;
+}
+.modal-box {
+    background: #111;
+    border: 1px solid #333;
+    padding: 32px;
+    border-radius: 24px;
+    width: 90%;
+    max-width: 420px;
+    max-height: calc(100vh - 48px);
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    box-shadow: 0 0 60px rgba(255, 107, 53, 0.15);
+}
+
+/* ===== PERFORMANCE OPTIMIZATIONS ===== */
+
+/* Skeleton Loaders */
+.skeleton {
+    background: linear-gradient(
+        90deg,
+        rgba(255, 255, 255, 0.05) 25%,
+        rgba(255, 255, 255, 0.1) 50%,
+        rgba(255, 255, 255, 0.05) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 8px;
+    height: 20px;
+}
+@keyframes shimmer {
+    0% {
+        background-position: 200% 0;
+    }
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+/* Progress Bar */
+.progress-bar {
+    position: relative;
+    height: 6px;
+    background: linear-gradient(90deg, rgba(255, 107, 53, 0.1), rgba(168, 85, 247, 0.1), rgba(59, 130, 246, 0.1));
+    border-radius: 8px;
+    overflow: hidden;
+    margin: 12px 0;
+    box-shadow:
+        0 0 20px rgba(255, 107, 53, 0.15),
+        inset 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+.progress-bar::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: none;
+    animation: none;
+    opacity: 0;
+}
+@keyframes shimmer-bg {
+    0% {
+        transform: translateX(-100%);
+    }
+    100% {
+        transform: translateX(100%);
+    }
+}
+.progress-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    background: linear-gradient(90deg, rgba(255, 107, 53, 0.95), rgba(255, 78, 0, 0.95));
+    background-size: 100% 100%;
+    transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 0 10px rgba(255, 107, 53, 0.45);
+    animation: none;
+}
+@keyframes gradient-flow {
+    0%,
+    100% {
+        background-position: 0% 50%;
+    }
+    50% {
+        background-position: 100% 50%;
+    }
+}
+.progress-fill.indeterminate {
+    width: 18%;
+    background: linear-gradient(
+        90deg,
+        transparent 0%,
+        rgba(255, 107, 53, 0.95) 45%,
+        rgba(255, 107, 53, 0.95) 55%,
+        transparent 100%
+    );
+    box-shadow: none;
+    animation: progress-slide 1.1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+@keyframes progress-slide {
+    0% {
+        left: -25%;
+    }
+    100% {
+        left: 100%;
+    }
+}
+
+/* Spinner */
+.spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: #ff6b35;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    vertical-align: middle;
+}
+@keyframes spin {
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+/* Smooth transitions */
+button,
+.tab-btn,
+.input-box {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+button:active {
+    transform: scale(0.98);
+}
+
+/* STRONG NEON GLOW */
+.neon-text {
+    text-shadow:
+        0 0 5px #fff,
+        0 0 10px #fff,
+        0 0 20px #ff6b35,
+        0 0 40px #ff6b35,
+        0 0 80px #ff6b35;
+}
+
+.neon-logo {
+    filter: drop-shadow(0 0 10px rgba(255, 107, 53, 0.8)) drop-shadow(0 0 20px rgba(255, 107, 53, 0.4));
+    transition: all 0.3s ease;
+}
+.neon-logo:hover {
+    filter: drop-shadow(0 0 15px rgba(255, 107, 53, 1)) drop-shadow(0 0 30px rgba(255, 107, 53, 0.6));
+    transform: scale(1.05);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb {
+    background: rgba(255, 107, 53, 0.5);
+    border-radius: 4px;
+    transition: background 0.2s;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 107, 53, 0.8);
+}
+
+/* ИСПРАВЛЕНИЕ: Ползунок на обратной стороне карточки справа */
+/* ИСПРАВЛЕНИЕ: Скроллбар справа, текст по центру */
+.achievement-scroll {
+    overflow-y: auto;
+    overflow-x: hidden;
+    text-align: center;
+}
+.achievement-scroll > * {
+    text-align: center !important; /* ИСПРАВЛЕНИЕ: Центрируем текст */
+}
+/* ИСПРАВЛЕНИЕ: Стилизация скроллбара справа */
+.achievement-scroll::-webkit-scrollbar {
+    width: 6px;
+}
+.achievement-scroll::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 3px;
+}
+.achievement-scroll::-webkit-scrollbar-thumb {
+    background: rgba(255, 107, 53, 0.5);
+    border-radius: 3px;
+}
+.achievement-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 107, 53, 0.8);
+}
+
+/* Loading state */
+.loading {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+/* Notifications */
+.notification {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    background: linear-gradient(
+        135deg,
+        rgba(44, 26, 18, 0.96) 0%,
+        rgba(30, 18, 12, 0.98) 50%,
+        rgba(20, 15, 12, 0.99) 100%
+    );
+    border: 2px solid rgba(255, 107, 53, 0.5);
+    padding: 20px 24px;
+    border-radius: 18px;
+    box-shadow:
+        0 16px 56px rgba(0, 0, 0, 0.65),
+        0 0 40px rgba(255, 107, 53, 0.3),
+        0 0 80px rgba(255, 107, 53, 0.15),
+        inset 0 1px 0 rgba(255, 255, 255, 0.12),
+        inset 0 -1px 0 rgba(255, 107, 53, 0.1);
+    z-index: 10000;
+    min-width: 320px;
+    margin-bottom: 12px;
+    animation: slideIn 0.45s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    backdrop-filter: blur(28px) saturate(1.4);
+    transition:
+        transform 0.2s ease,
+        box-shadow 0.2s ease;
+}
+.notification .notification-title {
+    font-weight: 800;
+    font-size: 14px;
+    line-height: 1.25;
+    letter-spacing: 0.02em;
+}
+.notification .notification-time {
+    margin-top: 6px;
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: 0.06em;
+}
+.notification:hover {
+    transform: translateX(-4px) scale(1.02);
+    box-shadow:
+        0 20px 64px rgba(0, 0, 0, 0.7),
+        0 0 50px rgba(255, 107, 53, 0.4),
+        0 0 100px rgba(255, 107, 53, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+@keyframes slideIn {
+    from {
+        transform: translateX(450px) scale(0.9);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0) scale(1);
+        opacity: 1;
+    }
+}
+
+/* ===== THE DIG ANIMATION ===== */
+@keyframes digShake {
+    0% {
+        transform: translate(0, 0) rotate(0deg);
+    }
+    25% {
+        transform: translate(-2px, 2px) rotate(-5deg);
+    }
+    50% {
+        transform: translate(2px, -1px) rotate(5deg);
+    }
+    75% {
+        transform: translate(-1px, 2px) rotate(-5deg);
+    }
+    100% {
+        transform: translate(0, 0) rotate(0deg);
+    }
+}
+@keyframes dirtFly {
+    0% {
+        opacity: 0;
+        transform: translateY(0) scale(0.5);
+    }
+    50% {
+        opacity: 1;
+    }
+    100% {
+        opacity: 0;
+        transform: translateY(-40px) translateX(20px) scale(1.2);
+    }
+}
+/* ===== FOX EVOLUTION EFFECTS (3D CARD DESIGN) ===== */
+
+/* === 3D CARD CONTAINER === */
+/* ИСПРАВЛЕНИЕ: Полностью переписан CSS для стабильности 3D карточки */
+/* === 3D CARD CONTAINER (ULTIMATE FIX) === */
+.card-scene {
+    perspective: 1200px;
+    width: 336px;
+    height: 490px; /* Чуть выше для лучшей компоновки */
+    margin: 0 auto;
+    position: relative;
+    z-index: 10;
+}
+
+.card-scene,
+.card-scene * {
+    font-family:
+        system-ui,
+        -apple-system,
+        'Segoe UI',
+        Roboto,
+        Arial,
+        sans-serif;
+}
+
+.card-object {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    transform-style: preserve-3d;
+    transform-origin: center center;
+    transition: transform 620ms cubic-bezier(0.4, 0, 0.2, 1);
+    --tiltX: 0deg;
+    --tiltY: 0deg;
+    --flipY: 0deg;
+    transform: rotateX(var(--tiltX)) rotateY(calc(var(--tiltY) + var(--flipY)));
+    border-radius: 20px;
+    overflow: visible;
+    will-change: transform;
+    box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.5);
+}
+
+.card-object.flip-back {
+    animation: flipBackAnimation 620ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes flipBackAnimation {
+    from {
+        --flipY: 180deg;
+    }
+    to {
+        --flipY: 0deg;
+    }
+}
+
+.card-object::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 20px;
+    pointer-events: none;
+    z-index: 40;
+    opacity: 0;
+    mix-blend-mode: overlay;
+    background:
+        linear-gradient(
+            115deg,
+            rgba(255, 255, 255, 0.16),
+            rgba(255, 255, 255, 0) 45%,
+            rgba(255, 255, 255, 0.1) 55%,
+            rgba(255, 255, 255, 0) 70%
+        ),
+        linear-gradient(45deg, rgba(255, 255, 255, 0.014), rgba(255, 255, 255, 0) 55%, rgba(255, 255, 255, 0.01));
+}
+
+/* Золотая полоска убрана по запросу */
+
+.card-object[data-tier='0'] {
+    --tier-shine-opacity: 0;
+    --tier-shine-dur: 999s;
+}
+.card-object[data-tier='1'] {
+    --tier-shine-opacity: 0.28;
+    --tier-shine-dur: 12s;
+}
+.card-object[data-tier='2'] {
+    --tier-shine-opacity: 0.4;
+    --tier-shine-dur: 9s;
+}
+.card-object[data-tier='3'] {
+    --tier-shine-opacity: 0.52;
+    --tier-shine-dur: 7.5s;
+}
+
+.card-object[data-vfx='MERCHANT'] {
+    --tier-shine-rgb: 255, 215, 0;
+}
+
+@keyframes tierShineSweep {
+    0% {
+        left: -180%;
+        opacity: 0;
+    }
+    18% {
+        left: -180%;
+        opacity: 0;
+    }
+    22% {
+        left: -180%;
+        opacity: var(--tier-shine-opacity, 0.22);
+    }
+    82% {
+        left: 180%;
+        opacity: var(--tier-shine-opacity, 0.22);
+    }
+    86% {
+        left: 180%;
+        opacity: 0;
+    }
+    100% {
+        left: 180%;
+        opacity: 0;
+    }
+}
+
+.card-object.is-flipped {
+    --flipY: 180deg;
+}
+
+/* ОБЩИЕ СТИЛИ СТОРОН */
+.card-face {
+    position: absolute;
+    inset: 0; /* top:0, left:0, right:0, bottom:0 */
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+    border-radius: 20px;
+    overflow: hidden;
+    background: transparent;
+    transform: translateZ(0); /* Фикс для Safari */
+}
+
+/* ИСПРАВЛЕНИЕ: Обрезаем фон чтобы не выезжал за рамку - закругленные края как у рамки */
+.card-face img {
+    border-radius: 20px;
+    clip-path: inset(0 round 20px);
+}
+
+/* ИСПРАВЛЕНИЕ: Градиентные оверлеи тоже должны быть закруглены */
+.card-face > div[class*='bg-gradient'],
+.card-face > div[style*='background'] {
+    border-radius: 20px;
+    clip-path: inset(0 round 20px);
+}
+
+/* ИСПРАВЛЕНИЕ: КРИТИЧЕСКОЕ - Правильная структура для 3D flip без отзеркаливания */
+.face-back {
+    transform: rotateY(180deg);
+}
+
+/* Переопределяем фон для rarity классов */
+.card-scene:not([data-fennec-lib-root]) .card-face.card-cub {
+    background: radial-gradient(circle at center, rgba(82, 82, 91, 0.15) 0%, rgba(0, 0, 0, 0.8) 70%);
+}
+.card-scene:not([data-fennec-lib-root]) .card-face.card-scout {
+    background: radial-gradient(circle at center, rgba(34, 197, 94, 0.15) 0%, rgba(0, 0, 0, 0.8) 70%);
+}
+.card-scene:not([data-fennec-lib-root]) .card-face.card-hunter {
+    background: radial-gradient(circle at center, rgba(59, 130, 246, 0.15) 0%, rgba(0, 0, 0, 0.8) 70%);
+}
+.card-scene:not([data-fennec-lib-root]) .card-face.card-alpha {
+    background: radial-gradient(circle at center, rgba(239, 68, 68, 0.15) 0%, rgba(0, 0, 0, 0.8) 70%);
+}
+.card-scene:not([data-fennec-lib-root]) .card-face.card-elder {
+    background: radial-gradient(circle at center, rgba(234, 179, 8, 0.2) 0%, rgba(0, 0, 0, 0.8) 70%);
+}
+
+/* ЛИЦЕВАЯ СТОРОНА */
+.face-front {
+    z-index: 2;
+    transform: rotateY(0deg);
+}
+
+/* ЗАДНЯЯ СТОРОНА (TECH DATA DESIGN) */
+.face-back {
+    transform: rotateY(180deg);
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    /* Текстура заднего фона: темная сетка */
+    background-color: transparent;
+    background-image: none;
+    background-size: auto;
+}
+
+/* Декоративный элемент сзади (чип) */
+.face-back::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 200px;
+    height: 200px;
+    transform: translate(-50%, -50%);
+    display: none;
+    background: none;
+    pointer-events: none;
+}
+
+/* Стильный скроллбар для списка бейджей */
+.custom-scroll {
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #ff6b35 rgba(255, 255, 255, 0.05);
+}
+.custom-scroll::-webkit-scrollbar {
+    width: 4px;
+}
+.custom-scroll::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+}
+.custom-scroll::-webkit-scrollbar-thumb {
+    background-color: #ff6b35;
+    border-radius: 10px;
+}
+
+/* Разделитель на задней стороне */
+.tech-divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    margin: 10px 0;
+}
+
+/* === PROGRESSIVE VISUAL EVOLUTION (TIER 0 - TIER 3) === */
+
+/* База для плавности */
+.card-face img {
+    transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    will-change: transform, filter;
+}
+
+.card-face [class^='overlay-'],
+.card-face [class*=' overlay-'] {
+    z-index: 12 !important;
+}
+
+.face [class^='overlay-'],
+.face [class*=' overlay-'] {
+    z-index: 12 !important;
+}
+
+.vfx-3d {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    z-index: 13;
+    display: block;
+    opacity: calc(var(--vfx3d-opacity, 0.24) * var(--vfx3d-mult, 1));
+    mix-blend-mode: screen;
+    overflow: hidden;
+}
+
+.vfx-webgl {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    z-index: 13;
+    overflow: hidden;
+    display: block;
+    opacity: calc(var(--vfxwebgl-opacity, 0.18) * var(--vfxwebgl-mult, 1));
+    mix-blend-mode: screen;
+}
+.vfx-webgl canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.card-object:not([data-vfx='ENGINEER']) .vfx-3d,
+.card-object:not([data-vfx='ENGINEER']) .vfx-webgl {
+    display: none !important;
+}
+
+.card-object[data-vfx='ENGINEER'][data-tier='2'] .vfx-3d,
+.card-object[data-vfx='ENGINEER'][data-tier='3'] .vfx-3d {
+    display: none !important;
+}
+
+.card-glare {
+    position: absolute;
+    inset: 0;
+    border-radius: 20px;
+    pointer-events: none;
+    mix-blend-mode: overlay;
+    display: none !important;
+    opacity: 0;
+    transition: opacity 120ms linear;
+    background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.12) 0%, transparent 60%);
+}
+.vfx-3d::before {
+    content: '';
+    position: absolute;
+    inset: -30%;
+    background:
+        radial-gradient(
+            circle at var(--mxp, 50%) var(--myp, 50%),
+            rgba(var(--vfx-rgb, 255, 255, 255), 0.12),
+            rgba(var(--vfx-rgb, 255, 255, 255), 0.06) 30%,
+            transparent 65%
+        ),
+        linear-gradient(135deg, transparent, rgba(var(--vfx-rgb2, 255, 255, 255), 0.04), transparent);
+    filter: blur(6px) saturate(1.05) brightness(1.02);
+    transform: translate3d(calc(var(--npx, 0px) * 0.8), calc(var(--npy, 0px) * 0.8), 0);
+    animation: vfx-pulse 4s ease-in-out infinite;
+    opacity: 0.5;
+}
+.vfx-3d::after {
+    content: '';
+    position: absolute;
+    inset: -15%;
+    background:
+        radial-gradient(
+            circle at var(--mxp, 50%) var(--myp, 50%),
+            rgba(var(--vfx-rgb, 255, 255, 255), 0.18),
+            rgba(var(--vfx-rgb2, 255, 255, 255), 0.08) 35%,
+            transparent 55%
+        ),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.08), transparent 40%, rgba(255, 255, 255, 0.05) 60%, transparent);
+    background-size:
+        100% 100%,
+        280% 280%;
+    background-position:
+        0 0,
+        calc(var(--mxp, 50%) * 1%) calc(var(--myp, 50%) * 1%);
+    mix-blend-mode: screen;
+    filter: blur(2px);
+    opacity: 0.4;
+    transform: translate3d(calc(var(--px, 0px) * 0.8), calc(var(--py, 0px) * 0.8), 0) scale(1.02);
+    animation:
+        vfx-sheen 6s linear infinite,
+        vfx-shimmer 3s ease-in-out infinite;
+}
+
+@keyframes vfx-sheen {
+    0% {
+        background-position:
+            0 0,
+            0% 0%,
+            0 0;
+    }
+    100% {
+        background-position:
+            0 0,
+            200% 200%,
+            0 0;
+    }
+}
+@keyframes vfx-pulse {
+    0%,
+    100% {
+        opacity: 1;
+        filter: blur(14px) saturate(1.6) brightness(1.3);
+    }
+    50% {
+        opacity: 0.9;
+        filter: blur(16px) saturate(1.8) brightness(1.45);
+    }
+}
+@keyframes vfx-shimmer {
+    0%,
+    100% {
+        opacity: 0.95;
+    }
+    50% {
+        opacity: 1;
+    }
+}
+
+.overlay-MERCHANT ~ .vfx-3d {
+    --vfx-rgb: 255, 200, 0;
+    --vfx-rgb2: 255, 230, 150;
+    --vfx3d-mult: 0.55;
+}
+.overlay-SHAMAN ~ .vfx-3d {
+    --vfx-rgb: 168, 85, 247;
+    --vfx-rgb2: 59, 130, 246;
+}
+.overlay-KEEPER ~ .vfx-3d {
+    --vfx-rgb: 251, 146, 60;
+    --vfx-rgb2: 255, 255, 255;
+    --vfx3d-mult: 0.6;
+}
+.overlay-LORD ~ .vfx-3d {
+    --vfx-rgb: 6, 182, 212;
+    --vfx-rgb2: 255, 255, 255;
+}
+.overlay-PRIME ~ .vfx-3d {
+    --vfx-rgb: 255, 255, 255;
+    --vfx-rgb2: 255, 255, 255;
+}
+.overlay-DRIFTER ~ .vfx-3d {
+    --vfx-rgb: 255, 160, 0;
+    --vfx-rgb2: 255, 255, 255;
+}
+.overlay-WALKER ~ .vfx-3d {
+    --vfx-rgb: 59, 130, 246;
+    --vfx-rgb2: 255, 255, 255;
+}
+.overlay-ENGINEER ~ .vfx-3d {
+    --vfx-rgb: 0, 255, 170;
+    --vfx-rgb2: 255, 0, 80;
+}
+.overlay-SINGULARITY ~ .vfx-3d {
+    --vfx-rgb: 255, 255, 255;
+    --vfx-rgb2: 168, 85, 247;
+}
+
+.overlay-MERCHANT ~ .vfx-webgl {
+    --vfxwebgl-mult: 0.8;
+}
+.overlay-KEEPER ~ .vfx-webgl {
+    --vfxwebgl-mult: 0.7;
+}
+.card-object[data-tier='3'] .overlay-ENGINEER ~ .vfx-3d {
+    --vfx3d-mult: 1.24;
+}
+.card-object[data-tier='3'] .overlay-ENGINEER ~ .vfx-webgl {
+    --vfxwebgl-mult: 1.13;
+}
+
+/* --- TIER 0: DORMANT (Новичок) --- */
+/* Статичный, пыльный, старый вид */
+.img-tier-0 {
+    filter: grayscale(0.2) sepia(0.16) contrast(1) brightness(1) saturate(1.05);
+    transform: scale(1.01);
+}
+
+/* --- TIER 1: AWAKENING (Адепт) --- */
+/* Легкое "дыхание", возвращение цветов */
+.anim-tier-1 {
+    animation: breathe 10s ease-in-out infinite alternate;
+}
+@keyframes breathe {
+    0% {
+        filter: grayscale(0.08) contrast(1.02) brightness(1) saturate(1.04);
+    }
+    100% {
+        filter: grayscale(0) contrast(1.06) brightness(1.06) saturate(1.1);
+    }
+}
+
+/* --- TIER 2: EMPOWERED (Эксперт) --- */
+/* Усиленные эффекты, специфичные для группы классов */
+
+/* Drifter/Walker: Тепловая волна */
+.anim-tier-2-heat {
+    animation: heat-low 5s infinite alternate;
+}
+@keyframes heat-low {
+    0% {
+        filter: sepia(0.08) contrast(1.06) brightness(1.02) saturate(1.04);
+    }
+    100% {
+        filter: sepia(0.16) contrast(1.1) brightness(1.05) saturate(1.06);
+    }
+}
+
+/* Merchant/Lord: Мягкий блеск */
+.anim-tier-2-shine {
+    animation: shine-low 4s infinite alternate;
+}
+@keyframes shine-low {
+    0% {
+        filter: brightness(1.03) contrast(1.04) saturate(1.06);
+    }
+    100% {
+        filter: brightness(1.1) contrast(1.06) saturate(1.12);
+    }
+}
+
+/* Engineer: Микро-глитчи */
+.anim-tier-2-glitch {
+    animation: glitch-low 3s infinite;
+}
+@keyframes glitch-low {
+    0%,
+    92% {
+        filter: contrast(1.12) brightness(1.03) saturate(1.08);
+        transform: translate3d(0, 0, 0);
+    }
+    93% {
+        filter: contrast(1.22) brightness(1.05) saturate(1.12) hue-rotate(3deg);
+        transform: translate3d(1px, 0, 0);
+    }
+    94% {
+        filter: contrast(1.22) brightness(1.05) saturate(1.12) hue-rotate(-3deg);
+        transform: translate3d(-1px, 0, 0);
+    }
+    100% {
+        filter: contrast(1.12) brightness(1.03) saturate(1.08);
+        transform: translate3d(0, 0, 0);
+    }
+}
+
+/* Shaman/Keeper/Prime: Пульсация ауры */
+.anim-tier-2-magic {
+    animation: magic-low 4s infinite alternate;
+}
+@keyframes magic-low {
+    0% {
+        filter: saturate(1.08) contrast(1.04) brightness(1.02);
+    }
+    100% {
+        filter: saturate(1.16) contrast(1.06) brightness(1.06);
+    }
+}
+
+/* --- TIER 3: UNLEASHED (Легенда - GOD MODE) --- */
+/* Уникальная анимация для каждого архетипа + Оверлеи */
+
+/* 1. DRIFTER */
+.anim-DRIFTER {
+    animation: drifter-dunes 10s ease-in-out infinite;
+}
+.overlay-DRIFTER {
+    background: linear-gradient(to bottom, rgba(255, 160, 0, 0.1), transparent 70%);
+    mix-blend-mode: overlay;
+    pointer-events: none;
+    z-index: 5;
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    overflow: hidden;
+}
+.overlay-DRIFTER::before {
+    content: '';
+    position: absolute;
+    inset: -12%;
+    background:
+        radial-gradient(120% 60% at 10% 82%, rgba(255, 200, 120, 0.16) 0%, transparent 55%),
+        radial-gradient(120% 60% at 90% 70%, rgba(255, 160, 0, 0.12) 0%, transparent 60%),
+        linear-gradient(120deg, transparent 0%, rgba(255, 255, 255, 0.05) 50%, transparent 100%);
+    background-size:
+        140% 140%,
+        140% 140%,
+        240% 240%;
+    background-position:
+        0% 0%,
+        100% 0%,
+        0% 50%;
+    opacity: 0.55;
+    mix-blend-mode: overlay;
+    animation: drifter-drift 9s linear infinite;
+}
+.overlay-DRIFTER::after {
+    content: '';
+    position: absolute;
+    inset: -18%;
+    background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.05) 50%, transparent 100%);
+    opacity: 0.2;
+    mix-blend-mode: screen;
+    filter: blur(1px);
+    animation: drifter-wind 6s ease-in-out infinite;
+}
+@keyframes drifter-dunes {
+    0%,
+    100% {
+        filter: sepia(0.1) contrast(1.05) brightness(1.02) saturate(1.04);
+    }
+    50% {
+        filter: sepia(0.16) contrast(1.08) brightness(1.05) saturate(1.07);
+    }
+}
+@keyframes drifter-drift {
+    0% {
+        background-position:
+            0% 0%,
+            100% 0%,
+            0% 50%;
+    }
+    100% {
+        background-position:
+            120% 10%,
+            -20% -10%,
+            200% 60%;
+    }
+}
+@keyframes drifter-wind {
+    0%,
+    100% {
+        transform: translate3d(-3%, 0, 0);
+    }
+    50% {
+        transform: translate3d(3%, -1%, 0);
+    }
+}
+
+/* 2. MERCHANT */
+.anim-MERCHANT {
+    animation: merchant-shine 5s ease-in-out infinite;
+}
+.overlay-MERCHANT {
+    background: transparent;
+    mix-blend-mode: screen;
+    pointer-events: none;
+    z-index: 5;
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    overflow: hidden;
+}
+.overlay-MERCHANT::before {
+    content: '';
+    position: absolute;
+    top: -100%;
+    left: -100%;
+    width: 80px;
+    height: 400%;
+    background: linear-gradient(45deg, transparent 30%, rgba(255, 215, 0, 0.4) 50%, transparent 70%);
+    transform: rotate(45deg);
+    animation: gold-sweep 6s ease-in-out infinite;
+    filter: blur(3px);
+}
+.overlay-MERCHANT::after {
+    content: '';
+    position: absolute;
+    inset: -15%;
+    background:
+        radial-gradient(60% 60% at 35% 35%, rgba(255, 255, 255, 0.12), transparent 68%),
+        radial-gradient(70% 70% at 70% 65%, rgba(255, 215, 0, 0.1), transparent 72%),
+        linear-gradient(120deg, rgba(255, 255, 255, 0.04), transparent 60%, rgba(255, 215, 0, 0.03));
+    opacity: 0.2;
+    mix-blend-mode: screen;
+    animation: sparkle-drift 5.2s ease-in-out infinite alternate;
+    filter: blur(0.25px);
+}
+@keyframes merchant-shine {
+    0%,
+    100% {
+        filter: contrast(1.05) brightness(1.02) saturate(1.06);
+    }
+    50% {
+        filter: contrast(1.08) brightness(1.06) saturate(1.1) drop-shadow(0 0 8px rgba(255, 215, 0, 0.15));
+    }
+}
+@keyframes gold-sweep {
+    0%,
+    100% {
+        left: -100%;
+        opacity: 0;
+    }
+    45% {
+        opacity: 0;
+    }
+    50% {
+        opacity: 1;
+    }
+    55% {
+        opacity: 0;
+    }
+}
+@keyframes sparkle-drift {
+    0% {
+        transform: translate3d(-1%, 1%, 0);
+        opacity: 0.15;
+    }
+    100% {
+        transform: translate3d(1%, -1%, 0);
+        opacity: 0.25;
+    }
+}
+
+/* 3. ENGINEER */
+.anim-ENGINEER {
+    animation: engineer-pulse 4s ease-in-out infinite;
+}
+.overlay-ENGINEER {
+    background:
+        repeating-linear-gradient(0deg, rgba(0, 255, 170, 0), rgba(0, 255, 170, 0) 10px, rgba(0, 255, 170, 0.1) 11px),
+        repeating-linear-gradient(90deg, rgba(0, 255, 170, 0), rgba(0, 255, 170, 0) 14px, rgba(0, 200, 255, 0.08) 15px);
+    z-index: 5;
+    pointer-events: none;
+    mix-blend-mode: overlay;
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    overflow: hidden;
+    opacity: 0.55;
+}
+.overlay-ENGINEER::before {
+    content: '';
+    position: absolute;
+    inset: -10%;
+    background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.12) 50%, transparent 100%);
+    opacity: 0.22;
+    mix-blend-mode: screen;
+    animation: engineer-scan 2.6s linear infinite;
+    filter: blur(0.8px);
+}
+.overlay-ENGINEER::after {
+    content: '';
+    position: absolute;
+    inset: -15%;
+    background:
+        radial-gradient(70% 60% at 35% 40%, rgba(0, 255, 170, 0.14), transparent 72%),
+        radial-gradient(80% 70% at 70% 65%, rgba(0, 200, 255, 0.1), transparent 76%),
+        linear-gradient(135deg, rgba(255, 255, 255, 0.05), transparent 60%, rgba(0, 255, 170, 0.04));
+    opacity: 0.18;
+    mix-blend-mode: screen;
+    animation: engineer-nodes 5.6s ease-in-out infinite alternate;
+}
+@keyframes engineer-pulse {
+    0%,
+    100% {
+        filter: contrast(1.1) brightness(1.03) saturate(1.06);
+    }
+    50% {
+        filter: contrast(1.16) brightness(1.06) saturate(1.12);
+    }
+}
+@keyframes engineer-scan {
+    0% {
+        transform: translate3d(-120%, 0, 0);
+    }
+    100% {
+        transform: translate3d(120%, 0, 0);
+    }
+}
+@keyframes engineer-nodes {
+    0% {
+        transform: translate3d(-1%, 1%, 0);
+        opacity: 0.14;
+    }
+    100% {
+        transform: translate3d(1%, -1%, 0);
+        opacity: 0.22;
+    }
+}
+@keyframes engineer-glitch {
+    0%,
+    92% {
+        filter: contrast(1.12) brightness(1.04) saturate(1.06);
+        transform: translate3d(0, 0, 0);
+    }
+    94% {
+        filter: contrast(1.3) brightness(1.07) saturate(1.15) hue-rotate(18deg);
+        transform: translate3d(2px, 0, 0);
+    }
+    96% {
+        filter: contrast(1.3) brightness(1.07) saturate(1.15) hue-rotate(-18deg);
+        transform: translate3d(-2px, 0, 0);
+    }
+    98%,
+    100% {
+        filter: contrast(1.12) brightness(1.04) saturate(1.06);
+        transform: translate3d(0, 0, 0);
+    }
+}
+
+@keyframes engineer-glitch-strong {
+    0%,
+    90% {
+        filter: contrast(1.14) brightness(1.05) saturate(1.08);
+        transform: translate3d(0, 0, 0);
+    }
+    92% {
+        filter: contrast(1.46) brightness(1.1) saturate(1.26) hue-rotate(36deg);
+        transform: translate3d(4px, -1px, 0);
+    }
+    94% {
+        filter: contrast(1.46) brightness(1.1) saturate(1.26) hue-rotate(-36deg);
+        transform: translate3d(-4px, 1px, 0);
+    }
+    96% {
+        filter: contrast(1.32) brightness(1.08) saturate(1.18) hue-rotate(18deg);
+        transform: translate3d(2px, 0, 0);
+    }
+    98%,
+    100% {
+        filter: contrast(1.14) brightness(1.05) saturate(1.08);
+        transform: translate3d(0, 0, 0);
+    }
+}
+
+.card-object[data-vfx='ENGINEER'][data-tier='2'] .overlay-ENGINEER {
+    animation: engineer-glitch 3.2s ease-in-out infinite;
+}
+.card-object[data-vfx='ENGINEER'][data-tier='3'] .overlay-ENGINEER {
+    animation: engineer-glitch-strong 3.2s ease-in-out infinite;
+}
+
+/* 4. SHAMAN */
+.anim-SHAMAN {
+    animation: shaman-tide 6s ease-in-out infinite;
+}
+.overlay-SHAMAN {
+    background: radial-gradient(circle at 50% 55%, rgba(147, 51, 234, 0.14), transparent 62%);
+    mix-blend-mode: overlay;
+    pointer-events: none;
+    z-index: 5;
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    overflow: hidden;
+}
+.overlay-SHAMAN::before {
+    content: '';
+    position: absolute;
+    inset: -20%;
+    background: radial-gradient(circle at 50% 50%, rgba(168, 85, 247, 0.22) 0%, transparent 55%);
+    opacity: 0.3;
+    mix-blend-mode: screen;
+    filter: blur(1.4px);
+    animation: shaman-ripple 5s ease-in-out infinite;
+}
+.overlay-SHAMAN::after {
+    content: '';
+    position: absolute;
+    inset: -25%;
+    background: radial-gradient(circle at 50% 50%, rgba(59, 130, 246, 0.16) 0%, transparent 60%);
+    opacity: 0.24;
+    mix-blend-mode: screen;
+    filter: blur(1.6px);
+    animation: shaman-ripple 5s ease-in-out infinite 0.7s;
+}
+@keyframes shaman-tide {
+    0%,
+    100% {
+        filter: contrast(1.05) brightness(1.03) saturate(1.1);
+    }
+    50% {
+        filter: contrast(1.1) brightness(1.06) saturate(1.18);
+    }
+}
+@keyframes shaman-ripple {
+    0% {
+        transform: scale(0.85);
+        opacity: 0.1;
+    }
+    55% {
+        opacity: 0.36;
+    }
+    100% {
+        transform: scale(1.35);
+        opacity: 0.08;
+    }
+}
+
+/* 5. KEEPER */
+.anim-KEEPER {
+    animation: keeper-runes 7s ease-in-out infinite;
+}
+.overlay-KEEPER {
+    background: radial-gradient(circle at 50% 45%, rgba(251, 146, 60, 0.1), transparent 62%);
+    mix-blend-mode: overlay;
+    pointer-events: none;
+    z-index: 5;
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    overflow: hidden;
+}
+.overlay-KEEPER::before {
+    content: '';
+    position: absolute;
+    inset: -18%;
+    background:
+        radial-gradient(circle at 30% 40%, rgba(186, 85, 211, 0.12) 0%, transparent 42%),
+        radial-gradient(circle at 70% 60%, rgba(251, 146, 60, 0.14) 0%, transparent 45%),
+        radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.05) 0%, transparent 60%);
+    opacity: 0.3;
+    mix-blend-mode: screen;
+    filter: blur(1.2px);
+    animation: keeper-sigil 5.8s ease-in-out infinite;
+}
+.overlay-KEEPER::after {
+    content: '';
+    position: absolute;
+    inset: -20%;
+    background:
+        radial-gradient(70% 60% at 35% 40%, rgba(251, 146, 60, 0.14), transparent 72%),
+        radial-gradient(80% 70% at 70% 65%, rgba(255, 255, 255, 0.1), transparent 76%),
+        linear-gradient(115deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+    opacity: 0.16;
+    mix-blend-mode: screen;
+    animation: keeper-dust 6s ease-in-out infinite alternate;
+}
+@keyframes keeper-runes {
+    0%,
+    100% {
+        filter: sepia(0.05) contrast(1.06) brightness(1.02) saturate(1.06);
+    }
+    50% {
+        filter: sepia(0.02) contrast(1.1) brightness(1.05) saturate(1.1);
+    }
+}
+@keyframes keeper-sigil {
+    0%,
+    100% {
+        transform: scale(0.98);
+        opacity: 0.22;
+    }
+
+    50% {
+        transform: scale(1.05);
+        opacity: 0.32;
+    }
+}
+
+/* 6. WALKER */
+.anim-WALKER {
+    animation: walker-flow 7s ease-in-out infinite;
+}
+.overlay-WALKER {
+    background: linear-gradient(45deg, rgba(59, 130, 246, 0.14), transparent);
+    mix-blend-mode: overlay;
+    pointer-events: none;
+    z-index: 5;
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    overflow: hidden;
+}
+.overlay-WALKER::before {
+    content: '';
+    position: absolute;
+    inset: -18%;
+    background:
+        radial-gradient(80% 60% at 20% 30%, rgba(255, 255, 255, 0.1) 0%, transparent 60%),
+        radial-gradient(80% 60% at 80% 70%, rgba(59, 130, 246, 0.18) 0%, transparent 62%),
+        radial-gradient(90% 70% at 50% 50%, rgba(255, 255, 255, 0.06) 0%, transparent 66%);
+    opacity: 0.38;
+    mix-blend-mode: screen;
+    filter: blur(1.4px);
+    animation: walker-orbit 7.5s ease-in-out infinite;
+}
+.overlay-WALKER::after {
+    content: '';
+    position: absolute;
+    inset: -22%;
+    background: linear-gradient(140deg, transparent 0%, rgba(255, 255, 255, 0.05) 50%, transparent 100%);
+    background-size: 220% 220%;
+    opacity: 0.18;
+    mix-blend-mode: screen;
+    filter: blur(1px);
+    animation: walker-sweep 9s linear infinite;
+}
+@keyframes walker-flow {
+    0%,
+    100% {
+        filter: contrast(1.08) brightness(1.03) saturate(1.06);
+    }
+    50% {
+        filter: contrast(1.12) brightness(1.06) saturate(1.1);
+    }
+}
+@keyframes walker-orbit {
+    0%,
+    100% {
+        transform: translate3d(-1%, 1%, 0) scale(1);
+    }
+    50% {
+        transform: translate3d(1%, -1%, 0) scale(1.05);
+    }
+}
+@keyframes walker-sweep {
+    0% {
+        background-position: 0% 40%;
+    }
+    100% {
+        background-position: 200% 60%;
+    }
+}
+.overlay-WALKER {
+    background: linear-gradient(45deg, rgba(59, 130, 246, 0.14), transparent);
+    mix-blend-mode: overlay;
+    pointer-events: none;
+    z-index: 5;
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    overflow: hidden;
+}
+.overlay-WALKER::before {
+    content: '';
+    position: absolute;
+    inset: -18%;
+    background:
+        radial-gradient(80% 60% at 20% 30%, rgba(255, 255, 255, 0.1) 0%, transparent 60%),
+        radial-gradient(80% 60% at 80% 70%, rgba(59, 130, 246, 0.18) 0%, transparent 62%),
+        radial-gradient(90% 70% at 50% 50%, rgba(255, 255, 255, 0.06) 0%, transparent 66%);
+    opacity: 0.38;
+    mix-blend-mode: screen;
+    filter: blur(1.4px);
+    animation: walker-orbit 7.5s ease-in-out infinite;
+}
+.overlay-WALKER::after {
+    content: '';
+    position: absolute;
+    inset: -22%;
+    background: linear-gradient(140deg, transparent 0%, rgba(255, 255, 255, 0.05) 50%, transparent 100%);
+    background-size: 220% 220%;
+    opacity: 0.18;
+    mix-blend-mode: screen;
+    filter: blur(1px);
+    animation: walker-sweep 9s linear infinite;
+}
+@keyframes walker-flow {
+    0%,
+    100% {
+        filter: contrast(1.08) brightness(1.03) saturate(1.06);
+    }
+    50% {
+        filter: contrast(1.12) brightness(1.06) saturate(1.1);
+    }
+}
+@keyframes walker-orbit {
+    0%,
+    100% {
+        transform: translate3d(-1%, 1%, 0) scale(1);
+    }
+    50% {
+        transform: translate3d(1%, -1%, 0) scale(1.05);
+    }
+}
+@keyframes walker-sweep {
+    0% {
+        background-position: 0% 40%;
+    }
+    100% {
+        background-position: 200% 60%;
+    }
+}
+
+/* 7. LORD */
+.anim-LORD {
+    animation: lord-crown 9s ease-in-out infinite;
+}
+.overlay-LORD {
+    background: radial-gradient(circle at 50% 75%, rgba(234, 179, 8, 0.1), transparent 60%);
+    mix-blend-mode: overlay;
+    pointer-events: none;
+    z-index: 5;
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    overflow: hidden;
+}
+.overlay-LORD::before {
+    content: '';
+    position: absolute;
+    inset: -18%;
+    background: conic-gradient(
+        from 0deg at 50% 50%,
+        transparent 0deg,
+        rgba(255, 215, 0, 0.12) 50deg,
+        transparent 100deg,
+        rgba(255, 215, 0, 0.1) 150deg,
+        transparent 200deg,
+        rgba(255, 215, 0, 0.12) 250deg,
+        transparent 300deg,
+        rgba(255, 215, 0, 0.1) 340deg,
+        transparent 360deg
+    );
+    opacity: 0.22;
+    mix-blend-mode: overlay;
+    filter: blur(1.2px);
+    animation: lord-rays 14s linear infinite;
+}
+.overlay-LORD::after {
+    content: '';
+    position: absolute;
+    inset: -22%;
+    background:
+        radial-gradient(80% 70% at 30% 40%, rgba(255, 255, 255, 0.08) 0%, transparent 60%),
+        radial-gradient(80% 70% at 70% 60%, rgba(255, 215, 0, 0.12) 0%, transparent 62%);
+    opacity: 0.26;
+    mix-blend-mode: screen;
+    filter: blur(1.6px);
+    animation: lord-breathe 6.2s ease-in-out infinite;
+}
+@keyframes lord-crown {
+    0%,
+    100% {
+        filter: contrast(1.08) brightness(1.03) saturate(1.06);
+    }
+    50% {
+        filter: contrast(1.12) brightness(1.06) saturate(1.1);
+    }
+}
+@keyframes lord-rays {
+    0% {
+        transform: rotate(0deg) scale(1.02);
+    }
+    100% {
+        transform: rotate(360deg) scale(1.02);
+    }
+}
+@keyframes lord-breathe {
+    0%,
+    100% {
+        transform: scale(0.98);
+        opacity: 0.18;
+    }
+    50% {
+        transform: scale(1.05);
+        opacity: 0.3;
+    }
+}
+
+/* 8. PRIME */
+.anim-PRIME {
+    animation: prime-calm 7s ease-in-out infinite;
+}
+.overlay-PRIME {
+    background: radial-gradient(circle at 50% 35%, rgba(255, 255, 255, 0.1), transparent 70%);
+    mix-blend-mode: overlay;
+    pointer-events: none;
+    z-index: 5;
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    overflow: hidden;
+}
+.overlay-PRIME::before {
+    content: '';
+    position: absolute;
+    inset: -22%;
+    background:
+        radial-gradient(40% 40% at 20% 22%, rgba(255, 255, 255, 0.16), transparent 70%),
+        radial-gradient(42% 42% at 78% 32%, rgba(168, 85, 247, 0.14), transparent 72%),
+        radial-gradient(44% 44% at 60% 78%, rgba(59, 130, 246, 0.14), transparent 72%),
+        radial-gradient(46% 46% at 34% 68%, rgba(255, 215, 0, 0.12), transparent 74%),
+        radial-gradient(110% 80% at 50% 50%, rgba(255, 255, 255, 0.06) 0%, transparent 62%);
+    opacity: 0.26;
+    mix-blend-mode: screen;
+    filter: blur(0.6px);
+    animation: prime-stars 3.8s ease-in-out infinite;
+}
+.overlay-PRIME::after {
+    content: '';
+    position: absolute;
+    inset: -25%;
+    background: linear-gradient(120deg, transparent 0%, rgba(255, 255, 255, 0.06) 50%, transparent 100%);
+    background-size: 240% 240%;
+    opacity: 0.14;
+    mix-blend-mode: screen;
+    filter: blur(1.1px);
+    animation: prime-sweep 10s linear infinite;
+}
+@keyframes prime-calm {
+    0%,
+    100% {
+        filter: brightness(1.06) contrast(1.05) saturate(1.05);
+    }
+    50% {
+        filter: brightness(1.1) contrast(1.08) saturate(1.08);
+    }
+}
+@keyframes prime-stars {
+    0%,
+    100% {
+        opacity: 0.2;
+    }
+    50% {
+        opacity: 0.36;
+    }
+}
+@keyframes prime-sweep {
+    0% {
+        background-position: 0% 40%;
+    }
+    100% {
+        background-position: 200% 60%;
+    }
+}
+
+/* 9. SINGULARITY */
+.anim-SINGULARITY {
+    animation: singularity-deep 10s ease-in-out infinite;
+}
+.overlay-SINGULARITY {
+    background: radial-gradient(circle at 50% 55%, rgba(168, 85, 247, 0.1), transparent 60%);
+    mix-blend-mode: overlay;
+    opacity: 0.24;
+    animation: singularity-spin 18s linear infinite;
+    pointer-events: none;
+    z-index: 5;
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    overflow: hidden;
+}
+.overlay-SINGULARITY::before {
+    content: '';
+    position: absolute;
+    inset: -28%;
+    background: conic-gradient(
+        from 0deg at 50% 50%,
+        rgba(59, 130, 246, 0),
+        rgba(59, 130, 246, 0.1),
+        rgba(168, 85, 247, 0),
+        rgba(255, 107, 53, 0.08),
+        rgba(59, 130, 246, 0)
+    );
+    opacity: 0.22;
+    mix-blend-mode: overlay;
+    filter: blur(2px);
+    animation: singularity-spin 18s linear infinite reverse;
+}
+.overlay-SINGULARITY::after {
+    content: '';
+    position: absolute;
+    inset: -18%;
+    background:
+        radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.08) 0%, transparent 55%),
+        radial-gradient(circle at 50% 50%, transparent 38%, rgba(255, 255, 255, 0.06) 45%, transparent 55%);
+    opacity: 0.26;
+    mix-blend-mode: screen;
+    filter: blur(1.4px);
+    animation: singularity-breath 4.8s ease-in-out infinite;
+}
+@keyframes singularity-deep {
+    0%,
+    100% {
+        filter: contrast(1.08) brightness(1.02) saturate(1.04);
+    }
+    50% {
+        filter: contrast(1.14) brightness(1.06) saturate(1.1);
+    }
+}
+@keyframes singularity-spin {
+    0% {
+        transform: rotate(0deg) scale(1.03);
+    }
+    100% {
+        transform: rotate(360deg) scale(1.03);
+    }
+}
+@keyframes singularity-breath {
+    0%,
+    100% {
+        transform: scale(0.96);
+        opacity: 0.18;
+    }
+    50% {
+        transform: scale(1.06);
+        opacity: 0.3;
+    }
+}
+
+/* === TIER TEXT EFFECTS === */
+.text-tier-0 {
+    color: #e5e7eb;
+} /* Обычный */
+
+.text-tier-1 {
+    color: #fff;
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
+}
+
+.text-tier-2 {
+    background: linear-gradient(to right, #fff, #fb923c); /* Белый в Оранжевый */
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    filter: drop-shadow(0 0 5px rgba(255, 107, 53, 0.5));
+}
+
+.text-tier-3 {
+    background: linear-gradient(to right, #fb923c, #a855f7, #3b82f6); /* Fennec -> Purple -> Blue */
+    background-size: 200% 200%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: shimmerText 3s linear infinite;
+    filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.5));
+}
+
+.rank-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 12px;
+    border-radius: 9999px;
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 0.35em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.92);
+    background: rgba(0, 0, 0, 0.24);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.65);
+}
+.rank-badge-0 {
+    opacity: 0.85;
+}
+.rank-badge-1 {
+    box-shadow: 0 0 16px rgba(255, 255, 255, 0.18);
+}
+.rank-badge-2 {
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.18), rgba(255, 107, 53, 0.18));
+    border-color: rgba(255, 107, 53, 0.22);
+    box-shadow: 0 0 22px rgba(255, 107, 53, 0.25);
+}
+.rank-badge-3 {
+    background: linear-gradient(90deg, rgba(255, 107, 53, 0.25), rgba(168, 85, 247, 0.25), rgba(59, 130, 246, 0.25));
+    background-size: 200% 200%;
+    animation: rankShimmer 3s linear infinite;
+    border-color: rgba(255, 255, 255, 0.2);
+    box-shadow:
+        0 0 30px rgba(255, 255, 255, 0.22),
+        0 0 50px rgba(255, 107, 53, 0.18);
+}
+@keyframes rankShimmer {
+    0% {
+        background-position: 0% 50%;
+    }
+    50% {
+        background-position: 100% 50%;
+    }
+    100% {
+        background-position: 0% 50%;
+    }
+}
+
+@keyframes shimmerText {
+    0% {
+        background-position: 0% 50%;
+    }
+    50% {
+        background-position: 100% 50%;
+    }
+    100% {
+        background-position: 0% 50%;
+    }
+}
+
+/* === ПРАВИЛЬНАЯ ЛОГИКА 3D FLIP === */
+/* Когда card-object вращается на 180deg:
+            - face-front: 180 + 0 = 180deg → скрыта (backface-visibility: hidden)
+            - face-back: 180 + 180 = 360deg = 0deg → видна нормально
+            Никаких scaleX(-1) не нужно! */
+
+/* === RARITY STYLES (Цвета рамок) === */
+
+/* 0-49: CUB (Grey) - ИСПРАВЛЕНИЕ: Улучшена видимость рамки */
+.card-scene:not([data-fennec-lib-root]) .card-object.card-cub,
+.card-scene:not([data-fennec-lib-root]) .card-face.card-cub {
+    border: 3px solid #52525b !important; /* ИСПРАВЛЕНИЕ: Увеличена толщина, применяется к card-object и card-face */
+    box-shadow:
+        0 0 25px rgba(82, 82, 91, 0.5),
+        inset 0 0 10px rgba(82, 82, 91, 0.2) !important; /* ИСПРАВЛЕНИЕ: Увеличена яркость */
+    box-sizing: border-box; /* ИСПРАВЛЕНИЕ: Убеждаемся что рамка не выходит за границы */
+}
+.card-face.card-cub {
+    background: radial-gradient(circle at center, rgba(82, 82, 91, 0.15) 0%, rgba(0, 0, 0, 0.8) 70%);
+}
+.text-cub {
+    color: #a1a1aa;
+}
+
+/* 0-49: CUB (Grey) - ИСПРАВЛЕНИЕ: Улучшена видимость рамки */
+.card-scene:not([data-fennec-lib-root]) .card-object.card-cub,
+.card-scene:not([data-fennec-lib-root]) .card-face.card-cub {
+    border: 3px solid #52525b !important; /* ИСПРАВЛЕНИЕ: Увеличена толщина, применяется к card-object и card-face */
+    box-shadow:
+        0 0 25px rgba(82, 82, 91, 0.5),
+        inset 0 0 10px rgba(82, 82, 91, 0.2) !important; /* ИСПРАВЛЕНИЕ: Увеличена яркость */
+    box-sizing: border-box; /* ИСПРАВЛЕНИЕ: Убеждаемся что рамка не выходит за границы */
+}
+.card-face.card-cub {
+    background: radial-gradient(circle at center, rgba(82, 82, 91, 0.15) 0%, rgba(0, 0, 0, 0.8) 70%);
+}
+.text-cub {
+    color: #a1a1aa;
+}
+
+/* 50-59: SCOUT (Green) - ИСПРАВЛЕНИЕ: Улучшена видимость рамки */
+.card-scene:not([data-fennec-lib-root]) .card-object.card-scout,
+.card-scene:not([data-fennec-lib-root]) .card-face.card-scout {
+    border: 3px solid #22c55e !important; /* ИСПРАВЛЕНИЕ: Увеличена толщина */
+    box-shadow:
+        0 0 30px rgba(34, 197, 94, 0.6),
+        inset 0 0 15px rgba(34, 197, 94, 0.3) !important; /* ИСПРАВЛЕНИЕ: Увеличена яркость */
+    box-sizing: border-box; /* ИСПРАВЛЕНИЕ: Убеждаемся что рамка не выходит за границы */
+}
+.card-face.card-scout {
+    background: radial-gradient(circle at center, rgba(34, 197, 94, 0.15) 0%, rgba(0, 0, 0, 0.8) 70%);
+}
+.text-scout {
+    color: #4ade80;
+}
+
+/* 60-69: HUNTER (Blue) - ИСПРАВЛЕНИЕ: Улучшена видимость рамки */
+.card-scene:not([data-fennec-lib-root]) .card-object.card-hunter,
+.card-scene:not([data-fennec-lib-root]) .card-face.card-hunter {
+    border: 3px solid #3b82f6 !important; /* ИСПРАВЛЕНИЕ: Увеличена толщина */
+    box-shadow:
+        0 0 35px rgba(59, 130, 246, 0.7),
+        inset 0 0 15px rgba(59, 130, 246, 0.4) !important; /* ИСПРАВЛЕНИЕ: Увеличена яркость */
+    box-sizing: border-box; /* ИСПРАВЛЕНИЕ: Убеждаемся что рамка не выходит за границы */
+}
+.card-face.card-hunter {
+    background: radial-gradient(circle at center, rgba(59, 130, 246, 0.15) 0%, rgba(0, 0, 0, 0.8) 70%);
+}
+.text-hunter {
+    color: #60a5fa;
+}
+
+/* 70-79: ALPHA (Red) - ИСПРАВЛЕНИЕ: Улучшена видимость рамки */
+.card-scene:not([data-fennec-lib-root]) .card-object.card-alpha,
+.card-scene:not([data-fennec-lib-root]) .card-face.card-alpha {
+    border: 3px solid #ef4444 !important; /* ИСПРАВЛЕНИЕ: Увеличена толщина */
+    box-shadow:
+        0 0 40px rgba(239, 68, 68, 0.8),
+        inset 0 0 20px rgba(239, 68, 68, 0.5) !important; /* ИСПРАВЛЕНИЕ: Увеличена яркость */
+    box-sizing: border-box; /* ИСПРАВЛЕНИЕ: Убеждаемся что рамка не выходит за границы */
+}
+.card-face.card-alpha {
+    background: radial-gradient(circle at center, rgba(239, 68, 68, 0.15) 0%, rgba(0, 0, 0, 0.8) 70%);
+}
+.text-alpha {
+    color: #f87171;
+}
+
+/* 80-89: ELDER (Gold) - ИСПРАВЛЕНИЕ: Улучшена видимость рамки */
+.card-scene:not([data-fennec-lib-root]) .card-object.card-elder,
+.card-scene:not([data-fennec-lib-root]) .card-face.card-elder {
+    border: 3px solid #eab308 !important; /* ИСПРАВЛЕНИЕ: Увеличена толщина */
+    box-shadow:
+        0 0 45px rgba(234, 179, 8, 0.9),
+        inset 0 0 20px rgba(234, 179, 8, 0.6) !important; /* ИСПРАВЛЕНИЕ: Увеличена яркость */
+    box-sizing: border-box; /* ИСПРАВЛЕНИЕ: Убеждаемся что рамка не выходит за границы */
+}
+.card-face.card-elder {
+    background: radial-gradient(circle at center, rgba(234, 179, 8, 0.2) 0%, rgba(0, 0, 0, 0.8) 70%);
+}
+.text-elder {
+    color: #facc15;
+}
+
+/* 90-100: SPIRIT (TRUE RAINBOW / HOLOGRAPHIC) - ВСЕ ЦВЕТА ОДНОВРЕМЕННО */
+.card-scene:not([data-fennec-lib-root]) .card-spirit {
+    position: relative;
+    border-radius: 24px;
+    /* Скругленная радужная рамка через псевдоэлемент */
+}
+
+.card-scene:not([data-fennec-lib-root]) .card-spirit {
+    overflow: visible;
+    position: relative;
+}
+
+.card-scene:not([data-fennec-lib-root]) .card-spirit::before {
+    content: '';
+    position: absolute;
+    inset: 0; /* ИСПРАВЛЕНИЕ: Увеличена толщина рамки для лучшей видимости */
+    border-radius: 24px; /* ИСПРАВЛЕНИЕ: Скругленные края рамки */
+    padding: 4px; /* ИСПРАВЛЕНИЕ: Увеличена толщина */
+    background: conic-gradient(
+        from 0deg,
+        #ff0000,
+        #ff7f00,
+        #ffff00,
+        #00ff00,
+        #00ffff,
+        #0000ff,
+        #4b0082,
+        #9400d3,
+        #ff0000
+    );
+    -webkit-mask:
+        linear-gradient(#fff 0 0) content-box,
+        linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+        linear-gradient(#fff 0 0) content-box,
+        linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+    z-index: 60;
+    pointer-events: none;
+    filter: brightness(1.55) saturate(1.25) drop-shadow(0 0 16px rgba(255, 255, 255, 0.35));
+    transform-origin: center center;
+    animation: spiritBorderPulse 4.2s linear infinite;
+    /* ИСПРАВЛЕНИЕ: Убеждаемся что рамка видна */
+    overflow: visible;
+}
+
+.badge-medal {
+    transition:
+        transform 160ms ease,
+        filter 160ms ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.22);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+    border-radius: 10px;
+    overflow: hidden;
+    outline: none;
+    transform: translateZ(0);
+    will-change: transform, filter;
+}
+.badge-medal:hover {
+    transform: translateY(-2px) scale(1.06);
+    filter: drop-shadow(0 0 12px rgba(255, 107, 53, 0.35)) drop-shadow(0 0 22px rgba(255, 255, 255, 0.12));
+}
+
+.badge-medal img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: contain;
+}
+
+@keyframes spiritBorderPulse {
+    0% {
+        filter: brightness(1.65) saturate(1.25) hue-rotate(0deg) drop-shadow(0 0 16px rgba(255, 255, 255, 0.35));
+    }
+    50% {
+        filter: brightness(2.05) saturate(1.45) hue-rotate(180deg) drop-shadow(0 0 20px rgba(255, 255, 255, 0.45));
+    }
+    100% {
+        filter: brightness(1.65) saturate(1.25) hue-rotate(360deg) drop-shadow(0 0 16px rgba(255, 255, 255, 0.35));
+    }
+}
+
+.card-scene:not([data-fennec-lib-root]) .card-spirit .card-face {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    border-radius: 24px; /* ИСПРАВЛЕНИЕ: Закругленные края у фона */
+    box-shadow:
+        0 0 20px rgba(255, 0, 0, 0.5),
+        0 0 30px rgba(255, 127, 0, 0.4),
+        0 0 40px rgba(255, 255, 0, 0.3),
+        0 0 50px rgba(0, 255, 0, 0.3),
+        0 0 40px rgba(0, 255, 255, 0.3),
+        0 0 30px rgba(0, 0, 255, 0.4),
+        0 0 20px rgba(75, 0, 130, 0.5),
+        0 0 10px rgba(148, 0, 211, 0.6);
+    /* ИСПРАВЛЕНИЕ: Убеждаемся что рамка не обрезается */
+    margin: 0;
+}
+
+/* Радужный текст для слова "SPIRIT" */
+.text-spirit {
+    background: linear-gradient(90deg, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    font-weight: 900;
+    animation: rainbowTextMove 3s linear infinite;
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+}
+
+@keyframes rainbowTextMove {
+    to {
+        background-position: 200% center;
+    }
+}
+
+/* Совместимость со старыми классами */
+.card-common {
+    border-color: #52525b;
+    box-shadow: 0 0 15px rgba(82, 82, 91, 0.1);
+}
+.card-uncommon {
+    border-color: #22c55e;
+    box-shadow: 0 0 20px rgba(34, 197, 94, 0.2);
+}
+.card-rare {
+    border-color: #3b82f6;
+    box-shadow: 0 0 25px rgba(59, 130, 246, 0.3);
+}
+.card-epic {
+    border-color: #ef4444;
+    box-shadow: 0 0 30px rgba(239, 68, 68, 0.4);
+}
+.card-legendary {
+    border-color: #eab308;
+    box-shadow: 0 0 35px rgba(234, 179, 8, 0.5);
+}
+.card-mythic {
+    animation: rainbowGlow 4s linear infinite alternate;
+    background: #000;
+}
+
+/* 3D эффект для карточки */
+.fennec-card-wrapper {
+    perspective: 1000px;
+    perspective-origin: center center;
+}
+
+#fennecCard {
+    transform-style: preserve-3d;
+    transition: transform 0.3s ease;
+    will-change: transform;
+}
+
+#fennecCard:hover {
+    transform: rotateY(8deg) rotateX(-3deg) scale(1.03) translateZ(20px);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    #fennecCard {
+        animation: cardFloat 6s ease-in-out infinite;
+    }
+}
+
+@keyframes cardFloat {
+    0%,
+    100% {
+        transform: translateY(0px) rotateY(0deg) rotateX(0deg);
+    }
+    50% {
+        transform: translateY(-8px) rotateY(2deg) rotateX(1deg);
+    }
+}
+
+@keyframes mythicPulse {
+    0% {
+        box-shadow: 0 0 30px rgba(239, 68, 68, 0.5);
+        border-color: #ef4444;
+    }
+    50% {
+        box-shadow:
+            0 0 60px rgba(239, 68, 68, 0.8),
+            0 0 10px rgba(255, 255, 255, 0.5);
+        border-color: #ff8888;
+    }
+    100% {
+        box-shadow: 0 0 30px rgba(239, 68, 68, 0.5);
+        border-color: #ef4444;
+    }
+}
+
+.holo-overlay {
+    background: linear-gradient(
+        125deg,
+        transparent 30%,
+        rgba(255, 255, 255, 0.1) 40%,
+        rgba(255, 255, 255, 0.1) 60%,
+        transparent 70%
+    );
+    background-size: 200% 200%;
+    animation: holoShift 5s linear infinite;
+}
+@keyframes holoShift {
+    0% {
+        background-position: 0% 50%;
+    }
+    100% {
+        background-position: 100% 50%;
+    }
+}
+
+@keyframes cardHoloSheen {
+    0% {
+        background-position: -80% 50%;
+    }
+    100% {
+        background-position: 180% 50%;
+    }
+}
+
+.card-holo-sheen {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 26;
+    display: none;
+    opacity: 0.35;
+    mix-blend-mode: overlay;
+    border-radius: 24px;
+    clip-path: inset(0 round 24px);
+    background-image:
+        linear-gradient(115deg, rgba(255, 255, 255, 0) 10%, rgba(255, 255, 255, 0.22) 35%, rgba(255, 255, 255, 0) 60%),
+        linear-gradient(90deg, rgba(255, 107, 53, 0.1), rgba(168, 85, 247, 0.1), rgba(59, 130, 246, 0.1));
+    background-size:
+        240% 140%,
+        200% 100%;
+    background-position:
+        -80% 50%,
+        0% 50%;
+    animation: cardHoloSheen 4.5s linear infinite;
+}
+
+/* ===== FENNEC SPIRIT EFFECT ===== */
+@keyframes spiritGlow {
+    0% {
+        box-shadow:
+            0 0 10px #ff6b35,
+            inset 0 0 10px #ff6b35;
+        border-color: #ff6b35;
+    }
+    50% {
+        box-shadow:
+            0 0 25px #ff6b35,
+            0 0 10px #ff9e75,
+            inset 0 0 20px #ff6b35;
+        border-color: #ff9e75;
+    }
+    100% {
+        box-shadow:
+            0 0 10px #ff6b35,
+            inset 0 0 10px #ff6b35;
+        border-color: #ff6b35;
+    }
+}
+
+/* === FENNEC SOUL PULSE (Универсальный эффект) === */
+
+@keyframes soulBreath {
+    0% {
+        /* Обычная тень - УМЕРЕННО */
+        box-shadow:
+            0 0 15px rgba(255, 107, 53, 0.4),
+            0 0 25px rgba(255, 107, 53, 0.3);
+    }
+    50% {
+        /* Яркая оранжевая аура - УМЕРЕННО */
+        box-shadow:
+            0 0 30px rgba(255, 107, 53, 0.7),
+            0 0 50px rgba(255, 107, 53, 0.5),
+            0 0 70px rgba(255, 107, 53, 0.3);
+    }
+    100% {
+        box-shadow:
+            0 0 15px rgba(255, 107, 53, 0.4),
+            0 0 25px rgba(255, 107, 53, 0.3);
+    }
+}
+
+/* Класс, который мы добавим карточке холдера */
+.fennec-pulse {
+    animation: soulBreath 2s infinite ease-in-out !important;
+    position: relative;
+    z-index: 10; /* Чтобы свечение было видно */
+}
+
+/* Чтобы рамка редкости оставалась видна, мы не трогаем border-color в анимации */
+
+/* Значок SOUL */
+.soul-badge {
+    background: linear-gradient(90deg, #ff6b35, #ff4e00);
+    color: white;
+    font-weight: 800;
+    box-shadow: 0 0 10px rgba(255, 107, 53, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.digging-fox {
+    animation: digShake 0.2s infinite;
+    display: inline-block;
+}
+.dirt-particle {
+    position: fixed;
+    width: 6px;
+    height: 6px;
+    background: #d97706;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 9998;
+}
+
+/* ===== WHALE WATCHER ===== */
+.whale-alert {
+    transition: transform 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+.notification.exit {
+    animation: slideOut 0.3s ease-out forwards;
+}
+@keyframes slideOut {
+    to {
+        transform: translateX(400px);
+        opacity: 0;
+    }
+}
+
+/* ===== FENNEC CHAT STYLES ===== */
+/* Scrollbar for Chat */
+#chatMessages::-webkit-scrollbar {
+    width: 4px;
+}
+#chatMessages::-webkit-scrollbar-track {
+    background: transparent;
+}
+#chatMessages::-webkit-scrollbar-thumb {
+    background: #333;
+    border-radius: 2px;
+}
+
+/* Markdown-like styling for AI response */
+.oracle-md a {
+    color: #ff6b35;
+    text-decoration: underline;
+}
+.oracle-md strong {
+    color: #fff;
+    font-weight: 700;
+}
+.oracle-md ul {
+    list-style-type: disc;
+    padding-left: 15px;
+    margin-top: 5px;
+}
+
+@keyframes pulse-glow {
+    0%,
+    100% {
+        filter: drop-shadow(0 0 5px #ff6b35);
+    }
+    50% {
+        filter: drop-shadow(0 0 15px #ff6b35) brightness(1.2);
+    }
+}
+
+.ai-avatar {
+    animation: pulse-glow 3s infinite ease-in-out;
+}
+
+/* Animation for messages */
+@keyframes msgSlide {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+.msg-anim {
+    animation: msgSlide 0.3s ease-out forwards;
+}
+
+/* AI HIGHLIGHT EFFECT */
+@keyframes pulse-guide {
+    0% {
+        box-shadow: 0 0 0 0 rgba(255, 107, 53, 0.7);
+        border-color: #ff6b35;
+    }
+    70% {
+        box-shadow: 0 0 0 15px rgba(255, 107, 53, 0);
+        border-color: #ff6b35;
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(255, 107, 53, 0);
+        border-color: rgba(255, 255, 255, 0.1);
+    }
+}
+
+@keyframes loading-bar {
+    0% {
+        transform: translateX(-100%);
+    }
+    50% {
+        transform: translateX(0);
+    }
+    100% {
+        transform: translateX(100%);
+    }
+}
+.ai-highlight {
+    animation: pulse-guide 1.5s infinite;
+    z-index: 100;
+    position: relative;
+}
+
+@keyframes swap-success-pulse {
+    0% {
+        transform: translateZ(0) scale(1);
+        box-shadow: 0 0 0 rgba(255, 107, 53, 0);
+    }
+    35% {
+        transform: translateZ(0) scale(1.01);
+        box-shadow: 0 0 38px rgba(255, 107, 53, 0.38);
+    }
+    100% {
+        transform: translateZ(0) scale(1);
+        box-shadow: 0 0 0 rgba(255, 107, 53, 0);
+    }
+}
+.swap-success-pulse {
+    animation: swap-success-pulse 700ms ease-out;
+}
+
+@keyframes swap-success-overlay {
+    0% {
+        opacity: 0;
+        transform: scale(0.98);
+    }
+    22% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    78% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(1.01);
+    }
+}
+.swap-success-overlay {
+    animation: swap-success-overlay 950ms ease-out forwards;
+}
+
+.card-glare {
+    display: none !important;
+    opacity: 0 !important;
+}
+
+.router-view {
+    opacity: 1;
+    transition: opacity 180ms ease;
+}
+
+.router-view.router-fade-out {
+    opacity: 0;
+}
