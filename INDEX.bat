@@ -7,18 +7,7 @@ echo.
 
 pushd "%~dp0"
 
-set "PAGES_DIR=.pages_upload"
-if exist "%PAGES_DIR%\" (
-    rmdir /s /q "%PAGES_DIR%"
-)
-robocopy . "%PAGES_DIR%" /E /XD node_modules backup .wrangler .git "%PAGES_DIR%" /XF img.rar *.rar >nul
-set "ROBO_EXIT_CODE=%errorlevel%"
-if %ROBO_EXIT_CODE% geq 8 (
-    echo.
-    echo ERROR: Failed to prepare Pages upload directory (robocopy exit %ROBO_EXIT_CODE%)
-    pause
-    exit /b 1
-)
+set "PAGES_DIR=."
 
 set "WRANGLER_LOCAL=node_modules\.bin\wrangler.cmd"
 set "PAGES_EXTRA_FLAGS=--commit-hash=0000000000000000000000000000000000000000 --commit-message=local --commit-dirty=true"

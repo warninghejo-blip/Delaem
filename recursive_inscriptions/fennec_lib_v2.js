@@ -2875,7 +2875,7 @@ body {
 
             <div style="position:relative;z-index:20;padding:20px;">
                 <div style="position:absolute;right:20px;top:20px;font-size:11px;font-family:var(--font-tactical);font-weight:900;color:rgba(255,255,255,0.5);letter-spacing:0.05em;">${safeText(String(dna.inscriptionNumber || ''))}</div>
-                <div style="display:flex;flex-wrap:wrap;gap:7px;justify-content:center;align-items:center;margin-top:6px;">${badgesFrontHtml}</div>
+                <div style="display:flex;flex-wrap:wrap;gap:7px;justify-content:center;align-items:center;margin-top:2px;transform:translateY(-6px);">${badgesFrontHtml}</div>
             </div>
 
             <div style="position:relative;z-index:20;margin-top:auto;padding:34px 28px 28px;">

@@ -192,7 +192,9 @@ export default {
 
             const API_KEY = env?.UNISAT_API_KEY || env?.API_KEY || '';
             const CMC_API_KEY = env?.CMC_API_KEY || env?.CMC_PRO_API_KEY || '';
-            const GOOGLE_API_KEY = env?.GOOGLE_API_KEY || '***REMOVED_GOOGLE_KEY***';
+            const GOOGLE_API_KEY = String(env?.GOOGLE_API_KEY || env?.GEMINI_API_KEY || '').trim();
+
+            void CMC_API_KEY;
 
             const GEMINI_MODEL_CHAT_PRIMARY = 'gemini-3-flash';
             const GEMINI_MODEL_WORKHORSE = 'gemini-2.5-flash-lite';
@@ -218,6 +220,10 @@ export default {
                     maxModelAttempts = 2,
                     timeoutMs = 12000
                 } = options;
+
+                if (!GOOGLE_API_KEY) {
+                    throw new Error('GOOGLE_API_KEY not configured');
+                }
 
                 const desired = String(model || '').trim();
                 const models = (() => {
@@ -353,6 +359,8 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     return `AI analysis failed: ${e.message}`;
                 }
             };
+
+            void analyzeServerCrash;
             // ИСПРАВЛЕНИЕ: Используем правильные endpoints из UniSat Wallet констант
             // wallet-api требует аутентификации и может иметь больший приоритет для снижения 429 ошибок
             const WALLET_API_FRACTAL = 'https://wallet-api-fractal.unisat.io'; // Wallet API (требует аутентификации)
@@ -360,10 +368,25 @@ Request Context: ${JSON.stringify(context, null, 2)}
             // Стратегия: все запросы идут на open-api-fractal.unisat.io, так как это Fractal-специфичные данные
             // Если нужно распределить нагрузку, можно часть запросов перенести на open-api.unisat.io
             const FRACTAL_BASE = 'https://open-api-fractal.unisat.io/v1'; // Open API Fractal (для всех Fractal-специфичных запросов)
-            const UNISAT_BASE = 'https://open-api.unisat.io/v1'; // Open API общий (резерв, если нужно распределить нагрузку)
-            const BTC_BASE = 'https://open-api.unisat.io';
-            const INSWAP_URL = 'https://inswap.cc/fractal-api/swap-v1'; // Старый URL для обратной совместимости
-            const INSWAP_V1_URL = 'https://inswap.cc/fractal-api/v1/brc20-swap'; // Правильный URL по документации
+            const __normHost = v =>
+                String(v || '')
+                    .trim()
+                    .replace(/^https?:\/\//i, '')
+                    .replace(/\/+$/, '');
+            const __unisatHost =
+                __normHost(env?.UNISAT_OPEN_API_HOST) ||
+                __normHost(env?.UNISAT_HOST) ||
+                __normHost(env?.OPEN_API_UNISAT_HOST) ||
+                'open-api-staging.unisat.io';
+            const UNISAT_BASE = `https://${__unisatHost}/v1`; // Open API общий (prod/staging via env)
+            const BTC_BASE = `https://${__unisatHost}`;
+            const INSWAP_URL = `${FRACTAL_BASE}/brc20-swap`; // Старый URL для обратной совместимости
+            const INSWAP_V1_URL = `${FRACTAL_BASE}/brc20-swap`; // Правильный URL по документации
+
+            void WALLET_API_FRACTAL;
+            void BTC_BASE;
+            void INSWAP_URL;
+            void INSWAP_V1_URL;
 
             // КРИТИЧЕСКОЕ: Для brc20-swap эндпоинтов используем FRACTAL_BASE
             // Все brc20-swap запросы должны идти на open-api-fractal.unisat.io (они Fractal-специфичные)
@@ -374,6 +397,17 @@ Request Context: ${JSON.stringify(context, null, 2)}
 
             const __normalizeSwapTick = t => {
                 const v = String(t || '').trim();
+                if (v.includes('/')) {
+                    const parts = v
+                        .split('/')
+                        .map(p => String(p || '').trim())
+                        .filter(Boolean);
+                    if (parts.length === 2) {
+                        const n0 = __normalizeSwapTick(parts[0]);
+                        const n1 = __normalizeSwapTick(parts[1]);
+                        return `${n0}/${n1}`;
+                    }
+                }
                 const u = v.toUpperCase();
                 if (u === 'SFB') return 'sFB___000';
                 if (u === 'SBTC') return 'sBTC___000';
@@ -400,12 +434,15 @@ Request Context: ${JSON.stringify(context, null, 2)}
                 return ts;
             };
 
+            void sanitizeTimestamp;
+
             // Headers forwarding
             const incomingPubKey = request.headers.get('x-public-key');
             const incomingAddress = request.headers.get('x-address');
 
             const upstreamHeaders = {
                 'Content-Type': 'application/json',
+                Accept: 'application/json, text/plain, */*',
                 'User-Agent':
                     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             };
@@ -502,242 +539,6 @@ Request Context: ${JSON.stringify(context, null, 2)}
             //     debugInfo.user_signature_provided = false;
             // }
 
-            // Функция генерации x-sign и x-ts для InSwap/Unisat API
-            // АЛГОРИТМ НАЙДЕН В БРАУЗЕРЕ: Из функции eh в _app-2637cbcbd7da64c9.js
-            // Найдено:
-            // - ep(T): кодирование параметров
-            // - ed: /https?:\/\/[^/]+/
-            // - ef: ["/api/", "/btc-api/", "/fractal-api/"]
-            // - e_: "@#?.#@"
-            // - X по умолчанию = eu (но eu зависит от N.a7 и N.Em, которые неизвестны)
-            // - U.$i(): что возвращает?
-            // - en: класс хеша (MD5 или SHA-256?)
-            // Алгоритм:
-            // 1. Формируется строка J из URL (без домена) + параметры + "\n" + timestamp + "@#?.#@" + X(U.$i())
-            // 2. От строки J делается хеш через MD5 или SHA-256 (через функцию ei)
-            // 3. Результат устанавливается как x-sign
-            const md5Hex = str => {
-                const safeAdd = (x, y) => {
-                    const lsw = (x & 0xffff) + (y & 0xffff);
-                    const msw = (x >> 16) + (y >> 16) + (lsw >> 16);
-                    return (msw << 16) | (lsw & 0xffff);
-                };
-                const bitRotateLeft = (num, cnt) => {
-                    return (num << cnt) | (num >>> (32 - cnt));
-                };
-                const md5cmn = (q, a, b, x, s, t) => {
-                    return safeAdd(bitRotateLeft(safeAdd(safeAdd(a, q), safeAdd(x, t)), s), b);
-                };
-                const md5ff = (a, b, c, d, x, s, t) => {
-                    return md5cmn((b & c) | (~b & d), a, b, x, s, t);
-                };
-                const md5gg = (a, b, c, d, x, s, t) => {
-                    return md5cmn((b & d) | (c & ~d), a, b, x, s, t);
-                };
-                const md5hh = (a, b, c, d, x, s, t) => {
-                    return md5cmn(b ^ c ^ d, a, b, x, s, t);
-                };
-                const md5ii = (a, b, c, d, x, s, t) => {
-                    return md5cmn(c ^ (b | ~d), a, b, x, s, t);
-                };
-                const binlMD5 = (x, len) => {
-                    x[len >> 5] |= 0x80 << (len % 32);
-                    x[(((len + 64) >>> 9) << 4) + 14] = len;
-                    let i;
-                    let olda;
-                    let oldb;
-                    let oldc;
-                    let oldd;
-                    let a = 1732584193;
-                    let b = -271733879;
-                    let c = -1732584194;
-                    let d = 271733878;
-                    for (i = 0; i < x.length; i += 16) {
-                        olda = a;
-                        oldb = b;
-                        oldc = c;
-                        oldd = d;
-                        a = md5ff(a, b, c, d, x[i], 7, -680876936);
-                        d = md5ff(d, a, b, c, x[i + 1], 12, -389564586);
-                        c = md5ff(c, d, a, b, x[i + 2], 17, 606105819);
-                        b = md5ff(b, c, d, a, x[i + 3], 22, -1044525330);
-                        a = md5ff(a, b, c, d, x[i + 4], 7, -176418897);
-                        d = md5ff(d, a, b, c, x[i + 5], 12, 1200080426);
-                        c = md5ff(c, d, a, b, x[i + 6], 17, -1473231341);
-                        b = md5ff(b, c, d, a, x[i + 7], 22, -45705983);
-                        a = md5ff(a, b, c, d, x[i + 8], 7, 1770035416);
-                        d = md5ff(d, a, b, c, x[i + 9], 12, -1958414417);
-                        c = md5ff(c, d, a, b, x[i + 10], 17, -42063);
-                        b = md5ff(b, c, d, a, x[i + 11], 22, -1990404162);
-                        a = md5ff(a, b, c, d, x[i + 12], 7, 1804603682);
-                        d = md5ff(d, a, b, c, x[i + 13], 12, -40341101);
-                        c = md5ff(c, d, a, b, x[i + 14], 17, -1502002290);
-                        b = md5ff(b, c, d, a, x[i + 15], 22, 1236535329);
-                        a = md5gg(a, b, c, d, x[i + 1], 5, -165796510);
-                        d = md5gg(d, a, b, c, x[i + 6], 9, -1069501632);
-                        c = md5gg(c, d, a, b, x[i + 11], 14, 643717713);
-                        b = md5gg(b, c, d, a, x[i], 20, -373897302);
-                        a = md5gg(a, b, c, d, x[i + 5], 5, -701558691);
-                        d = md5gg(d, a, b, c, x[i + 10], 9, 38016083);
-                        c = md5gg(c, d, a, b, x[i + 15], 14, -660478335);
-                        b = md5gg(b, c, d, a, x[i + 4], 20, -405537848);
-                        a = md5gg(a, b, c, d, x[i + 9], 5, 568446438);
-                        d = md5gg(d, a, b, c, x[i + 14], 9, -1019803690);
-                        c = md5gg(c, d, a, b, x[i + 3], 14, -187363961);
-                        b = md5gg(b, c, d, a, x[i + 8], 20, 1163531501);
-                        a = md5gg(a, b, c, d, x[i + 13], 5, -1444681467);
-                        d = md5gg(d, a, b, c, x[i + 2], 9, -51403784);
-                        c = md5gg(c, d, a, b, x[i + 7], 14, 1735328473);
-                        b = md5gg(b, c, d, a, x[i + 12], 20, -1926607734);
-                        a = md5hh(a, b, c, d, x[i + 5], 4, -378558);
-                        d = md5hh(d, a, b, c, x[i + 8], 11, -2022574463);
-                        c = md5hh(c, d, a, b, x[i + 11], 16, 1839030562);
-                        b = md5hh(b, c, d, a, x[i + 14], 23, -35309556);
-                        a = md5hh(a, b, c, d, x[i + 1], 4, -1530992060);
-                        d = md5hh(d, a, b, c, x[i + 4], 11, 1272893353);
-                        c = md5hh(c, d, a, b, x[i + 7], 16, -155497632);
-                        b = md5hh(b, c, d, a, x[i + 10], 23, -1094730640);
-                        a = md5hh(a, b, c, d, x[i + 13], 4, 681279174);
-                        d = md5hh(d, a, b, c, x[i], 11, -358537222);
-                        c = md5hh(c, d, a, b, x[i + 3], 16, -722521979);
-                        b = md5hh(b, c, d, a, x[i + 6], 23, 76029189);
-                        a = md5hh(a, b, c, d, x[i + 9], 4, -640364487);
-                        d = md5hh(d, a, b, c, x[i + 12], 11, -421815835);
-                        c = md5hh(c, d, a, b, x[i + 15], 16, 530742520);
-                        b = md5hh(b, c, d, a, x[i + 2], 23, -995338651);
-                        a = md5ii(a, b, c, d, x[i], 6, -198630844);
-                        d = md5ii(d, a, b, c, x[i + 7], 10, 1126891415);
-                        c = md5ii(c, d, a, b, x[i + 14], 15, -1416354905);
-                        b = md5ii(b, c, d, a, x[i + 5], 21, -57434055);
-                        a = md5ii(a, b, c, d, x[i + 12], 6, 1700485571);
-                        d = md5ii(d, a, b, c, x[i + 3], 10, -1894986606);
-                        c = md5ii(c, d, a, b, x[i + 10], 15, -1051523);
-                        b = md5ii(b, c, d, a, x[i + 1], 21, -2054922799);
-                        a = md5ii(a, b, c, d, x[i + 8], 6, 1873313359);
-                        d = md5ii(d, a, b, c, x[i + 15], 10, -30611744);
-                        c = md5ii(c, d, a, b, x[i + 6], 15, -1560198380);
-                        b = md5ii(b, c, d, a, x[i + 13], 21, 1309151649);
-                        a = md5ii(a, b, c, d, x[i + 4], 6, -145523070);
-                        d = md5ii(d, a, b, c, x[i + 11], 10, -1120210379);
-                        c = md5ii(c, d, a, b, x[i + 2], 15, 718787259);
-                        b = md5ii(b, c, d, a, x[i + 9], 21, -343485551);
-                        a = safeAdd(a, olda);
-                        b = safeAdd(b, oldb);
-                        c = safeAdd(c, oldc);
-                        d = safeAdd(d, oldd);
-                    }
-                    return [a, b, c, d];
-                };
-                const binl2rstr = input => {
-                    let i;
-                    let output = '';
-                    for (i = 0; i < input.length * 32; i += 8) {
-                        output += String.fromCharCode((input[i >> 5] >>> (i % 32)) & 0xff);
-                    }
-                    return output;
-                };
-                const rstr2binl = input => {
-                    let i;
-                    const output = Array(((input.length + 3) >> 2) + 1).fill(0);
-                    for (i = 0; i < input.length * 8; i += 8) {
-                        output[i >> 5] |= (input.charCodeAt(i / 8) & 0xff) << (i % 32);
-                    }
-                    return output;
-                };
-                const rstrMD5 = s => {
-                    return binl2rstr(binlMD5(rstr2binl(s), s.length * 8));
-                };
-                const rstr2hex = input => {
-                    const hexTab = '0123456789abcdef';
-                    let output = '';
-                    let x;
-                    let i;
-                    for (i = 0; i < input.length; i += 1) {
-                        x = input.charCodeAt(i);
-                        output += hexTab.charAt((x >>> 4) & 0x0f) + hexTab.charAt(x & 0x0f);
-                    }
-                    return output;
-                };
-                const raw = unescape(encodeURIComponent(String(str)));
-                return rstr2hex(rstrMD5(raw));
-            };
-            const generateXSign = async (url, timestamp, method = 'GET', params = null, data = null) => {
-                // Шаг 1: Убираем домен из URL, оставляем только путь
-                // ed = /https?:\/\/[^/]+/
-                let J = url.replace(/https?:\/\/[^/]+/, '');
-
-                // Шаг 2: Удаляем префиксы из ef = ["/api/", "/btc-api/", "/fractal-api/"]
-                const ef = ['/api/', '/btc-api/', '/fractal-api/'];
-                for (let i = 0; i < ef.length; i += 1) {
-                    if (J.startsWith(ef[i])) {
-                        J = J.substring(ef[i].length - 1, J.length);
-                        break;
-                    }
-                }
-
-                // Шаг 3: Обрабатываем параметры в зависимости от метода
-                // КРИТИЧЕСКОЕ: x-sign-suffix не должен добавляться в query string, только для формирования J
-                let xSignSuffix = null;
-                if (method.toUpperCase() === 'GET' && params) {
-                    // Извлекаем x-sign-suffix из params (если есть) перед обработкой остальных параметров
-                    if (params['x-sign-suffix']) {
-                        xSignSuffix = params['x-sign-suffix'];
-                        delete params['x-sign-suffix']; // Удаляем из params, чтобы не добавлять в query string
-                    }
-
-                    // Для GET добавляем параметры как query string
-                    // Функция ep из кода: encodeURIComponent с особыми правилами
-                    for (const key in params) {
-                        if (params[key] != null) {
-                            const encodedValue = encodeURIComponent(params[key])
-                                .replace(/'/g, '%27')
-                                .replace(/%3A/gi, ':')
-                                .replace(/%24/g, '$')
-                                .replace(/%2C/gi, ',')
-                                .replace(/%20/g, '+')
-                                .replace(/%5B/gi, '[')
-                                .replace(/%5D/gi, ']');
-                            if (J.includes('?')) {
-                                J += `&${key}=${encodedValue}`;
-                            } else {
-                                J += `?${key}=${encodedValue}`;
-                            }
-                        }
-                    }
-                    J += '\n';
-                    J = J.replaceAll('•', '%E2%80%A2');
-                } else if (method.toUpperCase() === 'POST' && data) {
-                    J += '\n';
-                    J += JSON.stringify(data);
-                }
-
-                // Шаг 4: Добавляем timestamp + разделитель + дополнительная строка
-                // Из кода: J += "\n" + I + e_ + X((0, U.$i)())
-                // где:
-                // - I = timestamp
-                // - e_ = "@#?.#@"
-                // - X по умолчанию = eu, где eu = S => N.a7[7] + N.Em[0] + N.Em[1]
-                // - U.$i() - что возвращает?
-                // - en: класс хеша (MD5 или SHA-256?)
-                // Алгоритм:
-                // 1. Формируется строка J из URL (без домена) + параметры + "\n" + timestamp + "@#?.#@" + X(U.$i())
-                // 2. От строки J делается хеш через MD5 или SHA-256 (через функцию ei)
-                // 3. Результат устанавливается как x-sign
-                const additionalString = xSignSuffix || '1adcd7969603261753f1812c9461cd36'; // По умолчанию пробуем x-appid
-
-                J += '\n' + timestamp + '@#?.#@' + additionalString;
-
-                // Шаг 5: Делаем хеш от строки J
-                // Из кода: ei(J) = new en().update(J).digest((0, U.ms)())
-                // en - класс хеша (MD5 или SHA-256?)
-                // U.ms() - метод для получения hex строки
-                //
-                // ПРИМЕЧАНИЕ: Cloudflare Workers не поддерживают MD5 напрямую, используем SHA-256
-                // Если в браузере используется MD5, нужно будет использовать внешнюю библиотеку
-                const hashHex = md5Hex(J);
-                return hashHex.substring(0, 32);
-            };
-
             // Вспомогательная функция для получения цен (Mempool Fractal для BTC, пул для FB)
             const getCMCPrices = async () => {
                 let btcPrice = 0;
@@ -763,7 +564,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         const cgRes = await fetch(
                             'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd',
                             {
-                                headers: { 'User-Agent': 'Mozilla/5.0' }
+                                headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' }
                             }
                         );
                         if (cgRes.ok) {
@@ -780,7 +581,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     const cgFBRes = await fetch(
                         'https://api.coingecko.com/api/v3/simple/price?ids=fractal-bitcoin&vs_currencies=usd',
                         {
-                            headers: { 'User-Agent': 'Mozilla/5.0' }
+                            headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' }
                         }
                     );
                     if (cgFBRes.ok) {
@@ -797,16 +598,18 @@ Request Context: ${JSON.stringify(context, null, 2)}
                 // Fallback: FB считаем из пула FB-Биткоин с учетом текущего курса биткоина
                 if (fbPrice === 0 && btcPrice > 0) {
                     try {
-                        const poolRes = await fetch(
-                            `${FRACTAL_BASE}/indexer/pool_info?tick0=sBTC___000&tick1=sFB___000`,
-                            {
-                                headers: upstreamHeaders
-                            }
-                        );
+                        const query = `?tick0=${encodeURIComponent('sBTC___000')}&tick1=${encodeURIComponent('sFB___000')}`;
+                        let poolUrl = `${SWAP_BASE}/brc20-swap/pool_info${query}`;
+                        let poolRes = await fetch(poolUrl, { headers: upstreamHeaders });
+                        if (!poolRes.ok && poolRes.status === 404) {
+                            poolUrl = `${SWAP_BASE}/indexer/brc20-swap/pool_info${query}`;
+                            poolRes = await fetch(poolUrl, { headers: upstreamHeaders });
+                        }
                         if (poolRes.ok) {
                             const poolJson = await poolRes.json().catch(() => null);
-                            if (poolJson && poolJson.data) {
-                                const d = poolJson.data;
+                            const d =
+                                poolJson && poolJson.data && typeof poolJson.data === 'object' ? poolJson.data : null;
+                            if (d) {
                                 const amt0 = parseFloat(d.amount0);
                                 const amt1 = parseFloat(d.amount1);
                                 const isBtcFirst =
@@ -840,6 +643,8 @@ Request Context: ${JSON.stringify(context, null, 2)}
                 if (v === '90d') return 90 * 24 * 60 * 60;
                 return 24 * 60 * 60;
             };
+
+            void __parseRangeSec;
 
             // ИСПРАВЛЕНИЕ: Удален алиас fractal_audit -> audit_data (конфликт handlers)
 
@@ -990,31 +795,346 @@ Request Context: ${JSON.stringify(context, null, 2)}
                 }
             }
 
+            if (action === 'get_dashboard_data') {
+                try {
+                    // 1) prices
+                    let prices = null;
+                    try {
+                        const pr = await Promise.race([
+                            (async () => {
+                                let btc = 0,
+                                    fb = 0;
+                                try {
+                                    const p = await Promise.race([
+                                        getCMCPrices(),
+                                        new Promise(resolve =>
+                                            setTimeout(() => resolve({ btcPrice: 0, fbPrice: 0 }), 3000)
+                                        )
+                                    ]);
+                                    btc = Number(p?.btcPrice || 0) || 0;
+                                    fb = Number(p?.fbPrice || 0) || 0;
+                                } catch (e) {
+                                    void e;
+                                }
+                                let fennec_in_fb = 0;
+                                try {
+                                    const query = `?tick0=${encodeURIComponent('FENNEC')}&tick1=${encodeURIComponent('sFB___000')}`;
+                                    let poolUrl = `${SWAP_BASE}/brc20-swap/pool_info${query}`;
+                                    let res = await fetch(poolUrl, { headers: upstreamHeaders });
+                                    if (!res.ok && res.status === 404) {
+                                        poolUrl = `${SWAP_BASE}/indexer/brc20-swap/pool_info${query}`;
+                                        res = await fetch(poolUrl, { headers: upstreamHeaders });
+                                    }
+                                    const json = await res.json().catch(() => null);
+                                    const d = json?.data && typeof json.data === 'object' ? json.data : null;
+                                    const a0 = Number(d?.amount0 || 0) || 0;
+                                    const a1 = Number(d?.amount1 || 0) || 0;
+                                    const t0 = String(d?.tick0 || '').toUpperCase();
+                                    const t1 = String(d?.tick1 || '').toUpperCase();
+                                    if (a0 > 0 && a1 > 0) {
+                                        if (t0.includes('FENNEC')) fennec_in_fb = a1 / a0;
+                                        else if (t1.includes('FENNEC')) fennec_in_fb = a0 / a1;
+                                    }
+                                } catch (e) {
+                                    void e;
+                                }
+                                return { btc, fb, fennec_in_fb };
+                            })(),
+                            new Promise(resolve => setTimeout(() => resolve(null), 3500))
+                        ]);
+                        if (pr && typeof pr === 'object') prices = pr;
+                    } catch (_) {
+                        prices = null;
+                    }
+
+                    // 2) fees
+                    const readFee = async endpoint => {
+                        try {
+                            const res = await fetch(endpoint, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+                            if (!res.ok) return null;
+                            const data = await res.json().catch(() => null);
+                            if (!data || typeof data !== 'object') return null;
+                            if (data.fastestFee !== undefined) return data;
+                            if (data.data && typeof data.data === 'object') {
+                                const fees = data.data;
+                                return {
+                                    fastestFee: fees.fastestFee || fees.fastest || fees.high || 10,
+                                    halfHourFee: fees.halfHourFee || fees.halfHour || fees.medium || 8,
+                                    hourFee: fees.hourFee || fees.hour || fees.low || 5,
+                                    minimumFee: fees.minimumFee || fees.minimum || 3
+                                };
+                            }
+                            return null;
+                        } catch (_) {
+                            return null;
+                        }
+                    };
+
+                    const [fractalFee, btcFee] = await Promise.all([
+                        readFee('https://mempool.fractalbitcoin.io/api/v1/fees/recommended'),
+                        readFee('https://mempool.space/api/v1/fees/recommended')
+                    ]);
+
+                    return sendJSON(
+                        {
+                            code: 0,
+                            data: {
+                                prices: prices,
+                                fees: {
+                                    fractal: fractalFee || { fastestFee: 1 },
+                                    bitcoin: btcFee || { fastestFee: 1 }
+                                },
+                                ts: Math.floor(Date.now() / 1000)
+                            }
+                        },
+                        200,
+                        60,
+                        'public'
+                    );
+                } catch (e) {
+                    return sendJSON(
+                        { code: 0, data: { prices: null, fees: null, ts: Math.floor(Date.now() / 1000) } },
+                        200
+                    );
+                }
+            }
+
             // Совместимость: price_line endpoint для фронта
             if (action === 'price_line') {
                 try {
                     const tick0 = __normalizeSwapTick(url.searchParams.get('tick0') || 'sFB___000');
                     const tick1 = __normalizeSwapTick(url.searchParams.get('tick1') || 'FENNEC');
                     const timeRange = String(url.searchParams.get('timeRange') || '7d').trim();
-                    const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 4500);
-                    const endpoint = `${INSWAP_URL}/price_line?tick0=${encodeURIComponent(tick0)}&tick1=${encodeURIComponent(tick1)}&timeRange=${encodeURIComponent(timeRange)}`;
-                    const res = await fetch(endpoint, {
-                        method: 'GET',
-                        headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0' },
-                        signal: controller.signal
-                    }).finally(() => clearTimeout(timeoutId));
-                    const json = await res.json().catch(() => null);
-                    if (json && typeof json === 'object') return sendJSON(json, res.status);
+
+                    const __rangeMs = tr => {
+                        const v = String(tr || '').toLowerCase();
+                        if (v === '1h') return 60 * 60 * 1000;
+                        if (v === '24h') return 24 * 60 * 60 * 1000;
+                        if (v === '7d') return 7 * 24 * 60 * 60 * 1000;
+                        if (v === '30d') return 30 * 24 * 60 * 60 * 1000;
+                        if (v === '90d') return 90 * 24 * 60 * 60 * 1000;
+                        if (v === 'all') return 90 * 24 * 60 * 60 * 1000;
+                        return 7 * 24 * 60 * 60 * 1000;
+                    };
+
+                    const nowMs = Date.now();
+                    const cutoffMs = nowMs - __rangeMs(timeRange);
+
+                    const limit = 2000;
+                    const outList = [];
+                    let start = 0;
+                    let page = 0;
+                    const MAX_PAGES =
+                        timeRange === '1h'
+                            ? 10
+                            : timeRange === '24h'
+                              ? 25
+                              : timeRange === '7d'
+                                ? 120
+                                : timeRange === '30d'
+                                  ? 220
+                                  : timeRange === '90d'
+                                    ? 420
+                                    : timeRange === 'all'
+                                      ? 420
+                                      : 220;
+
+                    while (page < MAX_PAGES) {
+                        let endpointUrl = `${SWAP_BASE}/brc20-swap/swap_history?start=${start}&limit=${limit}`;
+                        let res = await fetch(endpointUrl, { method: 'GET', headers: upstreamHeaders });
+                        if (!res.ok && res.status === 404) {
+                            endpointUrl = `${SWAP_BASE}/indexer/brc20-swap/swap_history?start=${start}&limit=${limit}`;
+                            res = await fetch(endpointUrl, { method: 'GET', headers: upstreamHeaders });
+                        }
+                        const json = res.ok ? await res.json().catch(() => null) : null;
+                        const list = Array.isArray(json?.data?.list) ? json.data.list : [];
+                        if (!list.length) break;
+
+                        let pageMinMs = Infinity;
+
+                        for (const it of list) {
+                            const ts = Number(it?.ts || 0) || 0;
+                            if (!ts) continue;
+                            const ms = ts * 1000;
+                            if (ms < pageMinMs) pageMinMs = ms;
+                            if (ms < cutoffMs) continue;
+
+                            const tin = __normalizeSwapTick(it?.tickIn);
+                            const tout = __normalizeSwapTick(it?.tickOut);
+                            const aIn = Number(it?.amountIn || 0) || 0;
+                            const aOut = Number(it?.amountOut || 0) || 0;
+                            if (!tin || !tout || aIn <= 0 || aOut <= 0) continue;
+
+                            // Хотим price = FB per FENNEC
+                            let price = 0;
+                            if (tin === tick1 && tout === tick0) {
+                                // FENNEC -> FB
+                                price = aOut / aIn;
+                            } else if (tin === tick0 && tout === tick1) {
+                                // FB -> FENNEC
+                                price = aIn / aOut;
+                            } else {
+                                continue;
+                            }
+
+                            if (!(price > 0)) continue;
+                            outList.push({ ts, price: String(price) });
+                        }
+
+                        // Ранний stop: если в этой странице уже есть значения старее cutoff,
+                        // то следующая страница будет еще старее (swap_history обычно отсортирован по времени).
+                        if (Number.isFinite(pageMinMs) && pageMinMs < cutoffMs) break;
+
+                        if (list.length < limit) break;
+                        start += limit;
+                        page += 1;
+                    }
+
+                    outList.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+                    return sendJSON({ code: 0, data: { list: outList } }, 200);
                 } catch (e) {
                     void e;
                 }
                 return sendJSON({ code: 0, data: { list: [] } }, 200);
             }
 
+            if (action === 'btc_balance') {
+                const address = url.searchParams.get('address');
+                if (!address) return sendJSON({ code: -1, msg: 'No address' }, 200);
+                try {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 4000);
+                    const mempoolRes = await fetch(`https://mempool.space/api/address/${address}`, {
+                        signal: controller.signal,
+                        headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' }
+                    });
+                    clearTimeout(timeoutId);
+                    if (mempoolRes.ok) {
+                        const data = await mempoolRes.json().catch(() => null);
+                        const chain =
+                            data && data.chain_stats && typeof data.chain_stats === 'object' ? data.chain_stats : {};
+                        const mem =
+                            data && data.mempool_stats && typeof data.mempool_stats === 'object'
+                                ? data.mempool_stats
+                                : {};
+                        const satoshis =
+                            Number(chain.funded_txo_sum || 0) -
+                            Number(chain.spent_txo_sum || 0) +
+                            (Number(mem.funded_txo_sum || 0) - Number(mem.spent_txo_sum || 0));
+                        return sendJSON({ code: 0, data: { balance: satoshis / 1e8 } }, 200, 15, 'public');
+                    }
+                } catch (e) {
+                    void e;
+                }
+
+                if (API_KEY) {
+                    try {
+                        const res = await fetch(`${BTC_BASE}/v1/indexer/address/${address}/balance`, {
+                            headers: authHeaders()
+                        });
+                        if (res.ok) {
+                            const data = await res.json().catch(() => null);
+                            if (data && data.code === 0 && data.data) {
+                                const total = Number(data.data.satoshi || 0) + Number(data.data.pendingSatoshi || 0);
+                                return sendJSON({ code: 0, data: { balance: total / 1e8 } }, 200, 15, 'public');
+                            }
+                        }
+                    } catch (e) {
+                        void e;
+                    }
+                }
+
+                return sendJSON({ code: 0, data: { balance: 0 } }, 200, 15, 'public');
+            }
+
             // Совместимость: summary endpoint для фронта
             if (action === 'summary') {
-                return sendJSON({ code: 0, data: {} }, 200);
+                const address = String(url.searchParams.get('address') || '').trim();
+                if (!address) return sendJSON({ error: 'Address required' }, 400);
+                try {
+                    const summaryRes = await fetch(`${FRACTAL_BASE}/indexer/address/${address}/summary`, {
+                        headers: upstreamHeaders
+                    });
+                    const summaryJson = summaryRes.ok ? await summaryRes.json().catch(() => null) : null;
+                    let d = summaryJson?.data && typeof summaryJson.data === 'object' ? summaryJson.data : {};
+
+                    if (!summaryRes.ok || !summaryJson || !summaryJson.data) {
+                        try {
+                            const [mempoolRes, utxoRes] = await Promise.all([
+                                fetch(`https://mempool.fractalbitcoin.io/api/address/${address}`, {
+                                    headers: { 'User-Agent': 'Mozilla/5.0' }
+                                }).catch(() => null),
+                                fetch(`https://mempool.fractalbitcoin.io/api/address/${address}/utxo`, {
+                                    headers: { 'User-Agent': 'Mozilla/5.0' }
+                                }).catch(() => null)
+                            ]);
+
+                            let txCount2 = 0;
+                            let utxoCount2 = 0;
+                            let nativeBalance2 = 0;
+
+                            if (mempoolRes?.ok) {
+                                const mempoolData = await mempoolRes.json().catch(() => null);
+                                let c = {},
+                                    m = {};
+                                if (mempoolData?.chain_stats || mempoolData?.mempool_stats) {
+                                    c = mempoolData.chain_stats || {};
+                                    m = mempoolData.mempool_stats || {};
+                                } else if (mempoolData && mempoolData.funded_txo_count !== undefined) {
+                                    c = mempoolData;
+                                    m = {};
+                                }
+                                txCount2 = Number(c.tx_count || 0) + Number(m.tx_count || 0);
+                                const fundedSum = Number(c.funded_txo_sum || 0) + Number(m.funded_txo_sum || 0);
+                                const spentSum = Number(c.spent_txo_sum || 0) + Number(m.spent_txo_sum || 0);
+                                nativeBalance2 = Math.max(0, (fundedSum - spentSum) / 1e8);
+                            }
+
+                            if (utxoRes?.ok) {
+                                const utxoData = await utxoRes.json().catch(() => null);
+                                if (Array.isArray(utxoData)) utxoCount2 = utxoData.length;
+                                else if (utxoData?.data && Array.isArray(utxoData.data))
+                                    utxoCount2 = utxoData.data.length;
+                                else if (utxoData?.list && Array.isArray(utxoData.list))
+                                    utxoCount2 = utxoData.list.length;
+                            }
+
+                            d = {
+                                tx_count: txCount2,
+                                utxo_count: utxoCount2,
+                                native_balance: nativeBalance2
+                            };
+                        } catch (e) {
+                            void e;
+                        }
+                    }
+
+                    const txCount =
+                        Number(d.tx_count || d.totalTransactionCount || d.historyCount || d.txCount || 0) || 0;
+                    const utxoCount = Number(d.utxo_count || d.utxoCount || 0) || 0;
+                    const nativeBalance =
+                        Number(d.native_balance || d.nativeBalance || 0) ||
+                        (Number(d.satoshi || 0) ? Number(d.satoshi || 0) / 100000000 : 0);
+                    const firstTxTs =
+                        Number(d.first_tx_ts || d.firstTransactionTime || d.firstTxTime || d.first_tx_time || 0) || 0;
+
+                    return sendJSON({
+                        code: 0,
+                        data: {
+                            address,
+                            tx_count: txCount,
+                            utxo_count: utxoCount,
+                            native_balance: nativeBalance,
+                            first_tx_ts: firstTxTs,
+                            runes_count: Number(d.runes_count || 0) || 0,
+                            brc20_count: Number(d.brc20_count || 0) || 0,
+                            ordinals_count: Number(d.ordinals_count || 0) || 0,
+                            synced_at: new Date().toISOString()
+                        }
+                    });
+                } catch (e) {
+                    return sendJSON({ code: 0, data: {}, error: e?.message || String(e) }, 200);
+                }
             }
 
             if (action === 'provenance_pubkey') {
@@ -1504,7 +1624,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
 
                     try {
                         if (API_KEY) {
-                            const endpoint = `${FRACTAL_BASE}/indexer/inscription/content/${encodeURIComponent(idWithI)}`;
+                            const endpoint = `${FRACTAL_BASE}/indexer/inscription/content/${encodeURIComponent(
+                                idWithI
+                            )}`;
                             const res = await tryFetchRaw(endpoint, authHeaders());
                             if (res) {
                                 const out = makeRawResponse(res, 86400);
@@ -1751,6 +1873,21 @@ Request Context: ${JSON.stringify(context, null, 2)}
                 return sendJSON(await response.json(), response.status);
             }
 
+            if (action === 'tx_info') {
+                requireUniSatKey();
+                const txid = String(url.searchParams.get('txid') || '').trim();
+                const chain = String(url.searchParams.get('chain') || '')
+                    .trim()
+                    .toUpperCase();
+                if (!txid) return sendJSON({ code: -1, msg: 'Missing txid' }, 200);
+
+                const base = chain.includes('BITCOIN') ? UNISAT_BASE : FRACTAL_BASE;
+                const endpoint = `${base}/indexer/tx/${encodeURIComponent(txid)}`;
+                const res = await fetch(endpoint, { headers: authHeaders() });
+                const json = await res.json().catch(() => null);
+                return sendJSON(json || { code: -1, msg: 'Invalid JSON from upstream' }, res.status);
+            }
+
             if (action === 'burn_remint_psbt') {
                 requireUniSatKey();
                 const body = await request.json().catch(() => null);
@@ -1811,7 +1948,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
 
                 let infoJson = null;
                 try {
-                    const endpoint = `${FRACTAL_BASE}/indexer/inscription/info/${encodeURIComponent(burnInscriptionId)}`;
+                    const endpoint = `${FRACTAL_BASE}/indexer/inscription/info/${encodeURIComponent(
+                        burnInscriptionId
+                    )}`;
                     const response = await fetch(endpoint, {
                         method: 'GET',
                         headers: {
@@ -2137,7 +2276,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                 const tick = url.searchParams.get('tick');
                 if (!address || !tick) return sendJSON({ code: -1, msg: 'Missing address or tick' }, 200);
                 try {
-                    const endpoint = `${FRACTAL_BASE}/indexer/address/${encodeURIComponent(address)}/brc20/${encodeURIComponent(tick)}/info`;
+                    const endpoint = `${FRACTAL_BASE}/indexer/address/${encodeURIComponent(address)}/brc20/${encodeURIComponent(
+                        tick
+                    )}/info`;
                     const res = await fetch(endpoint, {
                         headers: upstreamHeaders
                     });
@@ -2157,6 +2298,38 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     });
                 } catch (e) {
                     return sendJSON({ code: -1, msg: e?.message || String(e) }, 200);
+                }
+            }
+
+            if (action === 'transferable_inscriptions') {
+                const address = String(url.searchParams.get('address') || '').trim();
+                const tick = String(url.searchParams.get('tick') || '').trim();
+                const start = Math.max(0, parseInt(String(url.searchParams.get('start') || '0'), 10) || 0);
+                const limit = Math.min(
+                    1000,
+                    Math.max(1, parseInt(String(url.searchParams.get('limit') || '16'), 10) || 16)
+                );
+                if (!address || !tick) return sendJSON({ error: 'Missing address or tick' }, 400);
+                if (!API_KEY) return sendJSON({ error: 'UNISAT_API_KEY required' }, 403);
+                try {
+                    const endpoint =
+                        `${FRACTAL_BASE}/indexer/address/${encodeURIComponent(address)}/brc20/` +
+                        `${encodeURIComponent(tick)}/transferable-inscriptions?start=${start}&limit=${limit}`;
+                    const res = await fetch(endpoint, { headers: upstreamHeaders });
+                    const json = await res.json().catch(() => null);
+                    if (json && typeof json === 'object' && json.data && typeof json.data === 'object') {
+                        const d = json.data;
+                        let list = [];
+                        if (Array.isArray(d.list)) list = d.list;
+                        else if (Array.isArray(d.detail)) list = d.detail;
+                        else if (d.detail && typeof d.detail === 'object') list = [d.detail];
+                        else if (Array.isArray(d.inscriptions)) list = d.inscriptions;
+                        else if (Array.isArray(d.data)) list = d.data;
+                        json.data = { ...d, list };
+                    }
+                    return sendJSON(json || { code: -1, msg: 'Invalid upstream response' }, res.status);
+                } catch (e) {
+                    return sendJSON({ error: e?.message || String(e) }, 500);
                 }
             }
 
@@ -2326,13 +2499,8 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     action === 'create_deposit' && !proxyParams.has('inscriptionId') && proxyParams.has('networkType');
                 const isBridgeCreateWithdraw =
                     action === 'create_withdraw' && (proxyParams.has('networkType') || proxyParams.has('feeRate'));
-                if (isBridgeCreateDeposit || isBridgeCreateWithdraw) {
-                    const response = await fetch(`${INSWAP_URL}/${endpoint}?${proxyParams.toString()}`, {
-                        method: 'GET',
-                        headers: upstreamHeaders
-                    });
-                    return sendJSON(await response.json(), response.status);
-                }
+                void isBridgeCreateDeposit;
+                void isBridgeCreateWithdraw;
 
                 let endpointUrl = `${SWAP_BASE}/brc20-swap/${endpoint}?${proxyParams.toString()}`;
                 let response = await fetch(endpointUrl, { method: 'GET', headers: upstreamHeaders });
@@ -2369,11 +2537,20 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     return sendJSON(await response.json(), response.status);
                 }
 
-                const response = await fetch(`${INSWAP_URL}/${endpoint}`, {
+                let endpointUrl = `${SWAP_BASE}/brc20-swap/${endpoint}`;
+                let response = await fetch(endpointUrl, {
                     method: 'POST',
                     headers: upstreamHeaders,
                     body: JSON.stringify(body)
                 });
+                if (!response.ok && response.status === 404) {
+                    endpointUrl = `${SWAP_BASE}/indexer/brc20-swap/${endpoint}`;
+                    response = await fetch(endpointUrl, {
+                        method: 'POST',
+                        headers: upstreamHeaders,
+                        body: JSON.stringify(body)
+                    });
+                }
                 return sendJSON(await response.json(), response.status);
             }
 
@@ -2506,8 +2683,22 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     targetUrl = `${FRACTAL_BASE}/indexer/address/${address}/history?cursor=0&size=10`;
                 }
 
-                const response = await fetch(targetUrl, { headers: authHeaders() });
-                return sendJSON(await response.json(), response.status);
+                const response = await fetch(targetUrl, { headers: authHeaders() }).catch(() => null);
+                if (!response) {
+                    return sendJSON({ code: 0, data: { list: [] } }, 200);
+                }
+                if (!response.ok) {
+                    const st = Number(response.status || 0) || 0;
+                    if (st === 404 || st === 500 || st === 502 || st === 503) {
+                        return sendJSON({ code: 0, data: { list: [] } }, 200);
+                    }
+                    const payload = await response.json().catch(() => null);
+                    if (payload && typeof payload === 'object') return sendJSON(payload, response.status);
+                    return sendJSON({ code: 0, data: { list: [] } }, 200);
+                }
+                const payload = await response.json().catch(() => null);
+                if (payload && typeof payload === 'object') return sendJSON(payload, response.status);
+                return sendJSON({ code: 0, data: { list: [] } }, 200);
             }
 
             // 9. FULL UTXO DATA (for Audit)
@@ -2518,6 +2709,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                 const status = url.searchParams.get('status') || 'all';
                 const cursor = url.searchParams.get('cursor') || '0';
                 const size = url.searchParams.get('size') || '50';
+
+                void filter;
+                void status;
 
                 if (!address) return sendJSON({ error: 'Missing address' }, 200);
 
@@ -2553,7 +2747,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
             }
 
             // --- FENNEC ID DATA (Simplified: Prices + Summary only) ---
-            if (action === 'audit_data') {
+            if (action === 'audit_data_light' || (action === 'audit_data' && url.searchParams.get('lite') === '1')) {
                 const address = url.searchParams.get('address');
                 if (!address) return sendJSON({ error: 'No address' }, 200);
 
@@ -2593,7 +2787,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             // Exponential backoff для 429
                             if (response.status === 429) {
                                 const retryAfter = response.headers.get('Retry-After');
-                                const delay = retryAfter ? parseInt(retryAfter) * 1000 : 1000; // ОПТИМИЗАЦИЯ: Уменьшено до 1 секунды
+                                const delay = (retryAfter ? parseInt(retryAfter) * 1000 : 1000) || 1000; // ОПТИМИЗАЦИЯ: Уменьшено до 1 секунды
                                 console.warn(`Rate limited (429), waiting ${delay}ms`);
                                 await new Promise(r => setTimeout(r, delay));
                                 // Не ретраим автоматически - пусть вызывающий код решает
@@ -2629,7 +2823,11 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 headers: upstreamHeaders
                             })
                         ),
-                        safeFetch(fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd')),
+                        safeFetch(
+                            fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd', {
+                                headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' }
+                            })
+                        ),
                         safeFetch(
                             fetch(`${SWAP_BASE}/brc20-swap/pool_info?tick0=FENNEC&tick1=sFB___000`, {
                                 headers: upstreamHeaders
@@ -2677,7 +2875,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             const offset = Math.max(0, txCount - 1);
                             // ИСПРАВЛЕНИЕ: Используем правильные параметры cursor и size (по документации API)
                             const hRes = await safeFetch(
-                                fetch(`${FRACTAL_BASE}/indexer/address/${address}/history?cursor=${offset}&size=1`, {
+                                fetch(`${FRACTAL_BASE}/indexer/address/${address}/history?start=${offset}&limit=1`, {
                                     headers: upstreamHeaders
                                 })
                             );
@@ -2698,6 +2896,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 fb: fbPriceUSD,
                                 fennec_in_fb: fennecPriceInFB
                             },
+                            first_tx_ts: firstTxTime,
                             synced_at: new Date().toISOString()
                         }
                     });
@@ -2800,8 +2999,6 @@ Request Context: ${JSON.stringify(context, null, 2)}
                 cacheKeyUrl.searchParams.delete('t');
                 cacheKeyUrl.searchParams.delete('ts');
                 cacheKeyUrl.searchParams.delete('_');
-                cacheKeyUrl.searchParams.delete('x-sign-inswap');
-                cacheKeyUrl.searchParams.delete('x-ts-inswap');
                 cacheKeyUrl.searchParams.delete('debug');
                 cacheKeyUrl.searchParams.set('v', '1');
                 const cacheKey = new Request(cacheKeyUrl.toString(), { method: 'GET' });
@@ -2840,133 +3037,41 @@ Request Context: ${JSON.stringify(context, null, 2)}
                 }
 
                 try {
-                    // КРИТИЧЕСКОЕ: Используем InSwap API как основной источник данных
-                    // Это несколько "жирных" эндпоинтов, которые возвращают много данных сразу
-
-                    // Генерируем x-sign для InSwap API
-                    const xTs = Math.floor(Date.now() / 1000);
-                    const xSignInswapParam = url.searchParams.get('x-sign-inswap');
-                    const xTsInswapParam = url.searchParams.get('x-ts-inswap');
-
-                    let inswapXSign = xSignInswapParam;
-                    if (!inswapXSign) {
-                        const inswapSelectUrl = `${INSWAP_URL}/select?address=${address}`;
-                        inswapXSign = await generateXSign(
-                            inswapSelectUrl,
-                            xTsInswapParam ? parseInt(xTsInswapParam) : xTs,
-                            'GET',
-                            { address: address }
-                        );
+                    void pubkey;
+                    const myPoolListUrl = `${SWAP_BASE}/brc20-swap/my_pool_list?address=${address}&start=0&limit=100`;
+                    let myPoolListRes = await fetch(myPoolListUrl, { headers: upstreamHeaders }).catch(() => null);
+                    if (!myPoolListRes?.ok && myPoolListRes?.status === 404) {
+                        const myPoolListUrlIdx = `${SWAP_BASE}/indexer/brc20-swap/my_pool_list?address=${address}&start=0&limit=100`;
+                        myPoolListRes = await fetch(myPoolListUrlIdx, { headers: upstreamHeaders }).catch(() => null);
                     }
-
-                    const inswapHeaders = {
-                        Accept: 'application/json, text/plain, */*',
-                        'Accept-Encoding': 'gzip, deflate, br, zstd',
-                        'Accept-Language': 'ru,en;q=0.9',
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                        Referer: 'https://inswap.cc/swap/assets/account?tab=assets',
-                        Origin: 'https://inswap.cc',
-                        'x-appid': '1adcd7969603261753f1812c9461cd36',
-                        'x-front-version': '2094',
-                        'Sec-Fetch-Dest': 'empty',
-                        'Sec-Fetch-Mode': 'cors',
-                        'Sec-Fetch-Site': 'same-origin',
-                        'x-sign': inswapXSign,
-                        'x-ts': (xTsInswapParam ? xTsInswapParam : xTs).toString()
-                    };
-
-                    // Параллельно запрашиваем все нужные данные из InSwap (как в коде пользователя)
-                    // Используем эндпоинты из кода: getAllBalance, myPoolList, getAddressUsd, userInfo
-                    const [allBalanceRes, myPoolListRes, addressUsdRes, userInfoRes] = await Promise.all([
-                        fetch(`${INSWAP_URL}/all_balance?address=${address}${pubkey ? `&pubkey=${pubkey}` : ''}`, {
-                            headers: inswapHeaders
-                        }).catch(() => null),
-                        fetch(
-                            `${INSWAP_URL}/my_pool_list?address=${address}&start=0&limit=10&sortType=desc&sortField=liq`,
-                            { headers: inswapHeaders }
-                        ).catch(() => null),
-                        fetch(`${INSWAP_URL}/address_usd?address=${address}`, { headers: inswapHeaders }).catch(
-                            () => null
-                        ),
-                        fetch(`${INSWAP_URL}/user_info?address=${address}`, { headers: inswapHeaders }).catch(
-                            () => null
-                        )
-                    ]);
-
-                    const allBalance = allBalanceRes?.ok ? await allBalanceRes.json().catch(() => null) : null;
                     const myPoolList = myPoolListRes?.ok ? await myPoolListRes.json().catch(() => null) : null;
-                    const addressUsd = addressUsdRes?.ok ? await addressUsdRes.json().catch(() => null) : null;
-                    const userInfo = userInfoRes?.ok ? await userInfoRes.json().catch(() => null) : null;
 
                     // Собираем summary данные из InSwap (как в коде пользователя)
                     const summary = {
                         address: address,
                         // Балансы из all_balance (getAllBalance)
-                        all_balance: allBalance?.data || {},
+                        all_balance: {},
                         // LP данные из my_pool_list (myPoolList)
                         lp_list: myPoolList?.data?.list || [],
                         lp_count: myPoolList?.data?.list?.length || 0,
                         lp_total_usd: myPoolList?.data?.totalLpUSD || 0,
                         // Net worth из address_usd (getAddressUsd) или all_balance
-                        total_usd: addressUsd?.data?.total_usd || allBalance?.data?.total_usd || 0,
+                        total_usd: 0,
                         // User info (userInfo) - дополнительная информация о пользователе
-                        user_info: userInfo?.data || {},
+                        user_info: {},
                         // Детали по токенам (обработанные из all_balance)
                         tokens: {},
                         // LP позиции (если есть в all_balance)
-                        lp_positions: allBalance?.data?.lp_positions || allBalance?.data?.positions || [],
+                        lp_positions: [],
                         synced_at: new Date().toISOString()
                     };
-
-                    // Обрабатываем токены из all_balance
-                    if (allBalance?.data) {
-                        Object.keys(allBalance.data).forEach(ticker => {
-                            const tokenData = allBalance.data[ticker];
-                            if (
-                                ticker === 'lp_positions' ||
-                                ticker === 'positions' ||
-                                typeof tokenData !== 'object' ||
-                                !tokenData
-                            ) {
-                                return;
-                            }
-
-                            const balance = tokenData.balance || tokenData;
-                            let balanceValue = 0;
-                            if (typeof balance === 'object' && balance !== null) {
-                                balanceValue = parseFloat(
-                                    balance.swap ||
-                                        balance.module ||
-                                        balance.pendingSwap ||
-                                        balance.pendingAvailable ||
-                                        0
-                                );
-                            } else {
-                                balanceValue = parseFloat(balance || 0);
-                            }
-
-                            if (balanceValue > 0) {
-                                summary.tokens[ticker] = {
-                                    balance: balanceValue,
-                                    price: parseFloat(tokenData.price || 0),
-                                    value_usd: balanceValue * parseFloat(tokenData.price || 0)
-                                };
-                            }
-                        });
-                    }
 
                     const out = { code: 0, data: summary };
                     if (__debugEnabled) {
                         out._debug = {
                             source: 'inswap_summary',
-                            all_balance_code: allBalance?.code,
-                            all_balance_msg: allBalance?.msg,
                             my_pool_list_code: myPoolList?.code,
                             my_pool_list_msg: myPoolList?.msg,
-                            address_usd_code: addressUsd?.code,
-                            address_usd_msg: addressUsd?.msg,
-                            user_info_code: userInfo?.code,
-                            user_info_msg: userInfo?.msg,
                             tokens_count: Object.keys(summary.tokens).length,
                             lp_positions_count: summary.lp_positions.length
                         };
@@ -2985,81 +3090,6 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     return response;
                 } catch (e) {
                     return sendJSON({ error: 'InSwap Summary error: ' + e.message }, 500);
-                }
-            }
-
-            // --- SUMMARY (Оптимизированный эндпоинт на основе Uniscan Summary API) ---
-            if (action === 'summary') {
-                const address = url.searchParams.get('address');
-                if (!address) return sendJSON({ error: 'Address required' }, 400);
-
-                try {
-                    // КРИТИЧЕСКОЕ: Используем Uniscan Summary API как основной источник данных
-                    // Это один "жирный" эндпоинт, который возвращает много данных сразу
-                    const UNISCAN_BASE = 'https://uniscan.cc/fractal-api/explorer-v1';
-                    const uniscanSummaryUrl = `${UNISCAN_BASE}/address/summary?address=${address}`;
-
-                    // Генерируем x-sign для Uniscan API
-                    const xTs = Math.floor(Date.now() / 1000);
-                    const xSign = await generateXSign(uniscanSummaryUrl, xTs, 'GET', { address: address });
-
-                    const uniscanHeaders = {
-                        Accept: 'application/json, text/plain, */*',
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                        'x-appid': '1adcd7969603261753f1812c9461cd36',
-                        'x-front-version': '2128',
-                        'x-sign': xSign,
-                        'x-ts': xTs.toString()
-                    };
-
-                    const summaryRes = await fetch(uniscanSummaryUrl, { headers: uniscanHeaders });
-                    const summaryData = await summaryRes.json();
-
-                    // Извлекаем данные из Uniscan Summary (как в коде пользователя)
-                    const assets = summaryData?.data?.assets || {};
-                    const brc20List = assets.BRC20List || [];
-
-                    // Фильтруем BRC-20 токены (как в коде: L.sm - проверка валидности тикера)
-                    // Упрощенная проверка: убираем токены с пустыми или невалидными тикерами
-                    const validBrc20List = brc20List.filter(token => {
-                        const ticker = token.ticker || token.tick || '';
-                        return ticker && ticker.length > 0 && ticker.length <= 20;
-                    });
-
-                    // Собираем summary данные
-                    const summary = {
-                        address: address,
-                        tx_count: summaryData?.data?.totalTransactionCount || summaryData?.data?.tx_count || 0,
-                        utxo_count: summaryData?.data?.utxo_count || 0,
-                        native_balance: summaryData?.data?.native_balance || 0,
-                        runes_count: summaryData?.data?.runes_count || assets?.RunesList?.length || 0,
-                        brc20_count: validBrc20List.length,
-                        ordinals_count: summaryData?.data?.ordinals_count || assets?.InscriptionsList?.length || 0,
-                        brc20_list: validBrc20List.map(token => ({
-                            ticker: token.ticker || token.tick || '',
-                            balance: token.balance || token.availableBalance || 0,
-                            transferableBalance: token.transferableBalance || 0,
-                            availableBalance: token.availableBalance || 0
-                        })),
-                        // Дополнительные данные из summary
-                        first_tx_time: summaryData?.data?.firstTxTime || 0,
-                        last_tx_time: summaryData?.data?.lastTxTime || 0,
-                        synced_at: new Date().toISOString()
-                    };
-
-                    return sendJSON({
-                        code: 0,
-                        data: summary,
-                        _debug: {
-                            source: 'uniscan_summary',
-                            uniscan_response_code: summaryData?.code,
-                            uniscan_response_msg: summaryData?.msg,
-                            brc20_total: brc20List.length,
-                            brc20_valid: validBrc20List.length
-                        }
-                    });
-                } catch (e) {
-                    return sendJSON({ error: 'Summary error: ' + e.message }, 500);
                 }
             }
 
@@ -3082,17 +3112,14 @@ Request Context: ${JSON.stringify(context, null, 2)}
                 cacheKeyUrl.searchParams.delete('ts');
                 cacheKeyUrl.searchParams.delete('_');
                 cacheKeyUrl.searchParams.delete('debug');
-                cacheKeyUrl.searchParams.delete('x-sign-uniscan');
-                cacheKeyUrl.searchParams.delete('x-ts-uniscan');
-                cacheKeyUrl.searchParams.delete('x-sign-inswap');
-                cacheKeyUrl.searchParams.delete('x-ts-inswap');
-                cacheKeyUrl.searchParams.set('v', '7');
+                cacheKeyUrl.searchParams.set('v', '8');
                 const cacheKey = new Request(cacheKeyUrl.toString(), { method: 'GET' });
 
                 const cachedResponse = !__debugEnabled ? await cache.match(cacheKey) : null;
                 if (cachedResponse) {
                     console.log(
-                        `✅ Serving fractal_audit from Cloudflare cache for address ${address?.substring(0, 10)}... (reduces 429 errors)`
+                        `✅ Serving fractal_audit from Cloudflare cache for address ${address?.substring(0, 10)}... ` +
+                            '(reduces 429 errors)'
                     );
                     return cachedResponse;
                 }
@@ -3100,6 +3127,20 @@ Request Context: ${JSON.stringify(context, null, 2)}
                 // ИСПРАВЛЕНИЕ: Throttling для UniSat API (оптимизировано для скорости)
                 // ИСПРАВЛЕНИЕ: Получаем параметры запроса (address уже объявлен выше на строке 745)
                 const pubkey = url.searchParams.get('pubkey') || '';
+                try {
+                    const pk = String(pubkey || '').trim();
+                    if (pk) {
+                        if (!upstreamHeaders['x-public-key']) upstreamHeaders['x-public-key'] = pk;
+                        if (!unisatApiHeaders['x-public-key']) unisatApiHeaders['x-public-key'] = pk;
+                    }
+                    const a = String(address || '').trim();
+                    if (a) {
+                        if (!upstreamHeaders['x-address']) upstreamHeaders['x-address'] = a;
+                        if (!unisatApiHeaders['x-address']) unisatApiHeaders['x-address'] = a;
+                    }
+                } catch (_) {
+                    void _;
+                }
                 // ИСПРАВЛЕНИЕ: Убрана подпись пользователя - не требуется для этих API
                 // const userSignature = url.searchParams.get('signature') || '';
                 // if (userSignature) {
@@ -3136,14 +3177,69 @@ Request Context: ${JSON.stringify(context, null, 2)}
                 // КРИТИЧЕСКОЕ: Увеличено время кэша - даже если адреса разные, кэш снижает нагрузку
                 const CACHE_TTL = 60000; // 60 секунд для балансов и метаданных (для множества пользователей)
 
+                let __auditTraceSeq = 0;
+                const __auditTrace = [];
+                const __auditStartAt = Date.now();
+                const __auditTraceEnabled = !!__debugEnabled;
+
+                const __auditTracePush = entry => {
+                    if (!__auditTraceEnabled) return;
+                    try {
+                        const e = entry && typeof entry === 'object' ? entry : { label: String(entry || '') };
+                        if (!('id' in e)) e.id = ++__auditTraceSeq;
+                        if (!('started_at' in e)) e.started_at = Date.now();
+                        if (!('total_ms' in e)) e.total_ms = Date.now() - Number(e.started_at || Date.now());
+                        __auditTrace.push(e);
+                        if (__auditTrace.length > 80) __auditTrace.splice(0, __auditTrace.length - 80);
+                    } catch (_) {}
+                };
+
                 // ИСПРАВЛЕНИЕ: Улучшенный safeFetch с throttling, кэшированием и exponential backoff
                 const safeFetch = async (p, options = {}) => {
-                    const { useCache = false, cacheKey = null, isUniSat = false, retryOn429 = false } = options;
+                    const {
+                        useCache = false,
+                        cacheKey = null,
+                        isUniSat = false,
+                        retryOn429 = false,
+                        traceLabel = null,
+                        traceUrl = null
+                    } = options;
+
+                    let __entry = null;
+                    if (__auditTraceEnabled) {
+                        __entry = {
+                            id: ++__auditTraceSeq,
+                            label: String(traceLabel || cacheKey || '').trim(),
+                            url: traceUrl ? String(traceUrl) : null,
+                            cacheKey: cacheKey ? String(cacheKey) : null,
+                            isUniSat: !!isUniSat,
+                            useCache: !!useCache,
+                            retryOn429: !!retryOn429,
+                            started_at: Date.now(),
+                            cache_hit: false,
+                            attempts: []
+                        };
+                    }
+
+                    const __finalize = extra => {
+                        if (!__entry) return;
+                        try {
+                            if (extra && typeof extra === 'object') Object.assign(__entry, extra);
+                        } catch (_) {}
+                        try {
+                            __entry.total_ms = Date.now() - Number(__entry.started_at || Date.now());
+                        } catch (_) {}
+                        try {
+                            __auditTrace.push(__entry);
+                            if (__auditTrace.length > 80) __auditTrace.splice(0, __auditTrace.length - 80);
+                        } catch (_) {}
+                    };
 
                     // Проверяем кэш
                     if (useCache && cacheKey) {
                         const cached = responseCache.get(cacheKey);
                         if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+                            __finalize({ cache_hit: true, ok: true });
                             return cached.data;
                         }
                     }
@@ -3152,14 +3248,40 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     let retries = retryOn429 ? 3 : 0;
                     let delay = 1000; // ОПТИМИЗАЦИЯ: Уменьшено до 1 секунды для ускорения загрузки
 
+                    let __attemptNo = 0;
+
                     while (retries >= 0) {
+                        __attemptNo += 1;
+                        const __attempt = __entry
+                            ? {
+                                  attempt: __attemptNo,
+                                  started_at: Date.now(),
+                                  retries_left: retries,
+                                  delay_ms: delay
+                              }
+                            : null;
+
+                        try {
+                            if (__attempt && __entry && Array.isArray(__entry.attempts))
+                                __entry.attempts.push(__attempt);
+                        } catch (_) {}
+
                         try {
                             let response;
                             if (isUniSat && typeof p === 'function') {
+                                const queuedAt = Date.now();
                                 response = await __runUniSatQueued(async () => {
+                                    try {
+                                        if (__attempt) __attempt.queue_wait_ms = Date.now() - queuedAt;
+                                    } catch (_) {}
+
                                     const now = Date.now();
                                     const timeSinceLastRequest = now - lastUniSatRequest;
                                     if (timeSinceLastRequest < UNISAT_THROTTLE_MS) {
+                                        try {
+                                            if (__attempt)
+                                                __attempt.throttle_wait_ms = UNISAT_THROTTLE_MS - timeSinceLastRequest;
+                                        } catch (_) {}
                                         await new Promise(r =>
                                             setTimeout(r, UNISAT_THROTTLE_MS - timeSinceLastRequest)
                                         );
@@ -3173,82 +3295,120 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 response = await p;
                             }
 
-                            if (!response.ok) {
-                                // КРИТИЧЕСКОЕ: Добавляем debug информацию о статусе ответа
-                                // Проверяем cacheKey для определения какой запрос это
+                            try {
+                                if (__attempt) {
+                                    __attempt.fetch_ms = Date.now() - Number(__attempt.started_at || Date.now());
+                                    __attempt.status = Number(response?.status || 0) || 0;
+                                    __attempt.ok = !!response?.ok;
+                                    __attempt.statusText = String(response?.statusText || '');
+                                }
+                            } catch (_) {}
+
+                            if (!response || !response.ok) {
                                 if (cacheKey && cacheKey.includes('uniscan_summary')) {
-                                    debugInfo.uniscan_summary_raw_status = response.status;
-                                    debugInfo.uniscan_summary_raw_statusText = response.statusText;
-                                    debugInfo.uniscan_summary_raw_headers = Object.fromEntries(
-                                        response.headers.entries()
-                                    );
+                                    try {
+                                        debugInfo.uniscan_summary_raw_status = response?.status;
+                                        debugInfo.uniscan_summary_raw_statusText = response?.statusText;
+                                        debugInfo.uniscan_summary_raw_headers = response
+                                            ? Object.fromEntries(response.headers.entries())
+                                            : {};
+                                    } catch (_) {}
                                 }
 
+                                const status = Number(response?.status || 0) || 0;
+
                                 // Обработка 429 (Too Many Requests)
-                                if (response.status === 429) {
-                                    // Если p - не функция, повторить запрос нельзя (fetch уже выполнен)
+                                if (status === 429) {
                                     if (typeof p !== 'function') {
                                         if (cacheKey && cacheKey.includes('uniscan_summary')) {
                                             debugInfo.uniscan_summary_429_final = true;
                                         }
+                                        __finalize({ ok: false, status: 429, statusText: 'Too Many Requests' });
                                         return null;
                                     }
+
                                     if (retries > 0) {
-                                        const retryAfter = response.headers.get('Retry-After');
+                                        const retryAfter = response?.headers?.get
+                                            ? response.headers.get('Retry-After')
+                                            : null;
                                         delay = retryAfter ? parseInt(retryAfter) * 1000 : delay;
-                                        console.warn(
-                                            `Rate limited (429), waiting ${delay}ms, retries left: ${retries}`
-                                        );
+                                        try {
+                                            if (__attempt) {
+                                                __attempt.retry_after = retryAfter || '';
+                                                __attempt.wait_before_retry_ms = delay;
+                                                __attempt.retries_left_after = retries - 1;
+                                            }
+                                        } catch (_) {}
+
                                         await new Promise(r => setTimeout(r, delay));
-                                        delay = Math.min(delay * 2, 30000); // Exponential backoff, max 30s
+                                        delay = Math.min(delay * 2, 30000);
                                         retries--;
-                                        continue; // Повторяем запрос
-                                    } else {
-                                        console.warn('Rate limited (429), no more retries');
-                                        if (cacheKey && cacheKey.includes('uniscan_summary')) {
-                                            debugInfo.uniscan_summary_429_final = true;
-                                        }
-                                        return null;
+                                        continue;
                                     }
+
+                                    if (cacheKey && cacheKey.includes('uniscan_summary')) {
+                                        debugInfo.uniscan_summary_429_final = true;
+                                    }
+                                    __finalize({ ok: false, status: 429, statusText: 'Too Many Requests' });
+                                    return null;
                                 }
 
-                                // КРИТИЧЕСКОЕ: Если не 429, но статус не OK - логируем
                                 if (cacheKey && cacheKey.includes('uniscan_summary')) {
                                     debugInfo.uniscan_summary_not_ok = true;
-                                    debugInfo.uniscan_summary_not_ok_status = response.status;
+                                    debugInfo.uniscan_summary_not_ok_status = status;
                                 }
 
+                                __finalize({
+                                    ok: false,
+                                    status,
+                                    statusText: String(response?.statusText || '')
+                                });
                                 return null;
                             }
 
-                            const data = await response.json();
+                            try {
+                                if (__attempt) __attempt.json_started_at = Date.now();
+                            } catch (_) {}
+                            const data = await response.json().catch(() => null);
+                            try {
+                                if (__attempt) {
+                                    __attempt.json_ms = Date.now() - Number(__attempt.json_started_at || Date.now());
+                                }
+                            } catch (_) {}
 
-                            // Сохраняем в кэш
                             if (useCache && cacheKey) {
                                 responseCache.set(cacheKey, { data, timestamp: Date.now() });
                             }
 
+                            __finalize({ ok: true, status: Number(response?.status || 0) || 0 });
                             return data;
                         } catch (err) {
-                            // КРИТИЧЕСКОЕ: Добавляем debug информацию об ошибке
                             if (cacheKey && cacheKey.includes('uniscan_summary')) {
                                 debugInfo.uniscan_summary_fetch_error = err.message || 'unknown';
                                 debugInfo.uniscan_summary_fetch_error_name = err.name;
                                 debugInfo.uniscan_summary_fetch_error_stack = err.stack;
                             }
 
+                            try {
+                                if (__attempt) {
+                                    __attempt.error = err?.message || String(err);
+                                    __attempt.error_name = err?.name || '';
+                                }
+                            } catch (_) {}
+
                             if (retries > 0 && retryOn429) {
-                                console.warn(`Fetch error, retrying: ${err.message}`);
                                 await new Promise(r => setTimeout(r, delay));
                                 delay = Math.min(delay * 2, 30000);
                                 retries--;
                                 continue;
                             }
-                            console.warn('Fetch error:', err.message);
+
+                            __finalize({ ok: false, error: err?.message || String(err), error_name: err?.name || '' });
                             return null;
                         }
                     }
 
+                    __finalize({ ok: false, error: 'retries_exhausted' });
                     return null;
                 };
 
@@ -3257,39 +3417,64 @@ Request Context: ${JSON.stringify(context, null, 2)}
                 Object.keys(debugInfo).forEach(key => delete debugInfo[key]);
 
                 try {
+                    if (__debugEnabled) {
+                        debugInfo.audit_started_at = __auditStartAt;
+                        debugInfo.audit_trace = __auditTrace;
+                        debugInfo.audit_trace_limit = 80;
+                    }
+                } catch (_) {
+                    void _;
+                }
+
+                try {
+                    let btcPrice = 0;
+                    let fbPrice = 0;
+
                     // ИСПРАВЛЕНИЕ: Используем Mempool Fractal API как основной источник статистики (разгружаем UniSat)
                     // 1. MEMPOOL (Статистика) - только Fractal
                     // Пробуем оба обозревателя Fractal параллельно
-                    const mempoolFractalPromise = safeFetch(() => {
-                        const controller = new AbortController();
-                        const timeoutId = setTimeout(() => controller.abort(), 4500);
-                        return fetch(`https://mempool.fractalbitcoin.io/api/address/${address}`, {
-                            headers: { 'User-Agent': 'Mozilla/5.0' },
-                            signal: controller.signal
-                        }).finally(() => clearTimeout(timeoutId));
-                    });
+                    const mempoolFractalUrl = `https://mempool.fractalbitcoin.io/api/address/${address}`;
+                    const mempoolFractalPromise = safeFetch(
+                        () => {
+                            const controller = new AbortController();
+                            const timeoutId = setTimeout(() => controller.abort(), 4500);
+                            return fetch(mempoolFractalUrl, {
+                                headers: { 'User-Agent': 'Mozilla/5.0' },
+                                signal: controller.signal
+                            }).finally(() => clearTimeout(timeoutId));
+                        },
+                        { traceLabel: 'mempool_fractal_address', traceUrl: mempoolFractalUrl }
+                    );
                     // ИСПРАВЛЕНИЕ: UTXO список из Mempool Fractal (разгружаем UniSat)
                     // КРИТИЧЕСКОЕ: этот эндпоинт может быть очень тяжелым -> ограничиваем по времени
-                    const utxoListPromise = safeFetch(() => {
-                        const controller = new AbortController();
-                        const timeoutId = setTimeout(() => controller.abort(), 3500);
-                        return fetch(`https://mempool.fractalbitcoin.io/api/address/${address}/utxo`, {
-                            headers: { 'User-Agent': 'Mozilla/5.0' },
-                            signal: controller.signal
-                        }).finally(() => clearTimeout(timeoutId));
-                    });
+                    const mempoolFractalUtxoUrl = `https://mempool.fractalbitcoin.io/api/address/${address}/utxo`;
+                    const utxoListPromise = safeFetch(
+                        () => {
+                            const controller = new AbortController();
+                            const timeoutId = setTimeout(() => controller.abort(), 3500);
+                            return fetch(mempoolFractalUtxoUrl, {
+                                headers: { 'User-Agent': 'Mozilla/5.0' },
+                                signal: controller.signal
+                            }).finally(() => clearTimeout(timeoutId));
+                        },
+                        { traceLabel: 'mempool_fractal_utxo', traceUrl: mempoolFractalUtxoUrl }
+                    );
                     // Uniscan как альтернативный источник (если доступен API)
-                    const uniscanPromise = safeFetch(() => {
-                        const controller = new AbortController();
-                        const timeoutId = setTimeout(() => controller.abort(), 4500);
-                        return fetch(`https://uniscan.cc/api/fractal/address/${address}`, {
-                            headers: {
-                                Accept: 'application/json',
-                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                            },
-                            signal: controller.signal
-                        }).finally(() => clearTimeout(timeoutId));
-                    });
+                    const uniscanAddressUrl = `https://uniscan.cc/api/fractal/address/${address}`;
+                    const uniscanPromise = safeFetch(
+                        () => {
+                            const controller = new AbortController();
+                            const timeoutId = setTimeout(() => controller.abort(), 4500);
+                            return fetch(uniscanAddressUrl, {
+                                headers: {
+                                    Accept: 'application/json',
+                                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                                },
+                                signal: controller.signal
+                            }).finally(() => clearTimeout(timeoutId));
+                        },
+                        { traceLabel: 'uniscan_address', traceUrl: uniscanAddressUrl }
+                    );
 
                     // ИСПРАВЛЕНИЕ: Объявляем mempoolPromise ДО его использования
                     const mempoolPromise = Promise.all([mempoolFractalPromise, uniscanPromise]).then(
@@ -3311,67 +3496,27 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         }
                     );
 
-                    // ОПТИМИЗАЦИЯ: Используем Uniscan Summary API как приоритетный источник данных (как в коде пользователя)
-                    // Это один "жирный" эндпоинт, который возвращает много данных сразу
-                    const UNISCAN_BASE = 'https://uniscan.cc/fractal-api/explorer-v1';
-                    const uniscanSummaryUrl = `${UNISCAN_BASE}/address/summary?address=${address}`;
-
-                    const xSignUniscanParam = url.searchParams.get('x-sign-uniscan');
-                    const xTsUniscanParam = url.searchParams.get('x-ts-uniscan');
-
-                    let uniscanSummaryPromise = null;
-                    try {
-                        const xTsUniscan = xTsUniscanParam ? parseInt(xTsUniscanParam) : Math.floor(Date.now() / 1000);
-                        let xSignUniscan = xSignUniscanParam;
-
-                        if (!xSignUniscan) {
-                            try {
-                                xSignUniscan = await generateXSign(uniscanSummaryUrl, xTsUniscan, 'GET', {
-                                    address: address
-                                });
-                                debugInfo.uniscan_x_sign_generated = true;
-                            } catch (signError) {
-                                debugInfo.uniscan_x_sign_generation_error = signError?.message || String(signError);
-                                debugInfo.uniscan_summary_skipped_reason = 'x-sign generation failed';
-                                uniscanSummaryPromise = Promise.resolve(null);
-                                throw signError;
-                            }
-                        } else {
-                            debugInfo.uniscan_x_sign_provided = true;
+                    const uniscanSummaryPromise = safeFetch(
+                        () => {
+                            const controller = new AbortController();
+                            const timeoutId = setTimeout(() => controller.abort(), 4500);
+                            return fetch(uniscanAddressUrl, {
+                                headers: {
+                                    Accept: 'application/json',
+                                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                                },
+                                signal: controller.signal
+                            }).finally(() => clearTimeout(timeoutId));
+                        },
+                        {
+                            isUniSat: false,
+                            useCache: true,
+                            cacheKey: `uniscan_summary_${address}`,
+                            retryOn429: false,
+                            traceLabel: 'uniscan_summary',
+                            traceUrl: uniscanAddressUrl
                         }
-
-                        const uniscanHeaders = {
-                            Accept: 'application/json, text/plain, */*',
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                            'x-appid': '1adcd7969603261753f1812c9461cd36',
-                            'x-front-version': '2128',
-                            'x-sign': xSignUniscan,
-                            'x-ts': xTsUniscan.toString()
-                        };
-
-                        uniscanSummaryPromise = safeFetch(
-                            () => {
-                                const controller = new AbortController();
-                                const timeoutId = setTimeout(() => controller.abort(), 5500);
-                                return fetch(uniscanSummaryUrl, {
-                                    headers: uniscanHeaders,
-                                    signal: controller.signal
-                                }).finally(() => clearTimeout(timeoutId));
-                            },
-                            {
-                                isUniSat: false,
-                                useCache: true,
-                                cacheKey: `uniscan_summary_${address}`,
-                                retryOn429: false
-                            }
-                        ).catch(fetchError => {
-                            debugInfo.uniscan_summary_fetch_error = fetchError?.message || String(fetchError);
-                            return null;
-                        });
-                    } catch (e) {
-                        debugInfo.uniscan_summary_init_error = e?.message || String(e);
-                        uniscanSummaryPromise = Promise.resolve(null);
-                    }
+                    );
 
                     // 1. UniSat Balance API - BTC баланс, inscriptionUtxoCount (proxy для ordinals), utxoCount
                     const unisatBalancePromise = safeFetch(
@@ -3383,7 +3528,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             isUniSat: true,
                             useCache: true,
                             cacheKey: `unisat_balance_${address}`,
-                            retryOn429: !__fastMode
+                            retryOn429: !__fastMode,
+                            traceLabel: 'unisat_balance',
+                            traceUrl: `${FRACTAL_BASE}/indexer/address/${address}/balance`
                         }
                     );
 
@@ -3392,14 +3539,16 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         const result = await safeFetch(
                             () =>
                                 fetch(
-                                    `${FRACTAL_BASE}/indexer/address/${address}/brc20/summary?start=0&limit=500&tick_filter=24&exclude_zero=true`,
+                                    `${FRACTAL_BASE}/indexer/address/${address}/brc20/summary?start=0&limit=500&tick_filter=56&exclude_zero=true`,
                                     { headers: upstreamHeaders }
                                 ),
                             {
                                 isUniSat: true,
                                 useCache: true,
                                 cacheKey: `unisat_brc20_${address}`,
-                                retryOn429: !__fastMode
+                                retryOn429: !__fastMode,
+                                traceLabel: 'unisat_brc20_summary',
+                                traceUrl: `${FRACTAL_BASE}/indexer/address/${address}/brc20/summary?start=0&limit=500&tick_filter=56&exclude_zero=true`
                             }
                         );
                         if (result) {
@@ -3410,18 +3559,52 @@ Request Context: ${JSON.stringify(context, null, 2)}
 
                     // 3. UniSat History API - total транзакций (для расчета возраста)
                     // ИСПРАВЛЕНИЕ: Используем правильные параметры cursor и size (по документации API)
-                    const unisatHistoryPromise = safeFetch(
-                        () =>
-                            fetch(`${FRACTAL_BASE}/indexer/address/${address}/history?cursor=0&size=1`, {
-                                headers: upstreamHeaders
-                            }),
-                        {
-                            isUniSat: true,
-                            useCache: true,
-                            cacheKey: `unisat_history_${address}`,
-                            retryOn429: !__fastMode
+                    const unisatHistoryPromise = (async () => {
+                        const primary = await safeFetch(
+                            () =>
+                                fetch(`${FRACTAL_BASE}/indexer/address/${address}/history?start=0&limit=1`, {
+                                    headers: upstreamHeaders
+                                }),
+                            {
+                                isUniSat: true,
+                                useCache: true,
+                                cacheKey: `unisat_history_${address}`,
+                                retryOn429: !__fastMode,
+                                traceLabel: 'unisat_history_start_limit',
+                                traceUrl: `${FRACTAL_BASE}/indexer/address/${address}/history?start=0&limit=1`
+                            }
+                        );
+                        if (primary) {
+                            try {
+                                debugInfo.unisat_history_params = 'start_limit';
+                            } catch (_) {
+                                void _;
+                            }
+                            return primary;
                         }
-                    );
+                        const fallback = await safeFetch(
+                            () =>
+                                fetch(`${FRACTAL_BASE}/indexer/address/${address}/history?cursor=0&size=1`, {
+                                    headers: upstreamHeaders
+                                }),
+                            {
+                                isUniSat: true,
+                                useCache: true,
+                                cacheKey: `unisat_history_start_${address}`,
+                                retryOn429: !__fastMode,
+                                traceLabel: 'unisat_history_cursor_size',
+                                traceUrl: `${FRACTAL_BASE}/indexer/address/${address}/history?cursor=0&size=1`
+                            }
+                        );
+                        if (fallback) {
+                            try {
+                                debugInfo.unisat_history_params = 'cursor_size';
+                            } catch (_) {
+                                void _;
+                            }
+                        }
+                        return fallback;
+                    })();
 
                     // 4. Опционально: UniSat Runes Balance List - все руны разом
                     const unisatRunesPromise = safeFetch(
@@ -3433,7 +3616,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             isUniSat: true,
                             useCache: true,
                             cacheKey: `unisat_runes_${address}`,
-                            retryOn429: !__fastMode
+                            retryOn429: !__fastMode,
+                            traceLabel: 'unisat_runes_balance_list',
+                            traceUrl: `${FRACTAL_BASE}/indexer/address/${address}/runes/balance-list?start=0&limit=100`
                         }
                     );
 
@@ -3447,7 +3632,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             isUniSat: true,
                             useCache: true,
                             cacheKey: `unisat_summary_${address}`,
-                            retryOn429: !__fastMode
+                            retryOn429: !__fastMode,
+                            traceLabel: 'unisat_summary',
+                            traceUrl: `${FRACTAL_BASE}/indexer/address/${address}/summary`
                         }
                     );
 
@@ -3460,7 +3647,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             isUniSat: true,
                             useCache: true,
                             cacheKey: `unisat_abandon_nft_utxo_${address}`,
-                            retryOn429: !__fastMode
+                            retryOn429: !__fastMode,
+                            traceLabel: 'unisat_abandon_nft_utxo_data',
+                            traceUrl: `${FRACTAL_BASE}/indexer/address/${address}/abandon-nft-utxo-data`
                         }
                     );
 
@@ -3473,7 +3662,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             isUniSat: true,
                             useCache: true,
                             cacheKey: `unisat_inscription_data_${address}`,
-                            retryOn429: !__fastMode
+                            retryOn429: !__fastMode,
+                            traceLabel: 'unisat_inscription_data',
+                            traceUrl: `${FRACTAL_BASE}/indexer/address/${address}/inscription-data?cursor=0&size=100`
                         }
                     );
 
@@ -3489,7 +3680,13 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 fetch(`${SWAP_BASE}/brc20-swap/address/${address}/asset-summary`, {
                                     headers: upstreamHeaders
                                 }),
-                            { isUniSat: true, useCache: false, retryOn429: false }
+                            {
+                                isUniSat: true,
+                                useCache: false,
+                                retryOn429: false,
+                                traceLabel: 'inswap_asset_summary_direct',
+                                traceUrl: `${SWAP_BASE}/brc20-swap/address/${address}/asset-summary`
+                            }
                         );
                         // Fallback: если не работает, пробуем с /indexer/
                         if (!result || (result.code !== undefined && result.code !== 0)) {
@@ -3502,7 +3699,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                     isUniSat: true,
                                     useCache: true,
                                     cacheKey: `inswap_asset_summary_${address}`,
-                                    retryOn429: !__fastMode
+                                    retryOn429: !__fastMode,
+                                    traceLabel: 'inswap_asset_summary_indexer',
+                                    traceUrl: `${SWAP_BASE}/indexer/brc20-swap/address/${address}/asset-summary`
                                 }
                             );
                         }
@@ -3512,159 +3711,190 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     // ОПТИМИЗАЦИЯ: Убран CoinGecko - цены получаем из InSwap all_balance
                     // const cgPromise = null;
 
-                    // InSwap требует специальные headers (как на сайте)
-                    // ИСПРАВЛЕНИЕ: Используем правильные headers из реальных запросов
-                    const xTsInswap = Math.floor(Date.now() / 1000);
-                    const xSignInswapParam = url.searchParams.get('x-sign-inswap');
-                    const xTsInswapParam = url.searchParams.get('x-ts-inswap');
-
-                    // Генерируем x-sign автоматически для InSwap, если не передан через параметры
-                    let inswapXSign = xSignInswapParam;
-                    if (!inswapXSign) {
-                        // Для InSwap используем URL /select или /all_balance
-                        const inswapSelectUrl = `${INSWAP_URL}/select?address=${address}`;
-                        inswapXSign = await generateXSign(
-                            inswapSelectUrl,
-                            xTsInswapParam ? parseInt(xTsInswapParam) : xTsInswap,
-                            'GET',
-                            { address: address }
-                        );
-                        debugInfo.inswap_x_sign_auto_generated = true;
-                    } else {
-                        debugInfo.inswap_x_sign_auto_generated = false;
-                    }
-
-                    // КРИТИЧЕСКОЕ: Используем правильные headers из реальных запросов InSwap API
-                    const inswapHeaders = {
-                        Accept: 'application/json, text/plain, */*',
-                        'Accept-Encoding': 'gzip, deflate, br, zstd',
-                        'Accept-Language': 'ru,en;q=0.9',
-                        'User-Agent':
-                            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 YaBrowser/25.10.0.0 Safari/537.36',
-                        Referer: 'https://inswap.cc/swap/assets/account?tab=assets',
-                        Origin: 'https://inswap.cc',
-                        'x-appid': '1adcd7969603261753f1812c9461cd36',
-                        'x-front-version': '2094',
-                        'Sec-Fetch-Dest': 'empty',
-                        'Sec-Fetch-Mode': 'cors',
-                        'Sec-Fetch-Site': 'same-origin',
-                        'x-sign': inswapXSign,
-                        'x-ts': xTsInswapParam ? xTsInswapParam : xTsInswap.toString()
-                    };
-
-                    // ИСПРАВЛЕНИЕ: Убраны неиспользуемые запросы для оптимизации и снижения rate limiting:
-                    // - fbPoolPromise: цены загружаются из CMC
-                    // - fennecPoolPromise: цена FENNEC может быть из all_balance
-                    // - addressUsdPromise: если all_balance не работает, это тоже не поможет
-                    // ОПТИМИЗАЦИЯ: Убран brc20SelectPromise - используем только all_balance
-                    // const brc20SelectPromise = null;
-
-                    // ИСПРАВЛЕНИЕ: Пробуем оба варианта URL (новый и старый для обратной совместимости)
-                    // Новый URL по документации: /v1/brc20-swap/all_balance (возвращает 404)
-                    // Старый URL: /swap-v1/all_balance (работает)
-                    const pubkey = url.searchParams.get('pubkey') || incomingPubKey || '';
-                    const allBalanceUrlV1 = `${INSWAP_V1_URL}/all_balance?address=${address}`;
-                    const allBalanceUrlOld = pubkey
-                        ? `${INSWAP_URL}/all_balance?address=${address}&pubkey=${pubkey}`
-                        : `${INSWAP_URL}/all_balance?address=${address}`;
-                    debugInfo.all_balance_url = allBalanceUrlV1;
-                    debugInfo.all_balance_url_old = allBalanceUrlOld;
-                    debugInfo.all_balance_has_pubkey = !!pubkey;
-                    // ОПТИМИЗАЦИЯ: Уменьшено количество попыток для ускорения (не критично для основной карточки)
+                    // ИСПРАВЛЕНИЕ: all_balance больше не дергаем с inswap.cc (x-sign).
+                    // Вместо этого строим allBalance-совместимую структуру из UniSat Open API asset-summary.
                     const allBalancePromise = (async () => {
                         if (__disableInswap) return null;
-                        // ИСПРАВЛЕНИЕ: Увеличено до 5 для гарантированной загрузки данных
-                        const retries = 2;
-                        // ОПТИМИЗАЦИЯ: Уменьшена начальная задержка для ускорения загрузки
-                        let delay = 600; // 2 секунды начальная задержка (баланс между скоростью и 429 ошибками)
-                        debugInfo.all_balance_retries_total = retries;
-                        for (let attempt = 0; attempt < retries; attempt++) {
-                            debugInfo.all_balance_current_attempt = attempt + 1;
-                            try {
-                                // ИСПРАВЛЕНИЕ: Увеличиваем таймаут до 10 секунд для важных запросов
-                                const controller = new AbortController();
-                                const timeoutId = setTimeout(() => controller.abort(), 4500);
 
-                                // Пробуем сначала новый URL, если 404 - используем старый
-                                let res = await fetch(allBalanceUrlV1, {
-                                    method: 'GET',
-                                    headers: inswapHeaders,
-                                    signal: controller.signal
+                        try {
+                            const directUrl = `${SWAP_BASE}/brc20-swap/all_balance?address=${encodeURIComponent(address)}`;
+                            let direct = await safeFetch(() => fetch(directUrl, { headers: upstreamHeaders }), {
+                                isUniSat: false,
+                                useCache: true,
+                                cacheKey: `brc20_swap_all_balance_${address}`,
+                                retryOn429: !__fastMode,
+                                traceLabel: 'inswap_all_balance_direct',
+                                traceUrl: directUrl
+                            });
+                            if (!direct || (direct.code !== undefined && direct.code !== 0) || !direct.data) {
+                                const idxUrl = `${SWAP_BASE}/indexer/brc20-swap/all_balance?address=${encodeURIComponent(address)}`;
+                                direct = await safeFetch(() => fetch(idxUrl, { headers: upstreamHeaders }), {
+                                    isUniSat: false,
+                                    useCache: true,
+                                    cacheKey: `brc20_swap_all_balance_idx_${address}`,
+                                    retryOn429: !__fastMode,
+                                    traceLabel: 'inswap_all_balance_indexer',
+                                    traceUrl: idxUrl
                                 });
-
-                                clearTimeout(timeoutId);
-                                if (!res.ok || res.status === 404) {
-                                    debugInfo.all_balance_using_old_url = true;
-                                    const controller2 = new AbortController();
-                                    const timeoutId2 = setTimeout(() => controller2.abort(), 4500);
-                                    res = await fetch(allBalanceUrlOld, {
-                                        method: 'GET',
-                                        headers: inswapHeaders,
-                                        signal: controller2.signal
-                                    });
-                                    clearTimeout(timeoutId2);
-                                }
-                                // ИСПРАВЛЕНИЕ: Если 429 - ждем и повторяем с обработкой Retry-After
-                                if (res.status === 429) {
-                                    debugInfo.all_balance_retry_attempt = attempt + 1;
-                                    debugInfo.all_balance_retry_delay = delay;
-
-                                    // Проверяем Retry-After заголовок
-                                    const retryAfter = res.headers.get('Retry-After');
-                                    if (retryAfter) {
-                                        const retryAfterSeconds = parseInt(retryAfter, 10);
-                                        if (!isNaN(retryAfterSeconds) && retryAfterSeconds > 0) {
-                                            delay = Math.max(delay, retryAfterSeconds * 1000);
-                                            debugInfo.all_balance_retry_after = retryAfterSeconds;
-                                        }
-                                    }
-
-                                    if (attempt === retries - 1) {
-                                        // Последняя попытка - возвращаем null
-                                        debugInfo.all_balance_rate_limited = true;
-                                        debugInfo.all_balance_raw_status = 429;
-                                        debugInfo.all_balance_raw_statusText = 'Too Many Requests';
-                                        return null;
-                                    }
-                                    await new Promise(r => setTimeout(r, delay));
-                                    // ИСПРАВЛЕНИЕ: Exponential backoff 2, 4, 8, 16, 32 секунды
-                                    delay = Math.min(delay * 2, 4000); // Exponential backoff: 2, 4, 8, 16, 30 секунд (макс, рекомендация UniSat)
-                                    debugInfo.all_balance_next_delay = delay;
-                                    continue;
-                                }
-                                if (res.ok) {
-                                    const data = await res.json();
-                                    debugInfo.all_balance_fetch_ok = true;
-                                    debugInfo.all_balance_response_code = data?.code;
-                                    debugInfo.all_balance_response_msg = data?.msg || data?.message;
-                                    return data;
-                                } else {
-                                    debugInfo.all_balance_raw_status = res.status;
-                                    debugInfo.all_balance_raw_statusText = res.statusText;
-                                    const errorText = await res.text().catch(() => '');
-                                    debugInfo.all_balance_raw_error = errorText.substring(0, 200);
-                                    return null;
-                                }
-                            } catch (e) {
-                                // ИСПРАВЛЕНИЕ: Обрабатываем таймауты и другие ошибки
-                                if (e.name === 'AbortError') {
-                                    debugInfo.all_balance_timeout = true;
-                                    debugInfo.all_balance_fetch_error = 'Request timeout (8s)';
-                                } else {
-                                    debugInfo.all_balance_fetch_error = e.message || 'unknown';
-                                }
-                                if (attempt === retries - 1) {
-                                    debugInfo.all_balance_final_attempt = true;
-                                    return null;
-                                }
-                                await new Promise(r => setTimeout(r, delay));
-                                // ИСПРАВЛЕНИЕ: Exponential backoff 2, 4, 8, 16, 32 секунды
-                                delay = Math.min(delay * 2, 4000); // Exponential backoff: 2, 4, 8, 16, 30 секунд (макс, рекомендация UniSat)
-                                debugInfo.all_balance_next_delay = delay;
                             }
+                            if (direct && direct.data && typeof direct.data === 'object') {
+                                debugInfo.all_balance_source = 'brc20_swap_all_balance';
+                                return direct;
+                            }
+                        } catch (e) {
+                            debugInfo.all_balance_source = 'brc20_swap_all_balance_error';
+                            debugInfo.all_balance_direct_error = e?.message || String(e);
                         }
-                        debugInfo.all_balance_all_retries_exhausted = true;
-                        return null;
+
+                        const assetSummary = await Promise.resolve(inswapAssetSummaryPromise).catch(() => null);
+                        const list = (() => {
+                            const d0 = assetSummary && typeof assetSummary === 'object' ? assetSummary.data : null;
+                            if (Array.isArray(d0)) return d0;
+                            if (d0 && typeof d0 === 'object') {
+                                if (Array.isArray(d0.list)) return d0.list;
+                                if (Array.isArray(d0.detail)) return d0.detail;
+                                if (Array.isArray(d0.data)) return d0.data;
+                            }
+                            if (Array.isArray(assetSummary)) return assetSummary;
+                            return [];
+                        })();
+                        if (!Array.isArray(list) || !list.length) return null;
+
+                        const data = {};
+                        let totalUsd = 0;
+                        for (const asset of list) {
+                            const rawTicker = String(
+                                asset?.ticker || asset?.tick || asset?.symbol || asset?.name || ''
+                            ).trim();
+                            if (!rawTicker) continue;
+                            const norm = normalizeTicker(rawTicker);
+                            let key = norm || rawTicker;
+                            if (norm === 'SFB' || norm === 'FB') key = 'sFB___000';
+                            else if (norm === 'SBTC' || norm === 'BTC') key = 'sBTC___000';
+                            else if (norm === 'FENNEC') key = 'FENNEC';
+
+                            const pickNum = v => {
+                                const n = Number(v);
+                                return Number.isFinite(n) ? n : null;
+                            };
+
+                            const balSwap = (() => {
+                                const candidates = [
+                                    asset?.swap,
+                                    asset?.swapBalance,
+                                    asset?.swap_balance,
+                                    asset?.inSwap,
+                                    asset?.in_swap
+                                ];
+                                for (const c of candidates) {
+                                    const n = pickNum(c);
+                                    if (n !== null) return n;
+                                }
+                                const b = asset?.balance;
+                                if (b && typeof b === 'object') {
+                                    const innerCandidates = [b.swap, b.inSwap, b.in_swap];
+                                    for (const c of innerCandidates) {
+                                        const n = pickNum(c);
+                                        if (n !== null) return n;
+                                    }
+                                }
+                                return 0;
+                            })();
+
+                            const balModule = (() => {
+                                const candidates = [asset?.module, asset?.moduleBalance, asset?.module_balance];
+                                for (const c of candidates) {
+                                    const n = pickNum(c);
+                                    if (n !== null) return n;
+                                }
+                                const b = asset?.balance;
+                                if (b && typeof b === 'object') {
+                                    const innerCandidates = [b.module];
+                                    for (const c of innerCandidates) {
+                                        const n = pickNum(c);
+                                        if (n !== null) return n;
+                                    }
+                                }
+                                return 0;
+                            })();
+
+                            const bal = (() => {
+                                const pickNum = v => {
+                                    const n = Number(v);
+                                    return Number.isFinite(n) ? n : null;
+                                };
+
+                                // prefer swap/module specific fields first
+                                const candidates = [
+                                    asset?.holding,
+                                    asset?.hold,
+                                    asset?.balance,
+                                    asset?.amount,
+                                    asset?.availableBalance,
+                                    asset?.available_balance,
+                                    asset?.available,
+                                    asset?.total,
+                                    asset?.overallBalance,
+                                    asset?.overall_balance
+                                ];
+
+                                for (const c of candidates) {
+                                    const n = pickNum(c);
+                                    if (n !== null) return n;
+                                }
+
+                                // Some APIs nest balances
+                                const b = asset?.balance;
+                                if (b && typeof b === 'object') {
+                                    const innerCandidates = [
+                                        b.swap,
+                                        b.module,
+                                        b.available,
+                                        b.total,
+                                        b.overall,
+                                        b.holding,
+                                        b.amount
+                                    ];
+                                    for (const c of innerCandidates) {
+                                        const n = pickNum(c);
+                                        if (n !== null) return n;
+                                    }
+                                }
+
+                                return 0;
+                            })();
+                            let valueUSD = parseFloat(
+                                asset?.valueUSD ??
+                                    asset?.value_usd ??
+                                    asset?.usdValue ??
+                                    asset?.usd_value ??
+                                    asset?.valueUsd ??
+                                    asset?.value_usd_total ??
+                                    asset?.totalUsd ??
+                                    asset?.total_usd ??
+                                    asset?.totalUsdValue ??
+                                    asset?.value ??
+                                    asset?.usd ??
+                                    0
+                            );
+                            const priceUSD = parseFloat(
+                                asset?.priceUSD ?? asset?.price_usd ?? asset?.priceUsd ?? asset?.price ?? 0
+                            );
+                            const totalBal =
+                                Number.isFinite(Number(balSwap)) && Number.isFinite(Number(balModule))
+                                    ? Number(balSwap) + Number(balModule)
+                                    : Number(bal) || 0;
+                            if (!(valueUSD > 0) && priceUSD > 0 && totalBal > 0) valueUSD = priceUSD * totalBal;
+                            if (valueUSD > 0) totalUsd += valueUSD;
+
+                            data[key] = {
+                                balance: { swap: balSwap, module: balModule, total: totalBal || bal },
+                                price: priceUSD > 0 ? priceUSD : totalBal > 0 && valueUSD > 0 ? valueUSD / totalBal : 0
+                            };
+                        }
+
+                        data.total_usd = totalUsd;
+                        return { code: 0, data };
                     })();
 
                     // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: my_pool_list использует правильный путь по документации API
@@ -3676,12 +3906,27 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     // ОПТИМИЗАЦИЯ: Увеличено количество попыток и задержки из backup версии
                     const myPoolListPromise = (async () => {
                         if (__disableInswap) return null;
+                        const __trace = __auditTraceEnabled && {
+                            id: ++__auditTraceSeq,
+                            label: 'inswap_my_pool_list',
+                            url: myPoolListUrl,
+                            started_at: Date.now(),
+                            attempts: []
+                        };
                         const retries = 2; // ИСПРАВЛЕНИЕ: Увеличено до 3 для надежности
                         let delay = 600; // ОПТИМИЗАЦИЯ: Уменьшено до 2 секунд для ускорения загрузки
                         debugInfo.my_pool_list_retries_total = retries;
                         for (let attempt = 0; attempt < retries; attempt++) {
                             debugInfo.my_pool_list_current_attempt = attempt + 1;
                             try {
+                                const __att =
+                                    __trace && Array.isArray(__trace.attempts)
+                                        ? { attempt: attempt + 1, started_at: Date.now(), delay_ms: delay }
+                                        : null;
+                                try {
+                                    if (__att && __trace) __trace.attempts.push(__att);
+                                } catch (_) {}
+
                                 // ИСПРАВЛЕНИЕ: Увеличиваем таймаут до 10 секунд для надежности (из backup)
                                 const controller = new AbortController();
                                 const timeoutId = setTimeout(() => controller.abort(), 4500);
@@ -3690,6 +3935,15 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                     headers: unisatApiHeaders,
                                     signal: controller.signal
                                 });
+
+                                try {
+                                    if (__att) {
+                                        __att.fetch_ms = Date.now() - Number(__att.started_at || Date.now());
+                                        __att.status = res.status;
+                                        __att.ok = !!res.ok;
+                                        __att.statusText = String(res.statusText || '');
+                                    }
+                                } catch (_) {}
 
                                 clearTimeout(timeoutId);
 
@@ -3713,6 +3967,18 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                         debugInfo.my_pool_list_rate_limited = true;
                                         debugInfo.my_pool_list_raw_status = 429;
                                         debugInfo.my_pool_list_raw_statusText = 'Too Many Requests';
+                                        try {
+                                            if (__att) __att.final_429 = true;
+                                        } catch (_) {}
+                                        try {
+                                            if (__trace) {
+                                                __trace.ok = false;
+                                                __trace.status = 429;
+                                                __trace.total_ms =
+                                                    Date.now() - Number(__trace.started_at || Date.now());
+                                                __auditTracePush(__trace);
+                                            }
+                                        } catch (_) {}
                                         return null;
                                     }
                                     await new Promise(r => setTimeout(r, delay));
@@ -3735,6 +4001,14 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                     if (res.status === 403 && !API_KEY) {
                                         debugInfo.my_pool_list_auth_required = true;
                                     }
+                                    try {
+                                        if (__trace) {
+                                            __trace.ok = false;
+                                            __trace.status = res.status;
+                                            __trace.total_ms = Date.now() - Number(__trace.started_at || Date.now());
+                                            __auditTracePush(__trace);
+                                        }
+                                    } catch (_) {}
                                     return null;
                                 }
                             } catch (e) {
@@ -3747,6 +4021,14 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 }
                                 if (attempt === retries - 1) {
                                     debugInfo.my_pool_list_final_attempt = true;
+                                    try {
+                                        if (__trace) {
+                                            __trace.ok = false;
+                                            __trace.error = e?.message || String(e);
+                                            __trace.total_ms = Date.now() - Number(__trace.started_at || Date.now());
+                                            __auditTracePush(__trace);
+                                        }
+                                    } catch (_) {}
                                     return null;
                                 }
                                 await new Promise(r => setTimeout(r, delay));
@@ -3756,6 +4038,14 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             }
                         }
                         debugInfo.my_pool_list_all_retries_exhausted = true;
+                        try {
+                            if (__trace) {
+                                __trace.ok = false;
+                                __trace.error = 'retries_exhausted';
+                                __trace.total_ms = Date.now() - Number(__trace.started_at || Date.now());
+                                __auditTracePush(__trace);
+                            }
+                        } catch (_) {}
                         return null;
                     })();
 
@@ -3805,7 +4095,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             () => null
                         );
 
-                    const UNISAT_AUDIT_TIMEOUT_MS = __fastMode ? 2500 : 6500;
+                    const UNISAT_AUDIT_TIMEOUT_MS = __fastMode ? 2500 : 9500;
                     const INSWAP_AUDIT_TIMEOUT_MS = __fastMode ? 3000 : 5500;
 
                     // 1-5. UniSat API запросы (параллельно)
@@ -3834,7 +4124,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             ? withTimeout(unisatRunesPromise, UNISAT_AUDIT_TIMEOUT_MS)
                             : Promise.resolve(null),
                         withTimeout(unisatInscriptionDataPromise, UNISAT_AUDIT_TIMEOUT_MS),
-                        __fastMode ? Promise.resolve(null) : withTimeout(unisatSummaryPromise, UNISAT_AUDIT_TIMEOUT_MS),
+                        withTimeout(unisatSummaryPromise, UNISAT_AUDIT_TIMEOUT_MS),
                         withTimeout(unisatAbandonNftUtxoPromise, UNISAT_AUDIT_TIMEOUT_MS)
                     ]);
                     await new Promise(r => setTimeout(r, 120));
@@ -3854,6 +4144,11 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     } catch (e) {
                         debugInfo.all_balance_error = e.message;
                     }
+                    try {
+                        debugInfo.all_balance_attempted = allBalanceAttempted;
+                    } catch (_) {
+                        void _;
+                    }
                     await new Promise(r => setTimeout(r, 120));
 
                     // 7. НОВЫЙ: InSwap Asset Summary API - LP данные из модуля свапа (из кода Gemini)
@@ -3870,6 +4165,65 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         debugInfo.inswap_asset_summary_error = e.message;
                     }
                     await new Promise(r => setTimeout(r, 120));
+
+                    try {
+                        const ab = allBalance && typeof allBalance === 'object' ? allBalance.data : null;
+                        const pBtc = Number(ab?.sBTC___000?.price || ab?.sBTC?.price || 0) || 0;
+                        const pFb = Number(ab?.sFB___000?.price || ab?.sFB?.price || 0) || 0;
+                        if (pBtc > 0) btcPrice = pBtc;
+                        if (pFb > 0) fbPrice = pFb;
+                    } catch (e) {
+                        void e;
+                    }
+
+                    if (!(btcPrice > 0) || !(fbPrice > 0)) {
+                        try {
+                            const p = await Promise.race([
+                                getCMCPrices(),
+                                new Promise(resolve => setTimeout(() => resolve({ btcPrice: 0, fbPrice: 0 }), 2500))
+                            ]);
+                            const pBtc = Number(p?.btcPrice || 0) || 0;
+                            const pFb = Number(p?.fbPrice || 0) || 0;
+                            if (!(btcPrice > 0) && pBtc > 0) btcPrice = pBtc;
+                            if (!(fbPrice > 0) && pFb > 0) fbPrice = pFb;
+                        } catch (e) {
+                            void e;
+                        }
+                    }
+
+                    if (!(fbPrice > 0) && btcPrice > 0) {
+                        try {
+                            const query = `?tick0=${encodeURIComponent('sBTC___000')}&tick1=${encodeURIComponent('sFB___000')}`;
+                            let poolUrl = `${SWAP_BASE}/brc20-swap/pool_info${query}`;
+                            let res = await fetch(poolUrl, { headers: upstreamHeaders });
+                            if (!res.ok && res.status === 404) {
+                                poolUrl = `${SWAP_BASE}/indexer/brc20-swap/pool_info${query}`;
+                                res = await fetch(poolUrl, { headers: upstreamHeaders });
+                            }
+                            const json = res.ok ? await res.json().catch(() => null) : null;
+                            const d = json?.data && typeof json.data === 'object' ? json.data : null;
+                            const a0 = Number(d?.amount0 || 0) || 0;
+                            const a1 = Number(d?.amount1 || 0) || 0;
+                            const t0 = String(d?.tick0 || '').toUpperCase();
+                            if (a0 > 0 && a1 > 0) {
+                                const isBtcFirst = t0.includes('BTC') || t0 === 'SBTC___000' || t0 === 'SBTC';
+                                const ratio = isBtcFirst ? a0 / a1 : a1 / a0;
+                                if (ratio > 0) {
+                                    fbPrice = ratio * btcPrice;
+                                    debugInfo.fbPrice_method = debugInfo.fbPrice_method || 'pool_info_direct';
+                                }
+                            }
+                        } catch (e) {
+                            void e;
+                        }
+                    }
+
+                    try {
+                        debugInfo.btc_price_usd = btcPrice;
+                        debugInfo.fb_price_usd = fbPrice;
+                    } catch (e) {
+                        void e;
+                    }
 
                     // ИСПРАВЛЕНИЕ: Загружаем данные параллельно (как в backup версии)
                     // 1. Критичные данные (базовые) - загружаем первыми параллельно
@@ -3906,7 +4260,11 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 uniscanSummary?.data?.firstTransactionTime ??
                                 0
                         );
-                        const candidateTs = Number.isFinite(candidateRaw) ? Math.floor(candidateRaw) : 0;
+                        let candidateTs = Number.isFinite(candidateRaw) ? Math.floor(candidateRaw) : 0;
+                        if (candidateTs > 1000000000000) {
+                            candidateTs = Math.floor(candidateTs / 1000);
+                            debugInfo.first_tx_hint_converted_from_ms = true;
+                        }
                         if (candidateTs > 0 && candidateTs >= MIN_VALID_TS && candidateTs <= nowTs) {
                             const currentDate = new Date();
                             const currentYear = currentDate.getFullYear();
@@ -3930,20 +4288,25 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         void _;
                     }
 
-                    // ИСПРАВЛЕНИЕ: Используем txCount из mempool как приоритетный источник (он уже загружен)
-                    if (txCount > 0) {
-                        txCountForOffset = txCount;
-                        debugInfo.genesis_txCount_source = 'mempool_stats';
-                    } else if (uniscanSummary?.data) {
+                    if (uniscanSummary?.data) {
                         txCountForOffset = Number(
                             uniscanSummary.data.totalTransactionCount || uniscanSummary.data.tx_count || 0
                         );
-                        txCount = txCountForOffset;
                         debugInfo.genesis_txCount_source = 'uniscan_summary';
+                    } else if (unisatSummary?.data) {
+                        txCountForOffset = Number(
+                            unisatSummary.data.totalTransactionCount ||
+                                unisatSummary.data.historyCount ||
+                                unisatSummary.data.tx_count ||
+                                0
+                        );
+                        debugInfo.genesis_txCount_source = 'unisat_summary';
                     } else if (unisatHistory?.data?.total) {
-                        txCountForOffset = unisatHistory.data.total;
-                        txCount = txCountForOffset;
+                        txCountForOffset = Number(unisatHistory.data.total || 0) || 0;
                         debugInfo.genesis_txCount_source = 'unisat_history';
+                    } else if (txCount > 0) {
+                        txCountForOffset = txCount;
+                        debugInfo.genesis_txCount_source = 'mempool_stats_fallback';
                     }
 
                     // КРИТИЧЕСКОЕ: Получаем первую транзакцию используя total из history
@@ -3953,75 +4316,153 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     if (firstTxTsHint === 0 && (txCountForOffset > 0 || txCount > 0)) {
                         genesisTxPromise = (async () => {
                             try {
-                                const GENESIS_TIMEOUT_MS = 3500;
+                                const GENESIS_TIMEOUT_MS = __fastMode ? 3500 : 9000;
                                 const controller = new AbortController();
                                 const timeoutId = setTimeout(() => controller.abort(), GENESIS_TIMEOUT_MS);
-                                let cursor, size;
+                                let cursor;
                                 if (txCountForOffset > 0) {
                                     cursor = Math.max(0, txCountForOffset - 1);
-                                    size = 1;
                                 } else {
                                     cursor = 0;
-                                    size = 100;
                                 }
-                                const res = await fetch(
-                                    `${FRACTAL_BASE}/indexer/address/${address}/history?cursor=${cursor}&size=${size}`,
-                                    { headers: upstreamHeaders, signal: controller.signal }
-                                );
-                                clearTimeout(timeoutId);
-                                if (res.ok) {
-                                    const data = await res.json();
-                                    if (
-                                        data?.data?.detail &&
-                                        Array.isArray(data.data.detail) &&
-                                        data.data.detail.length > 0
-                                    ) {
-                                        const tx =
-                                            size === 1
-                                                ? data.data.detail[0]
-                                                : data.data.detail[data.data.detail.length - 1];
-                                        const txTs =
-                                            tx.timestamp ||
-                                            tx.blocktime ||
-                                            tx.time ||
-                                            (tx.blockTime ? Math.floor(tx.blockTime / 1000) : 0);
-                                        const now = Math.floor(Date.now() / 1000);
-                                        const MIN_VALID = 1700000000;
-                                        const currentDate = new Date();
-                                        const currentYear = currentDate.getFullYear();
-                                        const currentMonth = currentDate.getMonth();
-                                        const currentDay = currentDate.getDate();
-                                        const timestampDate = txTs > 0 ? new Date(txTs * 1000) : null;
-                                        const timestampYear = timestampDate ? timestampDate.getFullYear() : 0;
-                                        const timestampMonth = timestampDate ? timestampDate.getMonth() : 0;
-                                        const timestampDay = timestampDate ? timestampDate.getDate() : 0;
-                                        const isFutureYear = timestampYear > currentYear;
-                                        const isFutureMonth =
-                                            timestampYear === currentYear && timestampMonth > currentMonth;
-                                        const isFutureDay =
-                                            timestampYear === currentYear &&
-                                            timestampMonth === currentMonth &&
-                                            timestampDay > currentDay;
-                                        const isFuture = isFutureYear || isFutureMonth || isFutureDay;
-                                        if (txTs > 0 && txTs >= MIN_VALID && txTs <= now && !isFuture) {
-                                            debugInfo.genesis_tx_found = true;
-                                            debugInfo.genesis_tx_cursor_used = cursor;
-                                            debugInfo.genesis_tx_timestamp = txTs;
-                                            return {
-                                                data: {
-                                                    detail: [
-                                                        {
-                                                            txid: tx.txid || tx.hash || '',
-                                                            timestamp: txTs,
-                                                            blocktime: txTs,
-                                                            time: txTs,
-                                                            ...tx
-                                                        }
-                                                    ]
+                                const pickTxFromResponse = (json, pickLast) => {
+                                    try {
+                                        const d0 = json && typeof json === 'object' ? json : null;
+                                        const d1 = d0 && d0.data && typeof d0.data === 'object' ? d0.data : null;
+                                        const arr =
+                                            (d1 && Array.isArray(d1.detail) ? d1.detail : null) ||
+                                            (d1 && Array.isArray(d1.list) ? d1.list : null) ||
+                                            (Array.isArray(d1) ? d1 : null) ||
+                                            (Array.isArray(d0) ? d0 : null) ||
+                                            [];
+                                        if (!Array.isArray(arr) || arr.length === 0) return null;
+                                        return pickLast ? arr[arr.length - 1] : arr[0];
+                                    } catch (_) {
+                                        return null;
+                                    }
+                                };
+
+                                const extractTs = tx => {
+                                    let txTs = (tx && (tx.timestamp || tx.blocktime || tx.time || tx.blockTime)) || 0;
+                                    if (txTs > 1000000000000) {
+                                        txTs = Math.floor(txTs / 1000);
+                                        debugInfo.genesis_tx_offset_converted_from_ms = true;
+                                    }
+                                    if (txTs > 10000000000) {
+                                        txTs = Math.floor(txTs / 1000);
+                                        debugInfo.genesis_tx_offset_converted_from_ms = true;
+                                    }
+                                    return Number(txTs) || 0;
+                                };
+
+                                const isValidTs = ts => {
+                                    const now = Math.floor(Date.now() / 1000);
+                                    const MIN_VALID = 1700000000;
+                                    if (!(ts > 0 && ts >= MIN_VALID && ts <= now)) return false;
+                                    const currentDate = new Date();
+                                    const currentYear = currentDate.getFullYear();
+                                    const currentMonth = currentDate.getMonth();
+                                    const currentDay = currentDate.getDate();
+                                    const timestampDate = new Date(ts * 1000);
+                                    const timestampYear = timestampDate.getFullYear();
+                                    const timestampMonth = timestampDate.getMonth();
+                                    const timestampDay = timestampDate.getDate();
+                                    const isFutureYear = timestampYear > currentYear;
+                                    const isFutureMonth =
+                                        timestampYear === currentYear && timestampMonth > currentMonth;
+                                    const isFutureDay =
+                                        timestampYear === currentYear &&
+                                        timestampMonth === currentMonth &&
+                                        timestampDay > currentDay;
+                                    return !(isFutureYear || isFutureMonth || isFutureDay);
+                                };
+
+                                const fetchOne = async (off, label) => {
+                                    const urls = [
+                                        `${FRACTAL_BASE}/indexer/address/${address}/history?start=${off}&limit=1`,
+                                        `${FRACTAL_BASE}/indexer/address/${address}/history?cursor=${off}&size=1`
+                                    ];
+                                    for (let i = 0; i < urls.length; i++) {
+                                        const u = urls[i];
+                                        const __t = __auditTraceEnabled && {
+                                            id: ++__auditTraceSeq,
+                                            label: `unisat_history_genesis_${label}`,
+                                            url: u,
+                                            started_at: Date.now(),
+                                            attempt: i + 1
+                                        };
+                                        try {
+                                            const res = await fetch(u, {
+                                                headers: upstreamHeaders,
+                                                signal: controller.signal
+                                            });
+                                            try {
+                                                if (__t) {
+                                                    __t.status = res.status;
+                                                    __t.ok = !!res.ok;
+                                                    __t.total_ms = Date.now() - Number(__t.started_at || Date.now());
+                                                    __auditTracePush(__t);
                                                 }
+                                            } catch (_) {}
+                                            if (!res.ok) continue;
+                                            const json = await res.json().catch(() => null);
+                                            const tx = pickTxFromResponse(json, false);
+                                            if (!tx) continue;
+                                            const ts = extractTs(tx);
+                                            if (!isValidTs(ts)) continue;
+                                            return {
+                                                tx,
+                                                ts,
+                                                url: u,
+                                                label,
+                                                paramStyle: i === 0 ? 'start_limit' : 'cursor_size'
                                             };
+                                        } catch (_) {
+                                            try {
+                                                if (__t) {
+                                                    __t.ok = false;
+                                                    __t.error = 'fetch_failed';
+                                                    __t.total_ms = Date.now() - Number(__t.started_at || Date.now());
+                                                    __auditTracePush(__t);
+                                                }
+                                            } catch (_) {}
+                                            continue;
                                         }
                                     }
+                                    return null;
+                                };
+
+                                const offOld = cursor;
+                                const [cOld, cZero] = await Promise.all([
+                                    fetchOne(offOld, 'offset'),
+                                    fetchOne(0, 'zero')
+                                ]);
+                                clearTimeout(timeoutId);
+
+                                const chosen = (() => {
+                                    if (cOld && cZero) return cOld.ts <= cZero.ts ? cOld : cZero;
+                                    return cOld || cZero || null;
+                                })();
+
+                                if (chosen) {
+                                    debugInfo.genesis_tx_found = true;
+                                    debugInfo.genesis_tx_cursor_used = chosen.label === 'offset' ? offOld : 0;
+                                    debugInfo.genesis_tx_timestamp = chosen.ts;
+                                    debugInfo.genesis_tx_url = chosen.url;
+                                    debugInfo.genesis_tx_param_style = chosen.paramStyle;
+                                    return {
+                                        data: {
+                                            detail: [
+                                                {
+                                                    txid: chosen.tx.txid || chosen.tx.hash || '',
+                                                    timestamp: chosen.ts,
+                                                    blocktime: chosen.ts,
+                                                    time: chosen.ts,
+                                                    ...chosen.tx
+                                                }
+                                            ]
+                                        }
+                                    };
                                 }
                             } catch (e) {
                                 debugInfo.genesis_error = e.message;
@@ -4054,6 +4495,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     const runesData = null; // Не используется
                     const ordinalsData = null; // Не используется
 
+                    void brc20Data;
+                    void runesData;
+
                     // 4. InSwap данные - ОПТИМИЗАЦИЯ: пропускаем если rate limited, используем только если критично
                     let brc20Select = null;
                     let myPoolList = null;
@@ -4069,7 +4513,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         // Игнорируем ошибки
                     }
 
-                    const summaryData = null; // Отключен
+                    const summaryData = unisatSummary;
 
                     // ИСПРАВЛЕНИЕ: Последовательное выполнение запросов для снижения rate limiting
                     // ОПТИМИЗАЦИЯ: Выполняем запросы последовательно для снижения 429 ошибок (рекомендация UniSat)
@@ -4078,14 +4522,25 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     debugInfo.sequential_execution = false;
 
                     // Сначала загружаем allBalance, потом myPoolList
-                    debugInfo.summary_has_data = false; // summary отключен
-                    debugInfo.summary_txCount = 0;
-                    debugInfo.summary_firstTxTime = 'disabled';
-                    debugInfo.summary_structure = 'disabled';
+                    debugInfo.summary_has_data = !!summaryData?.data;
+                    const __summaryTxCountRaw =
+                        summaryData?.data?.totalTransactionCount ||
+                        summaryData?.data?.historyCount ||
+                        summaryData?.data?.tx_count ||
+                        0;
+                    debugInfo.summary_txCount = Number(__summaryTxCountRaw || 0) || 0;
+                    debugInfo.summary_firstTxTime =
+                        summaryData?.data?.firstTransactionTime || summaryData?.data?.firstTxTime || 'not found';
+                    debugInfo.summary_structure = summaryData
+                        ? typeof summaryData === 'object'
+                            ? Object.keys(summaryData)
+                            : typeof summaryData
+                        : 'null';
                     debugInfo.genesis_tx_has_data = !!genesisTxData;
                     debugInfo.genesis_tx_method = genesisTxPromise ? 'offset_based' : 'not_attempted';
                     debugInfo.genesis_txCount_for_offset = txCountForOffset;
-                    debugInfo.genesis_txCount_source = txCountForOffset > 0 ? 'mempool_early' : 'none';
+                    debugInfo.genesis_txCount_source =
+                        debugInfo.genesis_txCount_source || (txCountForOffset > 0 ? 'unknown' : 'none');
                     // ИСПРАВЛЕНИЕ: Убраны debug для fbPool - запрос удален для оптимизации
                     debugInfo.all_balance_has_data = !!allBalance?.data;
                     debugInfo.all_balance_structure = allBalance
@@ -4317,6 +4772,8 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             tokensList.forEach(t => {
                                 const ticker = (t.ticker || t.tick || t.symbol || '').toUpperCase();
                                 if (ticker) {
+                                    const __n = normalizeTicker(ticker);
+                                    if (__n === 'SFB' || __n === 'SBTC') return;
                                     // ИСПРАВЛЕНИЕ: Добавляем все токены, не только с балансом > 0
                                     // Это нужно для правильного подсчета (например, MULTIBIT может быть с балансом 0)
                                     walletBrc20Tickers.add(ticker);
@@ -4349,7 +4806,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         // Пробуем запросить BRC-20 отдельно
                         try {
                             const brc20Res = await fetch(
-                                `${FRACTAL_BASE}/indexer/address/${address}/brc20/summary?start=0&limit=500&tick_filter=24&exclude_zero=true`,
+                                `${FRACTAL_BASE}/indexer/address/${address}/brc20/summary?start=0&limit=500&tick_filter=56&exclude_zero=true`,
                                 {
                                     headers: upstreamHeaders
                                 }
@@ -4412,6 +4869,8 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 // ИСПРАВЛЕНИЕ: Нормализуем тикер (убираем ___000, приводим к верхнему регистру)
                                 const ticker = key.replace(/___\d+$/, '').toUpperCase();
                                 if (ticker) {
+                                    const __n = normalizeTicker(ticker);
+                                    if (__n === 'SFB' || __n === 'SBTC') return;
                                     inswapBrc20Tickers.add(ticker);
                                     debugInfo[`brc20_inswap_${ticker}`] = balance;
                                 }
@@ -4638,9 +5097,16 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                     const holdingValue = (() => {
                                         const v =
                                             holdingCandidate ??
+                                            it?.holdingCount ??
+                                            it?.holding_count ??
+                                            it?.holdCount ??
+                                            it?.hold_count ??
+                                            it?.hold ??
+                                            it?.owned ??
                                             it?.count ??
                                             it?.items ??
                                             it?.itemCount ??
+                                            it?.item_count ??
                                             it?.inscriptionCount ??
                                             it?.inscription_count ??
                                             it?.total ??
@@ -4654,9 +5120,16 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                             const inner =
                                                 v.holding ??
                                                 v.holdings ??
+                                                v.holdingCount ??
+                                                v.holding_count ??
+                                                v.holdCount ??
+                                                v.hold_count ??
+                                                v.hold ??
+                                                v.owned ??
                                                 v.count ??
                                                 v.items ??
                                                 v.itemCount ??
+                                                v.item_count ??
                                                 v.inscriptionCount ??
                                                 v.inscription_count ??
                                                 v.total ??
@@ -4818,8 +5291,6 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                         collectionObj &&
                                             (collectionObj.collectionId ||
                                                 collectionObj.collection_id ||
-                                                collectionObj.inscriptionId ||
-                                                collectionObj.inscription_id ||
                                                 collectionObj.id)
                                     ) ||
                                     asId(it?.parentId) ||
@@ -4873,7 +5344,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 (d2 ? d2.inscription || d2.inscriptions || d2.list : null) ||
                                 (d1 ? d1.inscription || d1.inscriptions || d1.list : null) ||
                                 (Array.isArray(d1) ? d1 : Array.isArray(d0) ? d0 : []);
-                            if (Array.isArray(list2) && list2.length) {
+                            if (Array.isArray(list2) && list2.length > 0) {
                                 const ids2 = new Set();
                                 const per2 = {};
                                 const asId2 = v => {
@@ -4884,11 +5355,13 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 for (const it of list2) {
                                     const collectionObj =
                                         it?.collection && typeof it.collection === 'object' ? it.collection : null;
+                                    const parentObj = it?.parent && typeof it.parent === 'object' ? it.parent : null;
                                     const cid =
                                         asId2(it?.collectionId) ||
                                         asId2(it?.collection_id) ||
                                         asId2(it?.collectionInscriptionId) ||
                                         asId2(it?.collection_inscription_id) ||
+                                        asId2(typeof it?.collection === 'string' ? it.collection : '') ||
                                         asId2(
                                             collectionObj &&
                                                 (collectionObj.collectionId ||
@@ -4897,6 +5370,10 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                         ) ||
                                         asId2(it?.parentInscriptionId) ||
                                         asId2(it?.parent_inscription_id) ||
+                                        asId2(
+                                            parentObj &&
+                                                (parentObj.inscriptionId || parentObj.inscription_id || parentObj.id)
+                                        ) ||
                                         asId2(it?.parent);
 
                                     if (cid) {
@@ -5180,13 +5657,27 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 }
 
                                 for (const it of list) {
+                                    const parentObj = it?.parent && typeof it.parent === 'object' ? it.parent : null;
+                                    const collectionObj =
+                                        it?.collection && typeof it.collection === 'object' ? it.collection : null;
                                     const cid =
                                         asId(it?.collectionId) ||
                                         asId(it?.collection_id) ||
                                         asId(it?.collectionInscriptionId) ||
+                                        asId(typeof it?.collection === 'string' ? it.collection : '') ||
                                         asId(it?.collection?.collectionId) ||
                                         asId(it?.collection?.id) ||
+                                        asId(
+                                            collectionObj &&
+                                                (collectionObj.collectionId ||
+                                                    collectionObj.collection_id ||
+                                                    collectionObj.id)
+                                        ) ||
                                         asId(it?.parentInscriptionId) ||
+                                        asId(
+                                            parentObj &&
+                                                (parentObj.inscriptionId || parentObj.inscription_id || parentObj.id)
+                                        ) ||
                                         asId(it?.parent);
                                     if (cid) {
                                         ids.add(cid);
@@ -5245,8 +5736,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     if (typeof totalCollections === 'number' && Number.isFinite(totalCollections)) {
                         totalCollections = Math.max(0, Math.floor(totalCollections));
                     } else {
-                        const fallback = Number(totalInscriptionsCount);
-                        totalCollections = Number.isFinite(fallback) ? Math.max(0, Math.floor(fallback)) : 0;
+                        totalCollections = 0;
                         debugInfo.total_collections_source =
                             debugInfo.total_collections_source || 'fallback_ordinals_count';
                     }
@@ -5259,6 +5749,26 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         ordinalsCount = 0;
                         ordinalsByCollection = null;
                         debugInfo.ordinals_count_source = 'collections_none_or_unknown';
+                    }
+
+                    if (
+                        ordinalsCount === 0 &&
+                        typeof totalCollections === 'number' &&
+                        Number.isFinite(totalCollections) &&
+                        totalCollections > 0 &&
+                        typeof totalInscriptionsCount === 'number' &&
+                        Number.isFinite(totalInscriptionsCount) &&
+                        totalInscriptionsCount > 0
+                    ) {
+                        debugInfo.ordinals_count_source = 'fallback_total_inscriptions_count_skipped';
+                    }
+
+                    if (ordinalsCount === 0) {
+                        const balCount = Number(unisatBalance?.data?.inscriptionUtxoCount || 0);
+                        if (Number.isFinite(balCount) && balCount > 0) {
+                            ordinalsCount = Math.max(0, Math.floor(balCount));
+                            debugInfo.ordinals_count_source = 'unisat_balance_inscriptionUtxoCount';
+                        }
                     }
 
                     let abandonedUtxoCount = 0;
@@ -5460,7 +5970,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             // Добавляем небольшой запас только для учета задержек синхронизации (например, +1 час)
                             const MAX_VALID_TS = validationNow + 3600; // +1 час запас для синхронизации
 
-                            // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Проверяем год и месяц ДО установки firstTxTs
+                            // КРИТИЧЕСКОЕ: Проверяем год и месяц ДО установки firstTxTs
                             const currentDate = new Date();
                             const currentYear = currentDate.getFullYear();
                             const currentMonth = currentDate.getMonth(); // 0-11
@@ -5560,6 +6070,12 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             candidateTs = summaryData.firstTransactionTime;
                         }
 
+                        // UniSat иногда возвращает миллисекунды
+                        if (candidateTs > 1000000000000) {
+                            candidateTs = Math.floor(candidateTs / 1000);
+                            debugInfo.summary_first_tx_converted_from_ms = true;
+                        }
+
                         // Валидация перед использованием
                         if (candidateTs > 0 && candidateTs >= MIN_VALID && candidateTs <= MAX_VALID) {
                             firstTxTs = candidateTs;
@@ -5592,11 +6108,32 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             // НЕ сбрасываем - возможно это правильный timestamp из будущего (если часы сервера отстают)
                         }
                     } else {
-                        // Если timestamp не найден - возвращаем 0
-                        debugInfo.first_tx_method = 'error_no_valid_timestamp';
-                        debugInfo.first_tx_error =
-                            'Failed to determine first transaction timestamp from all available sources. Invalid timestamp or no data.';
-                        firstTxTs = 0; // Реальная ошибка, не fallback
+                        let utxoMinTs = 0;
+                        try {
+                            const list = Array.isArray(utxoList) ? utxoList : null;
+                            if (list && list.length) {
+                                for (const it of list) {
+                                    const ts =
+                                        Number(
+                                            it?.status?.block_time || it?.block_time || it?.time || it?.timestamp || 0
+                                        ) || 0;
+                                    if (ts > 0 && ts >= MIN_VALID && ts <= now) {
+                                        if (!utxoMinTs || ts < utxoMinTs) utxoMinTs = ts;
+                                    }
+                                }
+                            }
+                        } catch (_) {
+                            void _;
+                        }
+                        if (utxoMinTs > 0) {
+                            firstTxTs = utxoMinTs;
+                            debugInfo.first_tx_method = 'mempool_utxo_min_block_time';
+                        } else {
+                            debugInfo.first_tx_method = 'error_no_valid_timestamp';
+                            debugInfo.first_tx_error =
+                                'Failed to determine first transaction timestamp from all available sources. Invalid timestamp or no data.';
+                            firstTxTs = 0;
+                        }
                     }
 
                     // Метод 3: Используем history (последняя попытка)
@@ -5702,7 +6239,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 // ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА: Проверяем также что timestamp не больше validationNow И не больше nowCheckStrict
                                 if (isFuture || candidateTs > validationNow || candidateTs > nowCheckStrict) {
                                     debugInfo.first_tx_method = 'error_history_future_timestamp';
-                                    debugInfo.first_tx_error = `History timestamp ${candidateTs} (year: ${tsYear}, month: ${tsMonth + 1}, day: ${tsDay}) is in future. Current: ${currentYear}-${currentMonth + 1}-${currentDay}, validationNow: ${validationNow}, candidateTs > validationNow: ${candidateTs > validationNow}`;
+                                    debugInfo.first_tx_error = `History timestamp ${candidateTs} (year: ${tsYear}, month: ${tsMonth + 1}, day: ${tsDay}) is in future. Current: ${currentYear}-${currentMonth + 1}-${currentDay}, validationNow: ${validationNow}, nowCheck: ${nowCheckStrict}, firstTxTs > validationNow: ${candidateTs > validationNow}, firstTxTs > nowCheckStrict: ${candidateTs > nowCheckStrict}, isFuture: ${isFuture}`;
                                     debugInfo.first_tx_from_history = candidateTs;
                                     debugInfo.first_tx_future_check = {
                                         tsYear,
@@ -5737,41 +6274,26 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                         (tsYear2 === currentYear && tsMonth2 > currentMonth) ||
                                         (tsYear2 === currentYear && tsMonth2 === currentMonth && tsDay2 > currentDay);
 
-                                    // КРИТИЧЕСКОЕ: Дополнительная проверка - если timestamp больше текущего времени в секундах, ОТКЛОНЯЕМ
+                                    // КРИТИЧЕСКОЕ: СТРОГАЯ проверка - если timestamp больше validationNow ИЛИ в будущем по дате - ОТКЛОНЯЕМ
+                                    // КРИТИЧЕСКОЕ: Дополнительная проверка - сравниваем timestamp с текущим временем напрямую
                                     const strictNowCheck = Math.floor(Date.now() / 1000);
                                     const isGreaterThanStrictNow = candidateTs > strictNowCheck;
 
-                                    // КРИТИЧЕСКОЕ: ДОПОЛНИТЕЛЬНАЯ проверка - timestamp НЕ ДОЛЖЕН быть больше ТЕКУЩЕГО времени
-                                    const absoluteNow = Math.floor(Date.now() / 1000);
-                                    const candidateIsReallyInFuture = candidateTs > absoluteNow;
-
                                     if (
-                                        candidateTs <= validationNow &&
-                                        candidateTs <= nowCheck2 &&
-                                        candidateTs <= strictNowCheck &&
-                                        candidateTs <= absoluteNow && // НОВАЯ ПРОВЕРКА
-                                        !candidateIsReallyInFuture && // НОВАЯ ПРОВЕРКА
-                                        !isFuture &&
-                                        !isStillFuture2 &&
-                                        !isGreaterThanStrictNow
+                                        candidateTs > validationNow ||
+                                        candidateTs > nowCheck2 ||
+                                        candidateTs > strictNowCheck ||
+                                        isStillFuture2 ||
+                                        isGreaterThanStrictNow
                                     ) {
-                                        firstTxTs = candidateTs;
-                                        debugInfo.first_tx_method = 'history_sorted';
-                                        debugInfo.first_tx_from_history = firstTxTs;
-                                        debugInfo.first_tx_absolute_now_check = absoluteNow;
-                                        debugInfo.first_tx_candidate_vs_now = `${candidateTs} <= ${absoluteNow}`;
-                                    } else {
-                                        const absoluteNow = Math.floor(Date.now() / 1000);
+                                        // Еще одна проверка - если все равно в будущем, отклоняем
                                         debugInfo.first_tx_method = 'error_history_future_timestamp';
-                                        debugInfo.first_tx_error = `History timestamp ${candidateTs} (year: ${tsYear2}, month: ${tsMonth2 + 1}, day: ${tsDay2}) is greater than validationNow ${validationNow} or nowCheck ${nowCheck2} or strictNowCheck ${strictNowCheck} or absoluteNow ${absoluteNow} or is future. Current: ${currentYear}-${currentMonth + 1}-${currentDay}`;
-                                        debugInfo.first_tx_absolute_now = absoluteNow;
-                                        debugInfo.first_tx_candidate_greater_than_absolute = candidateTs > absoluteNow;
-                                        debugInfo.first_tx_rejected_reason = {
-                                            candidateTs,
+                                        debugInfo.first_tx_error = `Now check failed: timestamp ${candidateTs} (year: ${tsYear2}, month: ${tsMonth2 + 1}, day: ${tsDay2}) > validationNow ${validationNow} or > nowCheck ${nowCheck2} or > strictNowCheck ${strictNowCheck} or is future. Current: ${currentYear}-${currentMonth + 1}-${currentDay}, isStillFuture: ${isStillFuture2}, isGreaterThanStrictNow: ${isGreaterThanStrictNow}`;
+                                        debugInfo.first_tx_debug_values = {
+                                            firstTxTs,
                                             validationNow,
                                             nowCheck2,
                                             strictNowCheck,
-                                            isFuture,
                                             isStillFuture2,
                                             isGreaterThanStrictNow,
                                             tsYear2,
@@ -5782,6 +6304,12 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                             currentDay
                                         };
                                         firstTxTs = 0;
+                                    } else {
+                                        // Timestamp валидный - только если он в прошлом или настоящем И прошел все проверки
+                                        debugInfo.first_tx_method = 'history_sorted';
+                                        debugInfo.first_tx_from_history = firstTxTs;
+                                        debugInfo.first_tx_absolute_now_check = strictNowCheck;
+                                        debugInfo.first_tx_candidate_vs_now = `${candidateTs} <= ${strictNowCheck}`;
                                     }
                                 } else {
                                     debugInfo.first_tx_method = 'error_history_invalid_timestamp';
@@ -5827,304 +6355,23 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         const validationNow = Math.floor(Date.now() / 1000);
                         const nowCheck = Math.floor(Date.now() / 1000); // Дополнительная проверка
                         const currentYear = new Date().getFullYear();
-                        const currentMonth = new Date().getMonth();
-                        const currentDay = new Date().getDate();
-                        const timestampYear = new Date(firstTxTs * 1000).getFullYear();
-                        const timestampMonth = new Date(firstTxTs * 1000).getMonth();
-                        const timestampDay = new Date(firstTxTs * 1000).getDate();
+                        const currentMonth = new Date().getMonth(); // 0-11
+                        void currentYear;
+                        void currentMonth;
 
-                        // КРИТИЧЕСКОЕ: Проверяем СНАЧАЛА что timestamp не больше текущего времени
-                        const isGreaterThanNow = firstTxTs > validationNow || firstTxTs > nowCheck;
-                        const isFutureYear = timestampYear > currentYear;
-                        const isFutureMonth = timestampYear === currentYear && timestampMonth > currentMonth;
-                        const isFutureDay =
-                            timestampYear === currentYear &&
-                            timestampMonth === currentMonth &&
-                            timestampDay > currentDay;
-                        // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Отклоняем если timestamp больше текущего времени ИЛИ в будущем по дате
-                        const isFuture = isGreaterThanNow || isFutureYear || isFutureMonth || isFutureDay;
-
-                        // ИСПРАВЛЕНИЕ: Отклоняем timestamp если он в будущем (даже на 1 год)
-                        // КРИТИЧЕСКОЕ: Проверяем СНАЧАЛА что timestamp не в будущем, ПОТОМ что он не слишком старый
-                        // КРИТИЧЕСКОЕ: Дополнительная проверка - если timestamp больше validationNow ИЛИ в будущем по дате - ОТКЛОНЯЕМ
-                        if (isFuture || firstTxTs > validationNow || firstTxTs > nowCheck) {
-                            debugInfo.first_tx_final_validation_error = true;
-                            debugInfo.first_tx_final_validation = 'timestamp_future';
-                            debugInfo.first_tx_final_original = firstTxTs;
-                            debugInfo.first_tx_final_year = timestampYear;
-                            debugInfo.first_tx_final_month = timestampMonth;
-                            debugInfo.first_tx_final_day = timestampDay;
-                            debugInfo.first_tx_current_year = currentYear;
-                            debugInfo.first_tx_current_month = currentMonth;
-                            debugInfo.first_tx_current_day = currentDay;
-                            debugInfo.first_tx_now = validationNow;
-                            debugInfo.first_tx_now_check = nowCheck;
-                            debugInfo.first_tx_is_future = isFuture;
-                            debugInfo.first_tx_greater_than_validation = firstTxTs > validationNow;
-                            debugInfo.first_tx_greater_than_now = firstTxTs > nowCheck;
-                            debugInfo.first_tx_error = `Final validation failed: timestamp ${firstTxTs} (date: ${new Date(firstTxTs * 1000).toISOString()}, year: ${timestampYear}, month: ${timestampMonth + 1}, day: ${timestampDay}) is in future. Current: ${currentYear}-${currentMonth + 1}-${currentDay}, validationNow: ${validationNow}, nowCheck: ${nowCheck}, firstTxTs > validationNow: ${firstTxTs > validationNow}, firstTxTs > nowCheck: ${firstTxTs > nowCheck}, isFuture: ${isFuture}`;
-                            firstTxTs = 0; // Сбрасываем на 0 если timestamp в будущем
+                        if (firstTxTs > validationNow || firstTxTs > nowCheck) {
+                            debugInfo.first_tx_final_validation = 'invalid_future';
+                            firstTxTs = 0;
                         } else if (firstTxTs < MIN_VALID) {
-                            // Timestamp слишком старый
-                            debugInfo.first_tx_final_validation_error = true;
-                            debugInfo.first_tx_final_validation = 'timestamp_too_old';
-                            debugInfo.first_tx_error = `Final validation failed: timestamp ${firstTxTs} is too old. Valid range: ${MIN_VALID} - ${validationNow}`;
+                            debugInfo.first_tx_final_validation = 'invalid_too_old';
                             firstTxTs = 0;
-                        } else if (firstTxTs > 0) {
-                            // ИСПРАВЛЕНИЕ: СТРОГАЯ проверка - сначала проверяем что timestamp НЕ в будущем
-                            // Нормализуем timestamp (может быть в миллисекундах)
-                            if (firstTxTs > 1000000000000) {
-                                firstTxTs = Math.floor(firstTxTs / 1000);
-                            }
-
-                            // КРИТИЧЕСКОЕ: Проверяем timestamp на будущее время ПЕРЕД проверкой диапазона
-                            const finalCheckYear = new Date(firstTxTs * 1000).getFullYear();
-                            const finalCheckMonth = new Date(firstTxTs * 1000).getMonth();
-                            const finalCheckDay = new Date(firstTxTs * 1000).getDate();
-                            const finalIsFutureYear = finalCheckYear > currentYear;
-                            const finalIsFutureMonth = finalCheckYear === currentYear && finalCheckMonth > currentMonth;
-                            const finalIsFutureDay =
-                                finalCheckYear === currentYear &&
-                                finalCheckMonth === currentMonth &&
-                                finalCheckDay > currentDay;
-
-                            // КРИТИЧЕСКОЕ: СТРОГАЯ проверка - если timestamp больше текущего времени, ОТКЛОНЯЕМ
-                            // КРИТИЧЕСКОЕ: Дополнительная проверка - сравниваем timestamp с текущим временем напрямую
-                            const strictNowCheckFinal = Math.floor(Date.now() / 1000);
-                            const isGreaterThanStrictNowFinal = firstTxTs > strictNowCheckFinal;
-
-                            if (
-                                firstTxTs > validationNow ||
-                                firstTxTs > strictNowCheckFinal ||
-                                isGreaterThanStrictNowFinal ||
-                                finalIsFutureYear ||
-                                finalIsFutureMonth ||
-                                finalIsFutureDay
-                            ) {
-                                // Отклоняем если это будущее время
-                                debugInfo.first_tx_final_validation_error = true;
-                                debugInfo.first_tx_final_validation = 'timestamp_future_final_check';
-                                debugInfo.first_tx_error = `Final check failed: timestamp ${firstTxTs} (year: ${finalCheckYear}, month: ${finalCheckMonth + 1}, day: ${finalCheckDay}) is in future. Current: ${currentYear}-${currentMonth + 1}-${currentDay}, validationNow: ${validationNow}, strictNowCheckFinal: ${strictNowCheckFinal}, firstTxTs > validationNow: ${firstTxTs > validationNow}, firstTxTs > strictNowCheckFinal: ${firstTxTs > strictNowCheckFinal}`;
-                                debugInfo.first_tx_debug_final = {
-                                    firstTxTs,
-                                    validationNow,
-                                    strictNowCheckFinal,
-                                    isGreaterThanStrictNowFinal,
-                                    finalCheckYear,
-                                    finalCheckMonth,
-                                    finalCheckDay,
-                                    currentYear,
-                                    currentMonth,
-                                    currentDay
-                                };
-                                firstTxTs = 0;
-                            } else if (firstTxTs >= MIN_VALID && firstTxTs <= validationNow) {
-                                // Дополнительная проверка - убеждаемся что timestamp действительно в прошлом
-                                const nowCheck = Math.floor(Date.now() / 1000);
-                                // КРИТИЧЕСКОЕ: Проверяем еще раз год/месяц/день перед тем как пометить как passed
-                                const finalCheckYear2 = new Date(firstTxTs * 1000).getFullYear();
-                                const finalCheckMonth2 = new Date(firstTxTs * 1000).getMonth();
-                                const finalCheckDay2 = new Date(firstTxTs * 1000).getDate();
-                                const isStillFuture =
-                                    finalCheckYear2 > currentYear ||
-                                    (finalCheckYear2 === currentYear && finalCheckMonth2 > currentMonth) ||
-                                    (finalCheckYear2 === currentYear &&
-                                        finalCheckMonth2 === currentMonth &&
-                                        finalCheckDay2 > currentDay);
-
-                                // КРИТИЧЕСКОЕ: СТРОГАЯ проверка - если timestamp больше validationNow ИЛИ в будущем по дате - ОТКЛОНЯЕМ
-                                // КРИТИЧЕСКОЕ: Дополнительная проверка - сравниваем timestamp с текущим временем напрямую
-                                const strictNowCheck = Math.floor(Date.now() / 1000);
-                                const isGreaterThanStrictNow = firstTxTs > strictNowCheck;
-
-                                if (
-                                    firstTxTs > validationNow ||
-                                    firstTxTs > nowCheck ||
-                                    firstTxTs > strictNowCheck ||
-                                    isStillFuture ||
-                                    isGreaterThanStrictNow
-                                ) {
-                                    // Еще одна проверка - если все равно в будущем, отклоняем
-                                    debugInfo.first_tx_final_validation_error = true;
-                                    debugInfo.first_tx_final_validation = 'timestamp_future_now_check';
-                                    debugInfo.first_tx_error = `Now check failed: timestamp ${firstTxTs} (year: ${finalCheckYear2}, month: ${finalCheckMonth2 + 1}, day: ${finalCheckDay2}) > validationNow ${validationNow} or > nowCheck ${nowCheck} or > strictNowCheck ${strictNowCheck} or is future. Current: ${currentYear}-${currentMonth + 1}-${currentDay}, isStillFuture: ${isStillFuture}, isGreaterThanStrictNow: ${isGreaterThanStrictNow}`;
-                                    debugInfo.first_tx_debug_values = {
-                                        firstTxTs,
-                                        validationNow,
-                                        nowCheck,
-                                        strictNowCheck,
-                                        isStillFuture,
-                                        isGreaterThanStrictNow,
-                                        finalCheckYear2,
-                                        finalCheckMonth2,
-                                        finalCheckDay2,
-                                        currentYear,
-                                        currentMonth,
-                                        currentDay
-                                    };
-                                    firstTxTs = 0;
-                                } else {
-                                    // Timestamp валидный - только если он в прошлом или настоящем И прошел все проверки
-                                    debugInfo.first_tx_final_validation = 'passed';
-                                }
-                            } else {
-                                // Timestamp не прошел проверки - отклоняем
-                                debugInfo.first_tx_final_validation_error = true;
-                                debugInfo.first_tx_final_validation = 'timestamp_invalid_range';
-                                debugInfo.first_tx_error = `Timestamp ${firstTxTs} is outside valid range: ${MIN_VALID} - ${validationNow}`;
-                                firstTxTs = 0;
-                            }
-                        } else {
-                            // Неожиданный случай - отклоняем
-                            debugInfo.first_tx_final_validation_error = true;
-                            debugInfo.first_tx_final_validation = 'unexpected_case';
-                            debugInfo.first_tx_error = `Unexpected timestamp value: ${firstTxTs}`;
-                            firstTxTs = 0;
-                        }
-                    }
-
-                    // D. ЦЕНЫ (ОПТИМИЗАЦИЯ: Загружаем параллельно с таймаутом и улучшенным fallback)
-                    console.log('💰 Loading prices...');
-                    // Загружаем цены параллельно с коротким таймаутом
-                    let btcPrice = 0;
-                    let fbPrice = 0;
-
-                    try {
-                        // ИСПРАВЛЕНИЕ: Увеличиваем таймаут до 18 секунд для надежности (getCMCPrices имеет внутренний таймаут 15 секунд)
-                        const cmcPrices = await Promise.race([
-                            getCMCPrices(),
-                            new Promise(resolve => setTimeout(() => resolve({ btcPrice: 0, fbPrice: 0 }), 18000))
-                        ]);
-                        btcPrice = cmcPrices.btcPrice || 0;
-                        fbPrice = cmcPrices.fbPrice || 0;
-
-                        if (btcPrice > 0) {
-                            debugInfo.btc_price_source = 'cmc';
-                            debugInfo.btc_price = btcPrice;
-                        }
-                        if (fbPrice > 0) {
-                            debugInfo.fb_price_source = 'cmc';
-                            debugInfo.fb_price = fbPrice;
-                        }
-                    } catch (e) {
-                        console.warn('CMC prices error:', e.message);
-                    }
-
-                    // Fallback на CoinGecko для BTC если CMC не вернул
-                    if (btcPrice === 0) {
-                        try {
-                            // ИСПРАВЛЕНИЕ: Увеличиваем таймаут CoinGecko до 8 секунд
-                            const cgRes = await Promise.race([
-                                fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd', {
-                                    headers: { 'User-Agent': 'Mozilla/5.0' }
-                                }),
-                                new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 8000))
-                            ]);
-                            if (cgRes.ok) {
-                                const cgJson = await cgRes.json();
-                                if (cgJson.bitcoin && cgJson.bitcoin.usd) {
-                                    btcPrice = cgJson.bitcoin.usd;
-                                    debugInfo.btc_price_source = 'coingecko';
-                                    debugInfo.btc_price = btcPrice;
-                                }
-                            }
-                        } catch (e) {
-                            debugInfo.btc_price_coingecko_error = e.message;
-                        }
-                    }
-
-                    // Fallback на пул InSwap для FB если CMC не вернул (только если есть BTC цена)
-                    if (fbPrice === 0 && btcPrice > 0) {
-                        try {
-                            const inswapHeaders = {
-                                Accept: 'application/json, text/plain, */*',
-                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                                Referer: 'https://inswap.cc/',
-                                Origin: 'https://inswap.cc',
-                                'x-appid': '1adcd7969603261753f1812c9461cd36',
-                                'x-front-version': '2125'
-                            };
-                            // ИСПРАВЛЕНИЕ: Увеличиваем таймаут для пула до 8 секунд
-                            const poolRes = await Promise.race([
-                                fetch(`${INSWAP_URL}/pool_info?tick0=sBTC___000&tick1=sFB___000`, {
-                                    headers: inswapHeaders
-                                }),
-                                new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 8000))
-                            ]);
-                            const poolJson = await poolRes.json();
-                            if (poolJson.data) {
-                                const d = poolJson.data;
-                                const amt0 = parseFloat(d.amount0);
-                                const amt1 = parseFloat(d.amount1);
-                                const isBtcFirst = d.tick0.includes('BTC') || d.tick0 === 'sBTC___000';
-                                let ratio = 0;
-                                if (isBtcFirst) {
-                                    if (amt1 > 0) ratio = amt0 / amt1;
-                                } else {
-                                    if (amt0 > 0) ratio = amt1 / amt0;
-                                }
-                                if (ratio > 0) {
-                                    fbPrice = ratio * btcPrice;
-                                    debugInfo.fb_price_source = 'pool_calculation';
-                                    debugInfo.fb_price = fbPrice;
-                                }
-                            }
-                        } catch (e) {
-                            debugInfo.fb_price_pool_error = e.message;
-                        }
-                    }
-
-                    // Fallback на дефолтные цены если все источники не работают
-                    if (btcPrice === 0) {
-                        // Используем примерную цену BTC как fallback
-                        btcPrice = 86000; // Примерная цена BTC
-                        debugInfo.btc_price_source = 'fallback_default';
-                        debugInfo.btc_price_fallback = true;
-                    }
-                    if (fbPrice === 0) {
-                        // Используем примерную цену FB как fallback
-                        fbPrice = 0.4; // Примерная цена FB
-                        debugInfo.fb_price_source = 'fallback_default';
-                        debugInfo.fb_price_fallback = true;
-                    }
-
-                    if (btcPrice === 0 || fbPrice === 0) {
-                        debugInfo.prices_missing = true;
-                    } else {
-                        debugInfo.prices_missing = false;
-                    }
-
-                    // Приоритет 2: all_balance содержит поле price для каждого токена (альтернативный метод если CMC не работает)
-                    if (fbPrice === 0 && allBalance?.data?.sFB___000?.price) {
-                        // Цена FB в BTC из all_balance
-                        const fbPriceInBTC = parseFloat(allBalance.data.sFB___000.price) || 0;
-                        // Конвертируем в USD: цена в BTC * цена BTC в USD
-                        fbPrice = fbPriceInBTC * btcPrice;
-                        debugInfo.fbPrice_method = 'all_balance_price';
-                        debugInfo.fbPrice_in_btc = fbPriceInBTC;
-                    }
-
-                    // Приоритет 3: Расчет через пул sBTC/sFB (альтернативный метод если CMC и all_balance не работают)
-                    if (fbPrice === 0) {
-                        debugInfo.fbPrice_method = 'pool_calculation';
-                        let poolData = null;
-
-                        // Метод 1: Пробуем all_balance для получения pool info
-                        if (allBalance?.data) {
-                            if (allBalance.data.pools) {
-                                const sbtcFbPool = allBalance.data.pools.find(
-                                    p =>
-                                        (p.tick0 === 'sBTC___000' && p.tick1 === 'sFB___000') ||
-                                        (p.tick1 === 'sBTC___000' && p.tick0 === 'sFB___000')
-                                );
-                                if (sbtcFbPool) poolData = sbtcFbPool;
-                            }
                         }
 
                         // Метод 2: pool_info (убран fbPool - используем только myPoolList)
                         // ИСПРАВЛЕНИЕ: fbPool был удален для оптимизации, используем только myPoolList
 
                         // Метод 3: my_pool_list (если pool_info не работает)
+                        let poolData = null;
                         if (!poolData && myPoolList?.data?.list && Array.isArray(myPoolList.data.list)) {
                             const sbtcFbPool = myPoolList.data.list.find(p => {
                                 const t0 = p.tick0 || '';
@@ -7522,9 +7769,33 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     // ИСПРАВЛЕНИЕ: Если all_balance не загрузился, добавляем sFB и FENNEC из allBalance в расчет
                     // (если они есть в allBalance, но были пропущены выше)
                     if (allBalance?.data && allBalanceTotalUSD <= 0) {
+                        const __readInswapTokenBalance = tokenData => {
+                            try {
+                                const src = tokenData && typeof tokenData === 'object' ? tokenData : null;
+                                if (!src) return 0;
+                                const bal = src.balance !== undefined ? src.balance : src;
+                                if (typeof bal === 'object' && bal !== null) {
+                                    const n = parseFloat(
+                                        bal.swap ||
+                                            bal.module ||
+                                            bal.pendingSwap ||
+                                            bal.pendingAvailable ||
+                                            bal.available ||
+                                            bal.total ||
+                                            0
+                                    );
+                                    return Number.isFinite(n) ? n : 0;
+                                }
+                                const n = parseFloat(bal || 0);
+                                return Number.isFinite(n) ? n : 0;
+                            } catch (_) {
+                                return 0;
+                            }
+                        };
+
                         // Добавляем sFB из all_balance (если не был добавлен выше)
                         if (allBalance.data.sFB___000 && !allTokensDetails['sFB___000']) {
-                            const sFbBalance = parseFloat(allBalance.data.sFB___000.balance || 0);
+                            const sFbBalance = __readInswapTokenBalance(allBalance.data.sFB___000);
                             const sFbPrice = parseFloat(allBalance.data.sFB___000.price || 0);
                             if (sFbBalance > 0) {
                                 const sFbValueUSD = sFbPrice > 0 ? sFbBalance * sFbPrice : sFbBalance * fbPrice;
@@ -7541,7 +7812,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
 
                         // Добавляем FENNEC из all_balance (если не был добавлен выше)
                         if (allBalance.data.FENNEC && !allTokensDetails['FENNEC']) {
-                            const fennecBalance = parseFloat(allBalance.data.FENNEC.balance || 0);
+                            const fennecBalance = __readInswapTokenBalance(allBalance.data.FENNEC);
                             const fennecPrice = parseFloat(allBalance.data.FENNEC.price || 0);
                             if (fennecBalance > 0) {
                                 let fennecValueUSD = 0;
@@ -7563,7 +7834,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
 
                         // Добавляем sBTC из all_balance
                         if (allBalance.data.sBTC___000 && !allTokensDetails['sBTC___000']) {
-                            const sBtcBalance = parseFloat(allBalance.data.sBTC___000.balance || 0);
+                            const sBtcBalance = __readInswapTokenBalance(allBalance.data.sBTC___000);
                             const sBtcPrice = parseFloat(allBalance.data.sBTC___000.price || 0);
                             if (sBtcBalance > 0) {
                                 const sBtcValueUSD = sBtcPrice > 0 ? sBtcBalance * sBtcPrice : sBtcBalance * btcPrice;
@@ -7577,6 +7848,62 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 }
                             }
                         }
+                    }
+
+                    try {
+                        const src = String(debugInfo.all_tokens_value_usd_source || '').trim();
+                        if (src !== 'fallback_fennec_estimate') {
+                            let addWalletUSD = 0;
+
+                            // ИСПРАВЛЕНИЕ: Добавляем wallet FB и FENNEC только если они НЕ включены в all_balance.total_usd
+                            // all_balance.total_usd включает все токены из InSwap, но НЕ включает нативные балансы кошелька
+                            const allBalanceIncludesWallet = debugInfo.all_balance_total_usd_includes_lp === true;
+
+                            if (!allBalanceIncludesWallet) {
+                                const walletFbUSD =
+                                    (Number.isFinite(Number(nativeBalance)) ? Number(nativeBalance) : 0) > 0 &&
+                                    (Number.isFinite(Number(fbPrice)) ? Number(fbPrice) : 0) > 0
+                                        ? Number(nativeBalance) * Number(fbPrice)
+                                        : 0;
+
+                                let walletFennecUSD = 0;
+                                if (
+                                    (Number.isFinite(Number(fennecWalletBalance)) ? Number(fennecWalletBalance) : 0) > 0
+                                ) {
+                                    const fPriceUsd = parseFloat(allBalance?.data?.FENNEC?.price || 0) || 0;
+                                    if (fPriceUsd > 0) {
+                                        walletFennecUSD = Number(fennecWalletBalance) * fPriceUsd;
+                                    } else if ((Number(fennecPriceInFB) || 0) > 0 && (Number(fbPrice) || 0) > 0) {
+                                        walletFennecUSD =
+                                            Number(fennecWalletBalance) * Number(fennecPriceInFB) * Number(fbPrice);
+                                    }
+                                }
+
+                                addWalletUSD += walletFbUSD > 0 ? walletFbUSD : 0;
+                                addWalletUSD += walletFennecUSD > 0 ? walletFennecUSD : 0;
+
+                                if (addWalletUSD > 0) {
+                                    allTokensValueUSD += addWalletUSD;
+                                    debugInfo.all_tokens_value_usd_wallet_fb_added = walletFbUSD;
+                                    debugInfo.all_tokens_value_usd_wallet_fennec_added = walletFennecUSD;
+                                    debugInfo.all_tokens_value_usd_includes_wallet = true;
+                                    debugInfo.all_tokens_value_usd_wallet_addition_reason =
+                                        'all_balance_excludes_native_balances';
+                                }
+                            } else {
+                                debugInfo.all_tokens_value_usd_wallet_addition_skipped = true;
+                                debugInfo.all_tokens_value_usd_wallet_addition_reason =
+                                    'all_balance_already_includes_native_balances';
+                            }
+                        }
+                    } catch (_) {
+                        void _;
+                    }
+
+                    try {
+                        debugInfo.all_tokens_value_usd = allTokensValueUSD;
+                    } catch (_) {
+                        void _;
                     }
 
                     // Дополняем debug информацию вычисленными значениями (ПЕРЕД возвратом)
@@ -7658,6 +7985,15 @@ Request Context: ${JSON.stringify(context, null, 2)}
 
                     if (!aiLore) {
                         try {
+                            aiLore = makeLocalLore();
+                        } catch (_) {
+                            aiLore = '';
+                        }
+                    }
+
+                    try {
+                        const enableAiLore = String(env?.ENABLE_AI_LORE || '').trim() === '1';
+                        if (enableAiLore && !aiLore) {
                             const ageInDays = Math.max(0, Math.floor((Date.now() / 1000 - firstTxTs) / 86400));
                             const wealthUSD = allTokensValueUSD.toFixed(0);
                             const lorePrompt = `Generate ONE short (max 12 words) mysterious cyberpunk system log. No greetings. Output only the message.
@@ -7669,15 +8005,9 @@ Example: "Signature verified. Ancient protocol access granted."`;
                             const loreResult = await callGemini(lorePrompt, {
                                 purpose: 'lore',
                                 temperature: 0.9,
-                                maxModelAttempts: 6,
-                                timeoutMs: 10000
+                                maxModelAttempts: 1,
+                                timeoutMs: 3000
                             });
-
-                            try {
-                                debugInfo.ai_lore_model = String(loreResult?.model || '').trim() || null;
-                            } catch (_) {
-                                void _;
-                            }
 
                             const cleaned = String(loreResult?.text || '')
                                 .trim()
@@ -7695,21 +8025,18 @@ Example: "Signature verified. Ancient protocol access granted."`;
                                     void _;
                                 }
                             }
-                        } catch (e) {
-                            try {
-                                debugInfo.ai_lore_error = String(e?.message || e || '').slice(0, 500);
-                            } catch (_) {
-                                void _;
-                            }
-                            try {
-                                aiLore = makeLocalLore();
-                                debugInfo.ai_lore_fallback = 'local_template';
-                                if (env?.FENNEC_DB && aiLore) {
-                                    await env.FENNEC_DB.put(loreCacheKey, aiLore, { expirationTtl: 2 * 3600 });
-                                }
-                            } catch (_) {
-                                void _;
-                            }
+                        }
+                    } catch (e) {
+                        try {
+                            debugInfo.ai_lore_error = String(e?.message || e || '').slice(0, 500);
+                        } catch (_) {
+                            void _;
+                        }
+                        try {
+                            if (!aiLore) aiLore = makeLocalLore();
+                            debugInfo.ai_lore_fallback = 'local_template';
+                        } catch (_) {
+                            void _;
                         }
                     }
 
@@ -7762,6 +8089,16 @@ Example: "Signature verified. Ancient protocol access granted."`;
                     };
                     if (__debugEnabled) outData._debug = debugInfo;
 
+                    try {
+                        if (__debugEnabled) {
+                            debugInfo.audit_finished_at = Date.now();
+                            debugInfo.audit_total_ms = debugInfo.audit_finished_at - __auditStartAt;
+                            debugInfo.audit_trace_count = Array.isArray(__auditTrace) ? __auditTrace.length : 0;
+                        }
+                    } catch (_) {
+                        void _;
+                    }
+
                     const response = sendJSON({ code: 0, data: outData });
                     // Кэшируем ответ - АГРЕССИВНОЕ кэширование для снижения 429 ошибок
                     try {
@@ -7781,13 +8118,128 @@ Example: "Signature verified. Ancient protocol access granted."`;
                     }
                     return response;
                 } catch (e) {
-                    return sendJSON({ error: e.message }, 500);
+                    const fallback = {
+                        schema_version: 1,
+                        tx_count: 0,
+                        utxo_count: 0,
+                        native_balance: 0,
+                        fb_inswap_balance: 0,
+                        fennec_native_balance: 0,
+                        fennec_wallet_balance: 0,
+                        fennec_inswap_balance: 0,
+                        fennecWalletBalance: 0,
+                        staked_fb: 0,
+                        has_fennec_in_lp: false,
+                        first_tx_ts: 0,
+                        runes_count: 0,
+                        brc20_count: 0,
+                        ordinals_count: 0,
+                        total_collections: 0,
+                        collection_inscriptions_by_collection: {},
+                        total_inscriptions_count: 0,
+                        abandoned_utxo_count: 0,
+                        abandoned_utxo_count_missing: true,
+                        lp_count: 0,
+                        lp_value_fb: 0,
+                        lp_value_usd: 0,
+                        fennec_lp_value_usd: 0,
+                        fennecLpValueUSD: 0,
+                        has_fennec_boxes: false,
+                        fennec_boxes_count: 0,
+                        hasFennecBoxes: false,
+                        fennecBoxesCount: 0,
+                        all_tokens_value_usd: 0,
+                        all_tokens_details: {},
+                        ai_lore: 'Initializing neural link...',
+                        prices: {
+                            btc: 0,
+                            fb: 0,
+                            fennec_in_fb: 0
+                        },
+                        _error: e?.message || String(e)
+                    };
+                    return sendJSON({ code: 0, data: fallback }, 200);
                 }
             }
 
             // --- AI CHAT (OpenAI) ---
             if (action === 'chat') {
                 if (request.method !== 'POST') return sendJSON({ error: 'Method not allowed' }, 405);
+
+                let userMessage = '';
+                let history = [];
+                let uiContext = {};
+
+                const __fallbackChat = text => {
+                    const raw = String(text || '').trim();
+                    const t = raw.toLowerCase();
+
+                    const numMatch = raw.match(/(\d+(?:\.\d+)?)/);
+                    const amount = numMatch ? numMatch[1] : '';
+
+                    const mkReply = (msg, actionObj) => {
+                        const safeMsg = String(msg || '').trim();
+                        if (actionObj) return `${safeMsg}\n\n|||${JSON.stringify(actionObj)}|||`;
+                        return safeMsg;
+                    };
+
+                    if (t.includes('connect') && t.includes('wallet')) {
+                        return mkReply('AI is temporarily unavailable. I can still trigger wallet connection.', {
+                            type: 'CONNECT_WALLET',
+                            params: {}
+                        });
+                    }
+
+                    if ((t.includes('open') && t.includes('id')) || t.includes('fennec id')) {
+                        return mkReply('AI is temporarily unavailable. I can still open your Fennec ID section.', {
+                            type: 'OPEN_ID',
+                            params: {}
+                        });
+                    }
+
+                    if (t.includes('deposit')) {
+                        return mkReply('AI is temporarily unavailable. I can still open the deposit tab.', {
+                            type: 'OPEN_DEPOSIT',
+                            params: {}
+                        });
+                    }
+
+                    if (t.includes('withdraw')) {
+                        return mkReply('AI is temporarily unavailable. I can still open the withdraw tab.', {
+                            type: 'OPEN_WITHDRAW',
+                            params: {}
+                        });
+                    }
+
+                    if (t.includes('swap') || t.includes('buy') || t.includes('sell')) {
+                        const hasBtc = t.includes('btc');
+                        const pair = hasBtc ? 'BTC_FB' : 'FB_FENNEC';
+
+                        let buy = true;
+                        if (pair === 'FB_FENNEC') {
+                            if (t.includes('sell') && t.includes('fennec')) buy = false;
+                            if (t.includes('to fb')) buy = false;
+                            if (t.includes('buy') && t.includes('fennec')) buy = true;
+                            if (t.includes('to fennec')) buy = true;
+                        } else {
+                            if (t.includes('sell') && (t.includes('fb') || t.includes('sfb'))) buy = false;
+                            if (t.includes('to btc')) buy = false;
+                            if (t.includes('buy') && (t.includes('fb') || t.includes('sfb'))) buy = true;
+                            if (t.includes('to fb')) buy = true;
+                        }
+
+                        return mkReply('AI is temporarily unavailable. I can still prefill the swap form for you.', {
+                            type: 'FILL_SWAP',
+                            params: {
+                                pair,
+                                amount: amount || '0.0',
+                                buy
+                            }
+                        });
+                    }
+
+                    return 'AI is temporarily unavailable (Gemini key missing/blocked). Please try again later.';
+                };
 
                 try {
                     const ip =
@@ -7811,125 +8263,127 @@ Example: "Signature verified. Ancient protocol access granted."`;
                     void _;
                 }
 
-                const body = await request.json();
-                const userMessage = body.message;
-                const history = Array.isArray(body.history) ? body.history : [];
-                const uiContext = body.context && typeof body.context === 'object' ? body.context : {};
-
-                // 1. Knowledge Base
-                const builtinKnowledgeBase = `Fennec Swap — DEX/terminal на Fractal Bitcoin.
-
-КЛЮЧЕВЫЕ ФАКТЫ:
-- Fractal Bitcoin: L2/sidechain экосистема с быстрыми блоками (~30s), отдельная сеть от Bitcoin mainnet.
-- FENNEC: BRC-20 токен в сети Fractal.
-- FB (sFB___000): нативный газ/актив Fractal (в UI отображается как FB).
-- BTC (sBTC___000): мостовой BTC внутри Fractal (в UI отображается как BTC).
-
-ОПЕРАЦИИ ТЕРМИНАЛА:
-- SWAP: FB ↔ FENNEC и BTC ↔ FB.
-- DEPOSIT: ввод (из Bitcoin mainnet/Fractal в Fractal), после подтверждений появляется баланс в терминале.
-- WITHDRAW: вывод из Fractal на Bitcoin mainnet.
-  - Для withdraw обычно есть две сущности: burn/fee в Fractal и receiveTxid в Bitcoin mainnet.
-  - Пользователю в истории важно показывать receiveTxid (реальный Bitcoin tx).
-
-UNI SAT:
-- Терминал работает с UniSat как с браузерным кошельком (window.unisat). Никакие yarn/npm пакеты UniSat не нужны, если интеграция остаётся через расширение.
-
-FENNEC ID (v6.0, кратко):
-- Итоговый Score (0..100) = Activity(0..30) + Wealth(0..20) + Time(0..15) + Badges(0..35), затем возможен MAXI multiplier.
-- Rarity thresholds:
-  - CUB: 0-29
-  - SCOUT: 30-49
-  - HUNTER: 50-64
-  - ALPHA: 65-79
-  - ELDER: 80-94
-  - SPIRIT: 95-100
-- Badges (8 слотов): GENESIS(+15), WHALE(+10), PROVIDER(+8), ARTIFACT HUNTER(+3), RUNE KEEPER(+3), MEMPOOL RIDER(+7), DUST DEVIL(+3), FENNEC MAXI(0, но множитель к итоговому score).
-- FENNEC MAXI активируется если FENNEC >= 10,000 или есть LP-позиция с парой FENNEC.
-
-ЕСЛИ НЕ УВЕРЕН:
-- Скажи честно, что не уверен.
-- Дай проверяемые источники или ссылку на поиск (Google) с ключевыми словами.`;
-
-                let knowledgeBase = builtinKnowledgeBase;
                 try {
-                    const controller = new AbortController();
-                    setTimeout(() => controller.abort(), 1500);
-                    const kbRes = await fetch('https://fennecbtc.xyz/knowledge.txt', { signal: controller.signal });
-                    if (kbRes.ok) {
-                        const kbText = await kbRes.text();
-                        const trimmed = (kbText || '').trim();
-                        knowledgeBase = trimmed ? `${trimmed}\n\n${builtinKnowledgeBase}` : builtinKnowledgeBase;
-                    }
-                } catch (e) {
-                    void e;
+                    const body = await request.json();
+                    userMessage = body?.message;
+                    history = Array.isArray(body?.history) ? body.history : [];
+                    uiContext = body?.context && typeof body.context === 'object' ? body.context : {};
+                } catch (_) {
+                    void _;
                 }
 
-                // 2. Live Data (Price)
-                let marketData = 'Цена недоступна.';
                 try {
-                    if (!__disableInswap) {
-                        const poolRes = await fetch(`${INSWAP_URL}/pool_info?tick0=FENNEC&tick1=sFB___000`, {
-                            headers: upstreamHeaders
+                    const builtinKnowledgeBase = `Fennec Swap is a DEX + terminal on Fractal Bitcoin.
+
+KEY FACTS:
+- Fractal Bitcoin is a Bitcoin-adjacent network with fast blocks (~30s).
+- FENNEC is a BRC-20 token on Fractal.
+- FB (sFB___000) is the native gas / main asset in the UI.
+- BTC (sBTC___000) is bridged BTC inside Fractal.
+
+TERMINAL OPERATIONS:
+- SWAP: FB ↔ FENNEC and BTC ↔ FB.
+- DEPOSIT: funds move from Bitcoin/Fractal into Fractal; balances appear after confirmations.
+- WITHDRAW: funds move from Fractal back to Bitcoin mainnet.
+  - Withdraw often has two tx identifiers: a burn/fee tx on Fractal and a receiveTxid on Bitcoin mainnet.
+
+UNISAT:
+- The site uses UniSat as a browser extension wallet (window.unisat).
+
+FENNEC ID (v6.0, brief):
+- Score (0..100) is derived from Activity/Wealth/Time/Badges, with an optional MAXI multiplier.
+- Rarity thresholds: CUB(0-29), SCOUT(30-49), HUNTER(50-64), ALPHA(65-79), ELDER(80-94), SPIRIT(95-100).
+- MAXI activates if FENNEC >= 10,000 or there is a LP position involving FENNEC.
+
+IF YOU ARE NOT SURE:
+- Say you are not sure.
+- Provide verifiable sources or a search query.`;
+
+                    let knowledgeBase = builtinKnowledgeBase;
+                    try {
+                        const controller = new AbortController();
+                        setTimeout(() => controller.abort(), 1500);
+                        const kbRes = await fetch('https://fennecbtc.xyz/knowledge_en.txt', {
+                            signal: controller.signal
                         });
-                        const poolJson = await poolRes.json();
-                        if (poolJson.data) {
-                            const fennec = parseFloat(poolJson.data.amount0 || poolJson.data.amount1);
-                            const fb = parseFloat(poolJson.data.amount1 || poolJson.data.amount0);
-                            const price = (fb / fennec).toFixed(8);
-                            marketData = `ЦЕНА: 1 FENNEC = ${price} FB.`;
+                        if (kbRes.ok) {
+                            const kbText = await kbRes.text();
+                            const trimmed = (kbText || '').trim();
+                            knowledgeBase = trimmed ? `${trimmed}\n\n${builtinKnowledgeBase}` : builtinKnowledgeBase;
                         }
+                    } catch (e) {
+                        void e;
                     }
-                } catch (e) {
-                    void e;
-                }
 
-                // Build context string
-                const contextStr = `Section: ${uiContext.section || 'home'}, Tab: ${uiContext.tab || 'none'}, Swap: ${uiContext.swapPair || 'N/A'}`;
+                    let marketData = 'Price unavailable.';
+                    try {
+                        const cacheObj = globalThis.__fennecChatPriceCache || (globalThis.__fennecChatPriceCache = {});
+                        const now = Date.now();
+                        if (cacheObj.ts && cacheObj.text && now - cacheObj.ts < 15000) {
+                            marketData = cacheObj.text;
+                        } else if (!__disableInswap) {
+                            let poolUrl = `${SWAP_BASE}/brc20-swap/pool_info?tick0=FENNEC&tick1=sFB___000`;
+                            let poolRes = await fetch(poolUrl, { headers: upstreamHeaders });
+                            if (!poolRes.ok && poolRes.status === 404) {
+                                poolUrl = `${SWAP_BASE}/indexer/brc20-swap/pool_info?tick0=FENNEC&tick1=sFB___000`;
+                                poolRes = await fetch(poolUrl, { headers: upstreamHeaders });
+                            }
+                            const poolJson = await poolRes.json();
+                            if (poolJson.data) {
+                                const fennec = parseFloat(poolJson.data.amount0 || poolJson.data.amount1);
+                                const fb = parseFloat(poolJson.data.amount1 || poolJson.data.amount0);
+                                const price = (fb / fennec).toFixed(8);
+                                marketData = `PRICE: 1 FENNEC = ${price} FB.`;
+                                cacheObj.ts = now;
+                                cacheObj.text = marketData;
+                            }
+                        }
+                    } catch (e) {
+                        void e;
+                    }
 
-                const systemPrompt = `
-Ты — Фенек (Fennec), ИИ-ассистент терминала Fennec на Fractal Bitcoin.
-ТВОЯ ЦЕЛЬ: Помогать пользователям торговать, проверять кошельки и понимать экосистему.
+                    const contextStr = `Section: ${uiContext.section || 'home'}, Tab: ${uiContext.tab || 'none'}, Swap: ${uiContext.swapPair || 'N/A'}`;
 
-ТЕКУЩИЙ UI-КОНТЕКСТ:
+                    const systemPrompt = `
+You are Fennec (Fennec Oracle), the AI assistant of the Fennec terminal on Fractal Bitcoin.
+Your goal is to help users trade, debug issues, and understand the ecosystem.
+
+CURRENT UI CONTEXT:
 ${contextStr}
 
-БАЗА ЗНАНИЙ:
+KNOWLEDGE BASE:
 ${knowledgeBase}
 
-ТЕКУЩИЙ РЫНОК:
+MARKET DATA:
 ${marketData}
 
-ИНСТРУКЦИИ:
-1. ЯЗЫК: Отвечай на языке пользователя. Если пользователь пишет на английском — отвечай на английском. Если на китайском — отвечай на китайском. Если язык не определен — используй английский как основной.
-2. Если вопрос касается Fennec, Fractal, кошельков или ошибок — отвечай максимально точно, используя БАЗУ ЗНАНИЙ.
-3. Если вопрос общий про крипту — отвечай, используя свои общие знания, но привязывай это к контексту Fractal Bitcoin.
-4. Стиль: Краткий, технический, дружелюбный. Используй эмодзи: 🦊🔥⚡🌵
-5. Если ты не уверен в факте/цифрах — дай ссылку на источник или поисковый запрос.
+INSTRUCTIONS:
+1. LANGUAGE: ALWAYS respond in English. Do not output any non-English words. If the user writes in another language, respond in English.
+2. If the question is about Fennec/Fractal/UniSat/Terminal errors, answer precisely using the Knowledge Base.
+3. If you are unsure, say so and provide verifiable sources or a search query.
+4. Style: concise, technical, friendly.
 
-=== ФУНКЦИИ ТЕРМИНАЛА ===
-SWAP: Обмен FB ↔ FENNEC и BTC ↔ FB
-DEPOSIT: Внесение BTC, FB, FENNEC с Bitcoin/Fractal
-WITHDRAW: Вывод на Bitcoin Mainnet (сжигание на Fractal)
-FENNEC ID: Генерация ID карточки
+=== TERMINAL FUNCTIONS ===
+SWAP: Swap FB ↔ FENNEC and BTC ↔ FB
+DEPOSIT: Deposit BTC/FB/FENNEC into Fractal
+WITHDRAW: Withdraw to Bitcoin mainnet (burn on Fractal)
+FENNEC ID: Generate and view your Fennec ID card
 
-=== КОМАНДЫ ИИ ===
+=== AI COMMANDS ===
 1. NAVIGATE: {"type":"NAVIGATE","params":{"tab":"swap|deposit|withdraw|id"}}
 2. FILL_SWAP: {"type":"FILL_SWAP","params":{"pair":"FB_FENNEC|BTC_FB","amount":"0.5","buy":true|false}}
-   - buy=true: ПОКУПКА FENNEC (отдаем FB/BTC)
-   - buy=false: ПРОДАЖА FENNEC (отдаем FENNEC)
-3. EXECUTE_SWAP: auto-swap после заполнения
+   - buy=true: BUY FENNEC (you pay FB/BTC)
+   - buy=false: SELL FENNEC (you pay FENNEC)
+3. EXECUTE_SWAP: auto-execute the swap after filling
 4. CONNECT_WALLET: {"type":"CONNECT_WALLET","params":{}}
 5. OPEN_ID: {"type":"OPEN_ID","params":{}}
 
-ПРИМЕРЫ:
+EXAMPLES:
 - "swap 0.5 FB to FENNEC" → |||{"type":"FILL_SWAP","params":{"pair":"FB_FENNEC","amount":"0.5","buy":true}}|||
 - "sell 100 FENNEC" → |||{"type":"FILL_SWAP","params":{"pair":"FB_FENNEC","amount":"100","buy":false}}|||
 - "show my ID" → |||{"type":"OPEN_ID","params":{}}|||
 `;
 
-                try {
-                    // Формируем полный промпт с историей
                     let conversationHistory = '';
                     for (const h of history.slice(-6)) {
                         const role = h && h.role === 'assistant' ? 'AI' : 'User';
@@ -7939,9 +8393,8 @@ FENNEC ID: Генерация ID карточки
                         }
                     }
 
-                    const fullPrompt = `${systemPrompt}\n\n${conversationHistory ? 'История:\n' + conversationHistory + '\n' : ''}User: ${String(userMessage || '')}`;
+                    const fullPrompt = `${systemPrompt}\n\n${conversationHistory ? 'History:\n' + conversationHistory + '\n' : ''}User: ${String(userMessage || '')}`;
 
-                    // Используем Gemini с Google Search
                     const result = await callGemini(fullPrompt, {
                         purpose: 'chat',
                         useSearch: true,
@@ -7950,10 +8403,31 @@ FENNEC ID: Генерация ID карточки
                         timeoutMs: 12000
                     });
 
-                    return sendJSON({ reply: result.text || 'Спутник потерян... (Пустой ответ)' });
+                    let replyText = String(result.text || '').trim();
+                    try {
+                        if (replyText && /[\u0400-\u04FF]/.test(replyText)) {
+                            const rewrite = await callGemini(
+                                `Rewrite the following text in English only. Output ONLY English.\n\nTEXT:\n${replyText}`,
+                                {
+                                    purpose: 'chat',
+                                    useSearch: false,
+                                    temperature: 0.2,
+                                    maxModelAttempts: 1,
+                                    timeoutMs: 6000
+                                }
+                            );
+                            const fixed = String(rewrite && rewrite.text ? rewrite.text : '').trim();
+                            if (fixed && !/[\u0400-\u04FF]/.test(fixed)) replyText = fixed;
+                        }
+                    } catch (e) {
+                        void e;
+                    }
+
+                    return sendJSON({ reply: replyText || 'Empty reply.' });
                 } catch (e) {
                     console.error('Chat error:', e);
-                    return sendJSON({ reply: 'Спутник потерян... (Ошибка сети: ' + e.message + ')' });
+                    const fallbackReply = __fallbackChat(userMessage);
+                    return sendJSON({ reply: fallbackReply || 'AI is temporarily unavailable.' }, 200);
                 }
             }
 

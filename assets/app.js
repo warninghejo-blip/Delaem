@@ -16,34 +16,41 @@ window.showSection = function (id) {
     // ИСПРАВЛЕНИЕ: Если переключились на аудит, восстанавливаем из кэша или показываем кнопку
     if (id === 'audit') {
         const currentAddr = window.userAddress || userAddress || null;
-        if (currentAddr && !auditLoading) {
+        if (currentAddr && !window.auditLoading) {
             const cacheKey = `audit_v3_${currentAddr}`;
             const cached = localStorage.getItem(cacheKey);
-            if (cached && !auditIdentity) {
+            if (cached && !window.auditIdentity) {
                 try {
                     const cachedData = JSON.parse(cached);
                     if (Date.now() - cachedData.timestamp < 7 * 24 * 60 * 60 * 1000) {
                         console.log('Restoring audit from cache');
-                        auditIdentity = cachedData.identity;
+                        window.auditIdentity = cachedData.identity;
                         try {
                             const a = String(currentAddr || '').trim();
-                            if (a && auditIdentity && typeof auditIdentity === 'object') {
-                                auditIdentity.metrics =
-                                    auditIdentity.metrics && typeof auditIdentity.metrics === 'object'
-                                        ? auditIdentity.metrics
+                            if (a && window.auditIdentity && typeof window.auditIdentity === 'object') {
+                                window.auditIdentity.metrics =
+                                    window.auditIdentity.metrics && typeof window.auditIdentity.metrics === 'object'
+                                        ? window.auditIdentity.metrics
                                         : {};
-                                auditIdentity.metrics.address = String(auditIdentity.metrics.address || a).trim();
+                                window.auditIdentity.metrics.address = String(
+                                    window.auditIdentity.metrics.address || a
+                                ).trim();
                             }
                         } catch (_) {}
-                        // Do not render legacy parent card UI. initAudit() will show v2 iframe preview.
+                        // Do not render legacy parent card UI. window.initAudit() will show v2 iframe preview.
                     }
                 } catch (e) {
                     console.warn('Failed to restore from cache:', e);
                 }
             }
         }
-        if (typeof initAudit === 'function' && !auditLoading) {
-            setTimeout(() => initAudit(), 50);
+        if (typeof window.initAudit === 'function' && !window.auditLoading) {
+            setTimeout(() => {
+                try {
+                    const p = window.initAudit();
+                    if (p && typeof p.then === 'function') p.catch(() => false);
+                } catch (_) {}
+            }, 50);
         }
     }
 
@@ -103,14 +110,43 @@ window.showSection = function (id) {
     // Блок удален так как логика перенесена выше и консолидирована.
 };
 
-if (!window.__fennecSectionRouterSetup) {
+if (typeof window.initAuditLoading === 'undefined') window.initAuditLoading = false;
+
+function __legacy_fennecInitAuditSafe() {
+    try {
+        if (typeof window.initAudit !== 'function') return null;
+        const p = window.initAudit();
+        try {
+            if (p && typeof p.then === 'function') p.catch(() => false);
+        } catch (_) {}
+        return p;
+    } catch (_) {
+        return null;
+    }
+}
+
+const __fennecInitAuditSafe = window.__fennecInitAuditSafe || __legacy_fennecInitAuditSafe;
+window.__fennecInitAuditSafe = __fennecInitAuditSafe;
+
+try {
+    if (window.__fennecSpaRouter) {
+        if (window.__fennecUseHashRouter !== false) window.__fennecUseHashRouter = false;
+        window.__fennecSectionRouterSetup = true;
+    }
+} catch (_) {}
+
+if (!window.__fennecSectionRouterSetup && !window.__fennecSpaRouter) {
     window.__fennecSectionRouterSetup = true;
 
     try {
         const secs = document.querySelectorAll('.page-section');
-        window.__fennecUseHashRouter = !!(secs && secs.length > 1);
+        if (window.__fennecUseHashRouter !== false) {
+            window.__fennecUseHashRouter = !!(secs && secs.length > 1);
+        }
     } catch (_) {
-        window.__fennecUseHashRouter = true;
+        if (window.__fennecUseHashRouter !== false) {
+            window.__fennecUseHashRouter = true;
+        }
     }
 
     const readHashSection = () => {
@@ -167,36 +203,68 @@ window.__isTerminalPage = function () {
     }
 };
 
-window.__ensureAuditUi = function () {
-    try {
-        if (!document.getElementById('auditContainer')) return;
-    } catch (_) {
-        return;
-    }
-
-    const attempt = () => {
+window.__ensureAuditUi =
+    window.__ensureAuditUi ||
+    function () {
         try {
-            if (typeof initAudit === 'function') {
-                initAudit();
-                return true;
+            if (!document.getElementById('auditContainer')) return;
+        } catch (_) {
+            return;
+        }
+
+        const attempt = () => {
+            try {
+                if (typeof window.initAudit === 'function') {
+                    try {
+                        const p = window.initAudit();
+                        if (p && typeof p.then === 'function') p.catch(() => false);
+                    } catch (_) {}
+                    return true;
+                }
+            } catch (_) {}
+            return false;
+        };
+
+        if (attempt()) return;
+        let tries = 0;
+        const t = setInterval(() => {
+            tries += 1;
+            if (attempt() || tries >= 30) {
+                try {
+                    clearInterval(t);
+                } catch (_) {}
             }
-        } catch (_) {}
-        return false;
+        }, 100);
     };
 
-    if (attempt()) return;
-    let tries = 0;
-    const t = setInterval(() => {
-        tries += 1;
-        if (attempt() || tries >= 30) {
-            try {
-                clearInterval(t);
-            } catch (_) {}
+window.__syncFennecIdButtonsUI = function () {
+    try {
+        const openBtn = document.getElementById('fidOpenBtn');
+        const wrap = document.getElementById('fidActionButtons');
+        const updBtn = document.getElementById('fidUpdateBtn');
+        const refBtn = document.getElementById('fidRefreshBtn');
+        const openTxt = document.getElementById('fidOpenBtnText');
+        const addr = String(window.userAddress || userAddress || '').trim();
+        const ui = window.__fennecAuditUi && typeof window.__fennecAuditUi === 'object' ? window.__fennecAuditUi : null;
+        const mode = String((ui && ui.mode) || 'idle');
+        const uiAddr = String((ui && ui.addr) || '').trim();
+        const hasIframe = !!document.getElementById('fennecIdIframe');
+        const isOpened = !!(addr && uiAddr && addr === uiAddr && mode === 'opened' && hasIframe);
+
+        if (openBtn) {
+            openBtn.style.display = isOpened ? 'none' : '';
+            openBtn.disabled = false;
+            openBtn.style.pointerEvents = '';
+            openBtn.style.visibility = '';
         }
-    }, 100);
+        if (openTxt && !isOpened) openTxt.textContent = 'OPEN ID';
+        if (wrap) wrap.style.display = isOpened ? '' : 'none';
+        if (updBtn) updBtn.style.display = isOpened ? '' : 'none';
+        if (refBtn) refBtn.style.display = isOpened ? '' : 'none';
+    } catch (_) {}
 };
 
-// ИСПРАВЛЕНИЕ: Определяем connectWallet сразу после showSection
+// ИСПРАВЛЕНИЕ: Определяем window.connectWallet сразу после showSection
 window.__dedupeWalletButtons = function () {
     try {
         const c = Array.from(document.querySelectorAll('#connectBtn'));
@@ -253,7 +321,7 @@ window.__resetConnectBtn = function (show = true) {
             } catch (_) {}
         };
     } catch (_) {}
-    fresh.innerHTML = `<i class="fas fa-wallet"></i> <span>CONNECT</span>`;
+    fresh.innerHTML = '<i class="fas fa-wallet"></i> <span>CONNECT</span>';
     try {
         fresh.disabled = false;
         fresh.removeAttribute('disabled');
@@ -293,7 +361,7 @@ window.__resetDisconnectBtn = function (show = true) {
             } catch (_) {}
         };
     } catch (_) {}
-    fresh.innerHTML = `<i class="fas fa-sign-out-alt"></i> <span id="disconnectBtnText">DISCONNECT</span>`;
+    fresh.innerHTML = '<i class="fas fa-sign-out-alt"></i> <span id="disconnectBtnText">DISCONNECT</span>';
     if (show) fresh.classList.remove('hidden');
     else fresh.classList.add('hidden');
     old.replaceWith(fresh);
@@ -334,12 +402,14 @@ window.__restoreAuditFromCache = function (addr) {
             const ts = Number(cachedData?.timestamp || 0) || 0;
             const ttlMs = 7 * 24 * 60 * 60 * 1000;
             if (ts > 0 && Date.now() - ts > ttlMs) return false;
-            if (cachedData && cachedData.identity && !auditIdentity) {
-                auditIdentity = cachedData.identity;
+            if (cachedData && cachedData.identity && !window.auditIdentity) {
+                window.auditIdentity = cachedData.identity;
                 try {
-                    auditIdentity.metrics =
-                        auditIdentity.metrics && typeof auditIdentity.metrics === 'object' ? auditIdentity.metrics : {};
-                    auditIdentity.metrics.address = String(auditIdentity.metrics.address || a).trim();
+                    window.auditIdentity.metrics =
+                        window.auditIdentity.metrics && typeof window.auditIdentity.metrics === 'object'
+                            ? window.auditIdentity.metrics
+                            : {};
+                    window.auditIdentity.metrics.address = String(window.auditIdentity.metrics.address || a).trim();
                 } catch (_) {}
                 return true;
             }
@@ -404,11 +474,85 @@ window.tryRestoreWalletSession = async function () {
     } catch (_) {}
 
     try {
-        if (document.getElementById('auditContainer') && typeof initAudit === 'function') initAudit();
+        if (document.getElementById('auditContainer')) __fennecInitAuditSafe();
+    } catch (_) {}
+
+    try {
+        if (typeof window.prefetchFennecAudit === 'function') window.prefetchFennecAudit(true);
+    } catch (_) {}
+
+    try {
+        if (typeof window.refreshFennecIdStatus === 'function') window.refreshFennecIdStatus(false);
     } catch (_) {}
 
     return true;
 };
+
+try {
+    if (!window.__fennecWalletRestoreBoot) {
+        window.__fennecWalletRestoreBoot = true;
+
+        const __attemptRestore = async () => {
+            try {
+                if (localStorage.getItem('fennec_wallet_manual_disconnect') === '1') return true;
+            } catch (_) {}
+
+            try {
+                const addrNow = String(window.userAddress || userAddress || '').trim();
+                if (addrNow) return true;
+            } catch (_) {}
+
+            try {
+                if (typeof window.unisat === 'undefined') return false;
+            } catch (_) {}
+
+            try {
+                if (typeof window.tryRestoreWalletSession !== 'function') return false;
+                const ok = await window.tryRestoreWalletSession();
+                return !!ok;
+            } catch (_) {}
+            return false;
+        };
+
+        const __startRestoreLoop = () => {
+            let tries = 0;
+            const t = setInterval(() => {
+                tries += 1;
+                if (tries > 80) {
+                    try {
+                        clearInterval(t);
+                    } catch (_) {}
+                    return;
+                }
+                __attemptRestore().then(didAttempt => {
+                    if (didAttempt) {
+                        try {
+                            clearInterval(t);
+                        } catch (_) {}
+                    }
+                });
+            }, 250);
+
+            __attemptRestore().then(didAttempt => {
+                if (didAttempt) {
+                    try {
+                        clearInterval(t);
+                    } catch (_) {}
+                }
+            });
+        };
+
+        try {
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', () => setTimeout(__startRestoreLoop, 0));
+            } else {
+                setTimeout(__startRestoreLoop, 0);
+            }
+        } catch (_) {
+            setTimeout(__startRestoreLoop, 0);
+        }
+    }
+} catch (_) {}
 
 window.connectWallet = async function () {
     if (typeof window.unisat === 'undefined') {
@@ -424,7 +568,7 @@ window.connectWallet = async function () {
             if (connectBtn) {
                 connectBtn.disabled = true;
                 connectBtn.classList.remove('hidden');
-                connectBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> <span>CONNECTING</span>`;
+                connectBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span>CONNECTING</span>';
             }
             if (disconnectBtn) disconnectBtn.classList.add('hidden');
         } catch (_) {}
@@ -485,13 +629,21 @@ window.connectWallet = async function () {
         console.log('Wallet connected');
 
         try {
+            if (typeof window.prefetchFennecAudit === 'function') window.prefetchFennecAudit(true);
+        } catch (_) {}
+
+        try {
+            if (typeof window.refreshFennecIdStatus === 'function') window.refreshFennecIdStatus(false);
+        } catch (_) {}
+
+        try {
             if (typeof prewarmBackendCaches === 'function') prewarmBackendCaches();
         } catch (_) {}
 
         // ИСПРАВЛЕНИЕ: Всегда обновляем UI FENNEC ID после подключения кошелька.
         // Раньше проверялся tab-audit, которого может не быть/не быть active.
-        if (typeof initAudit === 'function') {
-            setTimeout(() => initAudit(), 100);
+        if (typeof window.initAudit === 'function') {
+            setTimeout(() => window.initAudit(), 100);
         }
         try {
             if (typeof window.updateVisionFennecIdCta === 'function') window.updateVisionFennecIdCta();
@@ -533,8 +685,67 @@ window.connectWallet = async function () {
 
                     const cur = String(userAddress || window.userAddress || '').trim();
                     if (!accounts || accounts.length === 0) {
-                        console.log('Account disconnected, resetting data...');
-                        window.disconnectWallet({ manual: false, clearCache: false, reason: 'accounts_empty' });
+                        console.log('Account event: empty accounts, re-checking...');
+                        setTimeout(async () => {
+                            try {
+                                if (localStorage.getItem('fennec_wallet_manual_disconnect') === '1') return;
+                            } catch (_) {}
+
+                            try {
+                                if (typeof window.unisat === 'undefined') {
+                                    window.disconnectWallet({
+                                        manual: false,
+                                        clearCache: false,
+                                        reason: 'accounts_empty'
+                                    });
+                                    return;
+                                }
+                            } catch (_) {
+                                window.disconnectWallet({ manual: false, clearCache: false, reason: 'accounts_empty' });
+                                return;
+                            }
+
+                            let acc2 = null;
+                            try {
+                                if (typeof window.unisat.getAccounts === 'function') {
+                                    acc2 = await window.unisat.getAccounts();
+                                }
+                            } catch (_) {
+                                acc2 = null;
+                            }
+
+                            const nextAddr2 =
+                                acc2 && Array.isArray(acc2) && acc2.length > 0 ? String(acc2[0] || '').trim() : '';
+                            const cur2 = String(userAddress || window.userAddress || '').trim();
+                            if (nextAddr2) {
+                                if (!cur2 || cur2 !== nextAddr2) {
+                                    userAddress = nextAddr2;
+                                    window.userAddress = nextAddr2;
+                                    try {
+                                        if (typeof window.__syncWalletButtonsUI === 'function')
+                                            window.__syncWalletButtonsUI();
+                                    } catch (_) {}
+                                    try {
+                                        if (typeof window.updateVisionFennecIdCta === 'function')
+                                            window.updateVisionFennecIdCta();
+                                    } catch (_) {}
+                                    try {
+                                        if (document.getElementById('auditContainer')) __fennecInitAuditSafe();
+                                    } catch (_) {}
+                                    try {
+                                        if (typeof window.prefetchFennecAudit === 'function')
+                                            window.prefetchFennecAudit(true);
+                                    } catch (_) {}
+                                    try {
+                                        if (typeof window.refreshFennecIdStatus === 'function')
+                                            window.refreshFennecIdStatus(false);
+                                    } catch (_) {}
+                                }
+                                return;
+                            }
+
+                            window.disconnectWallet({ manual: false, clearCache: false, reason: 'accounts_empty' });
+                        }, 350);
                         return;
                     }
 
@@ -551,8 +762,16 @@ window.connectWallet = async function () {
                                     window.updateVisionFennecIdCta();
                             } catch (_) {}
                             try {
-                                if (document.getElementById('auditContainer') && typeof initAudit === 'function')
-                                    initAudit();
+                                if (document.getElementById('auditContainer')) __fennecInitAuditSafe();
+                            } catch (_) {}
+
+                            try {
+                                if (typeof window.prefetchFennecAudit === 'function') window.prefetchFennecAudit(true);
+                            } catch (_) {}
+
+                            try {
+                                if (typeof window.refreshFennecIdStatus === 'function')
+                                    window.refreshFennecIdStatus(false);
                             } catch (_) {}
                         }
                         return;
@@ -604,24 +823,24 @@ window.disconnectWallet = function (opts) {
     window.userPubkey = null;
 
     try {
-        if (currentAuditAbortController) currentAuditAbortController.abort();
+        if (window.currentAuditAbortController) window.currentAuditAbortController.abort();
     } catch (_) {}
     try {
-        currentAuditRequestId++;
+        window.currentAuditRequestId++;
     } catch (_) {}
     try {
-        initAuditLoading = false;
+        window.initAuditLoading = false;
     } catch (_) {}
 
     // Очищаем UI данные
     userBalances = { sFB: 0, FENNEC: 0, BTC: 0 };
     walletBalances = { sFB: 0, FENNEC: 0, BTC: 0 };
     poolReserves = { sFB: 0, FENNEC: 0, BTC: 0, user_sBTC: 0 };
-    auditIdentity = null;
-    auditLoading = false;
-    prefetchedFennecAudit = null;
-    prefetchedFennecAuditAddr = null;
-    prefetchedFennecAuditTs = 0;
+    window.auditIdentity = null;
+    window.auditLoading = false;
+    window.prefetchedFennecAudit = null;
+    window.prefetchedFennecAuditAddr = null;
+    window.prefetchedFennecAuditTs = 0;
 
     // ИСПРАВЛЕНИЕ: Очищаем кэш аудита при отключении кошелька
     if (hadAddr && clearCache) {
@@ -669,8 +888,8 @@ window.disconnectWallet = function (opts) {
     }
 
     // ИСПРАВЛЕНИЕ: Восстанавливаем кнопку "CONNECT & SCAN ID" в секции аудита
-    if (typeof initAudit === 'function') {
-        initAudit();
+    if (typeof window.initAudit === 'function') {
+        __fennecInitAuditSafe();
     }
 
     // Очищаем историю транзакций
@@ -878,20 +1097,62 @@ const __captureFennecIdPng = async () => {
         await new Promise(r => setTimeout(r, 60));
 
         const doc = iframe.contentDocument;
-        const root = doc.querySelector('.card-scene') || doc.querySelector('#fennec-root') || doc.body;
+        const root = doc.querySelector('.card-object') || doc.querySelector('.card-scene') || doc.body;
         if (!root) return null;
 
+        const prev = {
+            transform: root.style.transform,
+            transition: root.style.transition,
+            willChange: root.style.willChange
+        };
+        try {
+            root.style.transform = 'none';
+            root.style.transition = 'none';
+            root.style.willChange = 'auto';
+        } catch (_) {}
+
+        const scale = Math.min(2, window.devicePixelRatio || 1);
         const canvas = await html2canvas(root, {
             backgroundColor: null,
-            scale: Math.min(2, window.devicePixelRatio || 1),
+            scale,
             useCORS: true,
             allowTaint: false,
             logging: false
         });
 
+        try {
+            root.style.transform = prev.transform;
+            root.style.transition = prev.transition;
+            root.style.willChange = prev.willChange;
+        } catch (_) {}
+
+        const rounded = document.createElement('canvas');
+        rounded.width = canvas.width;
+        rounded.height = canvas.height;
+        const ctx = rounded.getContext('2d');
+        if (!ctx) return null;
+
+        const radius = Math.max(8, Math.round(32 * scale));
+        ctx.clearRect(0, 0, rounded.width, rounded.height);
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(radius, 0);
+        ctx.lineTo(rounded.width - radius, 0);
+        ctx.quadraticCurveTo(rounded.width, 0, rounded.width, radius);
+        ctx.lineTo(rounded.width, rounded.height - radius);
+        ctx.quadraticCurveTo(rounded.width, rounded.height, rounded.width - radius, rounded.height);
+        ctx.lineTo(radius, rounded.height);
+        ctx.quadraticCurveTo(0, rounded.height, 0, rounded.height - radius);
+        ctx.lineTo(0, radius);
+        ctx.quadraticCurveTo(0, 0, radius, 0);
+        ctx.closePath();
+        ctx.clip();
+        ctx.drawImage(canvas, 0, 0);
+        ctx.restore();
+
         const blob = await new Promise(resolve => {
             try {
-                canvas.toBlob(resolve, 'image/png');
+                rounded.toBlob(resolve, 'image/png');
             } catch (_) {
                 resolve(null);
             }
@@ -905,7 +1166,7 @@ const __captureFennecIdPng = async () => {
 
 // Premium Twitter Share Function (with image on mobile via Web Share API)
 async function shareIdentityOnX() {
-    if (!auditIdentity || !auditIdentity.archetype) {
+    if (!window.auditIdentity || !window.auditIdentity.archetype) {
         try {
             if (typeof showNotification === 'function') showNotification('Please load your ID first!', 'warning');
             else alert('Please load your ID first!');
@@ -924,8 +1185,8 @@ async function shareIdentityOnX() {
     });
 
     try {
-        const arch = auditIdentity.archetype;
-        const metrics = auditIdentity.metrics || {};
+        const arch = window.auditIdentity.archetype;
+        const metrics = window.auditIdentity.metrics || {};
         const baseKey = String(arch.baseKey || 'DRIFTER').toUpperCase();
         const tier = Math.min(Math.max(Number(arch.tierLevel || 0) || 0, 0), 3);
 
@@ -959,13 +1220,13 @@ async function shareIdentityOnX() {
         };
         const cIcon = classIcons[baseKey] || '🦊';
 
-        let text = `FENNEC ID // IDENTITY CONFIRMED 🦊\n\n`;
+        let text = 'FENNEC ID // IDENTITY CONFIRMED 🦊\n\n';
         text += `🧬 Class: ${baseKey} ${cIcon}\n`;
         text += `⚡ Title: ${String(tierTitle || '').toUpperCase()} (Tier ${tier})\n`;
         text += `${rInfo.icon} Evolution: ${rarityName} (${score}/100)\n\n`;
         text += `"${tierText}"\n\n`;
-        text += `Verified by @FennecBTC on @fractal_bitcoin\n`;
-        text += `fennecbtc.xyz`;
+        text += 'Verified by @FennecBTC on @fractal_bitcoin\n';
+        text += 'fennecbtc.xyz';
 
         try {
             const imageBlob = await __captureFennecIdPng();
@@ -1023,16 +1284,24 @@ async function shareIdentityOnX() {
 window.shareIdentityOnX = shareIdentityOnX;
 
 // Prefetch Fennec Audit - background silent loading (dedup + returns identity)
-async function prefetchFennecAudit(silent = true) {
+async function __legacy_prefetchFennecAudit(silent = true) {
     try {
+        try {
+            if (localStorage.getItem('fennec_wallet_manual_disconnect') === '1') return null;
+        } catch (_) {}
+
         const addr = String(window.userAddress || userAddress || '').trim();
         if (!addr) return null;
 
         const cacheKey = `audit_v3_${addr}`;
         const now = Date.now();
 
-        if (prefetchedFennecAuditAddr === addr && prefetchedFennecAudit && now - prefetchedFennecAuditTs < 300000) {
-            return prefetchedFennecAudit;
+        if (
+            window.prefetchedFennecAuditAddr === addr &&
+            window.prefetchedFennecAudit &&
+            now - window.prefetchedFennecAuditTs < 300000
+        ) {
+            return window.prefetchedFennecAudit;
         }
 
         try {
@@ -1040,10 +1309,10 @@ async function prefetchFennecAudit(silent = true) {
             if (cached) {
                 const cachedData = JSON.parse(cached);
                 if (cachedData && cachedData.identity && now - Number(cachedData.timestamp || 0) < 5 * 60 * 1000) {
-                    prefetchedFennecAudit = cachedData.identity;
-                    prefetchedFennecAuditAddr = addr;
-                    prefetchedFennecAuditTs = now;
-                    return prefetchedFennecAudit;
+                    window.prefetchedFennecAudit = cachedData.identity;
+                    window.prefetchedFennecAuditAddr = addr;
+                    window.prefetchedFennecAuditTs = now;
+                    return window.prefetchedFennecAudit;
                 }
             }
         } catch (_) {}
@@ -1051,7 +1320,15 @@ async function prefetchFennecAudit(silent = true) {
         window.__fennecPrefetchAudit =
             window.__fennecPrefetchAudit && typeof window.__fennecPrefetchAudit === 'object'
                 ? window.__fennecPrefetchAudit
-                : { promise: null, addr: '' };
+                : { promise: null, addr: '', failTs: 0, failAddr: '' };
+
+        try {
+            const failAddr = String(window.__fennecPrefetchAudit.failAddr || '').trim();
+            const failTs = Number(window.__fennecPrefetchAudit.failTs || 0) || 0;
+            if (failAddr && failAddr === addr && failTs > 0 && now - failTs < 60000) {
+                return null;
+            }
+        } catch (_) {}
 
         if (window.__fennecPrefetchAudit.promise && window.__fennecPrefetchAudit.addr === addr) {
             return await window.__fennecPrefetchAudit.promise;
@@ -1062,20 +1339,36 @@ async function prefetchFennecAudit(silent = true) {
         window.__fennecPrefetchAudit.addr = addr;
         window.__fennecPrefetchAudit.promise = (async () => {
             const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 60000);
+            const timeout = setTimeout(() => controller.abort(), 90000);
             try {
                 const data = await fetchAuditData(controller.signal, true).catch(() => null);
-                if (!data) return null;
+                if (!data) {
+                    try {
+                        if (window.__fennecPrefetchAudit && typeof window.__fennecPrefetchAudit === 'object') {
+                            window.__fennecPrefetchAudit.failTs = Date.now();
+                            window.__fennecPrefetchAudit.failAddr = addr;
+                        }
+                    } catch (_) {}
+                    return null;
+                }
 
                 const identity = calculateFennecIdentity(data);
-                if (!identity || typeof identity !== 'object') return null;
+                if (!identity || typeof identity !== 'object') {
+                    try {
+                        if (window.__fennecPrefetchAudit && typeof window.__fennecPrefetchAudit === 'object') {
+                            window.__fennecPrefetchAudit.failTs = Date.now();
+                            window.__fennecPrefetchAudit.failAddr = addr;
+                        }
+                    } catch (_) {}
+                    return null;
+                }
 
                 identity.metrics = identity.metrics && typeof identity.metrics === 'object' ? identity.metrics : {};
                 identity.metrics.address = addr;
 
-                prefetchedFennecAudit = identity;
-                prefetchedFennecAuditAddr = addr;
-                prefetchedFennecAuditTs = Date.now();
+                window.prefetchedFennecAudit = identity;
+                window.prefetchedFennecAuditAddr = addr;
+                window.prefetchedFennecAuditTs = Date.now();
 
                 try {
                     localStorage.setItem(cacheKey, JSON.stringify({ identity, timestamp: Date.now() }));
@@ -1100,7 +1393,7 @@ async function prefetchFennecAudit(silent = true) {
         return null;
     }
 }
-window.prefetchFennecAudit = prefetchFennecAudit;
+window.prefetchFennecAudit = window.prefetchFennecAudit || __legacy_prefetchFennecAudit;
 
 window.__fidRateLimit = window.__fidRateLimit || {};
 window.__fidCanRun = function (action, addr, minMs) {
@@ -1126,13 +1419,126 @@ window.openFennecIdInternal = async function (event) {
     try {
         if (event && typeof event.preventDefault === 'function') event.preventDefault();
     } catch (_) {}
-    let addr = String(window.userAddress || userAddress || '').trim();
+    const addr = String(window.userAddress || userAddress || '').trim();
     if (!addr) {
         try {
-            if (typeof initAudit === 'function') await initAudit();
+            if (typeof showNotification === 'function') {
+                showNotification('Connect wallet first', 'warning', 2000);
+            }
+        } catch (_) {}
+        try {
+            if (typeof window.initAudit === 'function') await window.initAudit();
         } catch (_) {}
         return;
     }
+
+    {
+        let shouldResetSuppress = false;
+        try {
+            const ui =
+                window.__fennecAuditUi && typeof window.__fennecAuditUi === 'object' ? window.__fennecAuditUi : null;
+            const uiAddr = String((ui && ui.addr) || '').trim();
+            const uiMode = String((ui && ui.mode) || 'idle');
+            const uiScannedAt = Number((ui && ui.scannedAt) || 0) || 0;
+            const scannedOk = !!(
+                uiAddr &&
+                uiAddr === addr &&
+                (uiMode === 'scanned' || uiMode === 'opening' || uiMode === 'opened') &&
+                uiScannedAt > 0 &&
+                !window.auditLoading
+            );
+            if (!scannedOk && typeof window.runAudit === 'function') {
+                try {
+                    window.__fennecSuppressAutoOpenAfterScan = true;
+                    shouldResetSuppress = true;
+                } catch (_) {}
+                await window.runAudit(true);
+            }
+            const start = Date.now();
+            while (window.auditLoading && Date.now() - start < 95000) {
+                await new Promise(resolve => setTimeout(resolve, 250));
+            }
+        } catch (_) {
+        } finally {
+            if (shouldResetSuppress) {
+                try {
+                    window.__fennecSuppressAutoOpenAfterScan = false;
+                } catch (_) {}
+            }
+        }
+    }
+
+    {
+        let shouldResetSuppress = false;
+        try {
+            const hasIdentityForAddr = () => {
+                try {
+                    const curAddr = String(addr || '').trim();
+                    const ai =
+                        window.auditIdentity && typeof window.auditIdentity === 'object' ? window.auditIdentity : null;
+                    const aiAddr = String(ai?.metrics?.address || ai?.address || '').trim();
+                    return !!(ai && curAddr && (!aiAddr || aiAddr === curAddr));
+                } catch (_) {
+                    return false;
+                }
+            };
+
+            if (!hasIdentityForAddr()) {
+                try {
+                    window.__fennecSuppressAutoOpenAfterScan = true;
+                    shouldResetSuppress = true;
+                } catch (_) {}
+
+                try {
+                    if (window.auditLoading) {
+                        const start = Date.now();
+                        while (window.auditLoading && Date.now() - start < 95000) {
+                            await new Promise(resolve => setTimeout(resolve, 250));
+                        }
+                    }
+                } catch (_) {}
+
+                if (!hasIdentityForAddr()) {
+                    try {
+                        if (typeof window.runAudit === 'function') {
+                            await window.runAudit(false);
+                        }
+                    } catch (_) {}
+
+                    try {
+                        if (window.auditLoading) {
+                            const start = Date.now();
+                            while (window.auditLoading && Date.now() - start < 95000) {
+                                await new Promise(resolve => setTimeout(resolve, 250));
+                            }
+                        }
+                    } catch (_) {}
+                }
+            }
+        } catch (_) {
+        } finally {
+            if (shouldResetSuppress) {
+                try {
+                    window.__fennecSuppressAutoOpenAfterScan = false;
+                } catch (_) {}
+            }
+        }
+    }
+
+    try {
+        const curAddr = String(addr || '').trim();
+        const ai = window.auditIdentity && typeof window.auditIdentity === 'object' ? window.auditIdentity : null;
+        const aiAddr = String(ai?.metrics?.address || ai?.address || '').trim();
+        const haveIdentity = !!(ai && curAddr && (!aiAddr || aiAddr === curAddr));
+        if (!haveIdentity) {
+            try {
+                if (typeof showNotification === 'function') {
+                    showNotification('Please scan your ID first', 'warning', 2200);
+                }
+            } catch (_) {}
+            return;
+        }
+    } catch (_) {}
 
     // ВАЖНО: сначала рисуем opening UI, затем выполняем любые долгие await
     try {
@@ -1144,7 +1550,7 @@ window.openFennecIdInternal = async function (event) {
     } catch (_) {}
 
     try {
-        if (typeof initAudit === 'function') await initAudit();
+        if (typeof window.initAudit === 'function') await window.initAudit();
     } catch (_) {}
 
     try {
@@ -1196,7 +1602,7 @@ window.openFennecIdInternal = async function (event) {
         let identityForOpen = null;
         try {
             const curAddr = String(addr || '').trim();
-            const ai = auditIdentity && typeof auditIdentity === 'object' ? auditIdentity : null;
+            const ai = window.auditIdentity && typeof window.auditIdentity === 'object' ? window.auditIdentity : null;
             const aiAddr = String(ai?.metrics?.address || ai?.address || '').trim();
             if (ai && curAddr && (!aiAddr || aiAddr === curAddr)) {
                 try {
@@ -1206,10 +1612,10 @@ window.openFennecIdInternal = async function (event) {
                 identityForOpen = ai;
             }
         } catch (_) {}
-        if (!identityForOpen && typeof prefetchFennecAudit === 'function') {
+        if (!identityForOpen && typeof window.prefetchFennecAudit === 'function') {
             try {
                 identityForOpen = await Promise.race([
-                    prefetchFennecAudit(true),
+                    window.prefetchFennecAudit(true),
                     new Promise(resolve => setTimeout(() => resolve(null), 900))
                 ]);
             } catch (_) {}
@@ -1259,7 +1665,7 @@ window.refreshScannedIdentity = async function (event) {
         return;
     }
     try {
-        if (typeof runAudit === 'function') await runAudit(true);
+        if (typeof window.runAudit === 'function') await window.runAudit(true);
     } catch (_) {}
 };
 
@@ -1536,7 +1942,7 @@ window.onVisionFennecIdClick = async function () {
         if (!addr) {
             // Кошелек не подключен - показываем UI с кнопками
             try {
-                if (typeof initAudit === 'function') await initAudit();
+                if (typeof window.initAudit === 'function') await window.initAudit();
             } catch (_) {}
             return;
         }
@@ -1544,7 +1950,7 @@ window.onVisionFennecIdClick = async function () {
         // ВАЖНО: если кошелек был подключен ТОЛЬКО ЧТО, не запускаем ни OPEN, ни SCAN автоматически.
         // Пользователь должен явно нажать Open ID / Scan ID.
         try {
-            if (typeof initAudit === 'function') await initAudit();
+            if (typeof window.initAudit === 'function') await window.initAudit();
         } catch (_) {}
         return;
     }
@@ -1561,7 +1967,7 @@ window.onVisionFennecIdClick = async function () {
         const hasId = !!(st && st.hasId && String(st.inscriptionId || '').trim());
         if (hasId) {
             try {
-                if (typeof initAudit === 'function') await initAudit();
+                if (typeof window.initAudit === 'function') await window.initAudit();
             } catch (_) {}
             setTimeout(() => {
                 try {
@@ -1574,7 +1980,7 @@ window.onVisionFennecIdClick = async function () {
 
     setTimeout(() => {
         try {
-            if (typeof runAudit === 'function') runAudit(false);
+            if (typeof window.runAudit === 'function') window.runAudit(false);
         } catch (_) {}
     }, 80);
 };
@@ -1599,12 +2005,8 @@ function startAutoUpdate() {
 
         console.log('Auto-updating data...');
         try {
-            // ИСПРАВЛЕНИЕ: При ручном обновлении сбрасываем кэш swap_history
-            swapHistoryCache.data = null;
-            swapHistoryCache.timestamp = 0;
-
             // ИСПРАВЛЕНИЕ: Блокируем загрузку терминала пока загружается аудит
-            if (auditLoading) {
+            if (window.auditLoading) {
                 console.log('Skipping terminal data load: audit is loading');
                 return;
             }
@@ -1640,24 +2042,26 @@ function stopAutoUpdate() {
 }
 
 // ИСПРАВЛЕНИЕ: Функция обновления аудита (принудительное)
-window.refreshAudit = function () {
-    if (!userAddress) {
-        if (typeof showNotification === 'function') {
-            showNotification('Connect wallet first', 'warning', 2000);
+window.refreshAudit =
+    window.refreshAudit ||
+    function () {
+        if (!userAddress) {
+            if (typeof showNotification === 'function') {
+                showNotification('Connect wallet first', 'warning', 2000);
+            }
+            return;
         }
-        return;
-    }
-    if (auditLoading) {
-        if (typeof showNotification === 'function') {
-            showNotification('Audit is already loading', 'warning', 2000);
+        if (window.auditLoading) {
+            if (typeof showNotification === 'function') {
+                showNotification('Audit is already loading', 'warning', 2000);
+            }
+            return;
         }
-        return;
-    }
-    // Очищаем кэш и запускаем загрузку
-    const cacheKey = `audit_${userAddress}`;
-    localStorage.removeItem(cacheKey);
-    runAudit(true); // forceRefresh = true
-};
+        // Очищаем кэш и запускаем загрузку
+        const cacheKey = `audit_${userAddress}`;
+        localStorage.removeItem(cacheKey);
+        window.runAudit(true); // forceRefresh = true
+    };
 
 // ИСПРАВЛЕНИЕ: Ручное обновление данных (с защитой от слишком частых обновлений)
 let lastRefreshTime = 0;
@@ -1702,10 +2106,6 @@ window.manualRefresh = async function () {
 
     try {
         console.log('Manual refresh started...');
-
-        // ИСПРАВЛЕНИЕ: При ручном обновлении сбрасываем кэш swap_history
-        swapHistoryCache.data = null;
-        swapHistoryCache.timestamp = 0;
 
         // Обновляем все данные (БЕЗ аудита - аудит обновляется отдельно)
         await Promise.all([
@@ -1837,6 +2237,76 @@ async function safeFetchJson(url, options = {}) {
         }
     }
     return null;
+}
+
+try {
+    window.safeFetchJson = window.safeFetchJson || safeFetchJson;
+} catch (_) {}
+
+function __fennecDedupe(key, fn) {
+    try {
+        const k = String(key || '').trim();
+        const f = typeof fn === 'function' ? fn : null;
+        if (!k || !f) return Promise.resolve().then(() => (f ? f() : null));
+        window.__fennecInflight =
+            window.__fennecInflight && typeof window.__fennecInflight === 'object' ? window.__fennecInflight : {};
+        const inflight = window.__fennecInflight;
+        if (inflight[k]) return inflight[k];
+        const p = Promise.resolve()
+            .then(() => f())
+            .finally(() => {
+                try {
+                    delete inflight[k];
+                } catch (_) {}
+            });
+        inflight[k] = p;
+        return p;
+    } catch (_) {
+        try {
+            return Promise.resolve().then(() => (typeof fn === 'function' ? fn() : null));
+        } catch (e) {
+            return Promise.reject(e);
+        }
+    }
+}
+
+function __looksLikeTxid(v) {
+    const s = String(v || '').trim();
+    return /^[0-9a-fA-F]{64}$/.test(s);
+}
+
+function __pickTxid(candidate) {
+    if (!candidate) return '';
+    if (typeof candidate === 'string') {
+        const s = candidate.trim();
+        return __looksLikeTxid(s) ? s : '';
+    }
+    if (typeof candidate === 'object') {
+        const fields = [
+            candidate.txid,
+            candidate.txId,
+            candidate.hash,
+            candidate.tx_hash,
+            candidate.receiveTxid,
+            candidate.receiveTxId,
+            candidate.receive_txid,
+            candidate.approveTxid,
+            candidate.approveTxId,
+            candidate.approve_txid,
+            candidate.rollUpTxid,
+            candidate.rollUpTxId,
+            candidate.rollUp_txid,
+            candidate.paymentTxid,
+            candidate.paymentTxId,
+            candidate.inscribeTxid,
+            candidate.inscribeTxId
+        ];
+        for (const f of fields) {
+            const s = String(f || '').trim();
+            if (__looksLikeTxid(s)) return s;
+        }
+    }
+    return '';
 }
 
 let __prewarmCacheAt = 0;
@@ -2039,18 +2509,145 @@ let poolReserves = { sFB: 0, FENNEC: 0, BTC: 0, user_sBTC: 0 };
 let currentSwapPair = 'FB_FENNEC'; // 'FB_FENNEC' or 'BTC_FB'
 let userBalances = { sFB: 0, FENNEC: 0, BTC: 0 };
 let walletBalances = { sFB: 0, FENNEC: 0, BTC: 0 };
-let selectedInscriptions = [];
+const selectedInscriptions = [];
 let chartTimeframe = '7d';
 let priceChart = null;
-let priceHistory = [];
-let burrowLoop = null;
-let auditIdentity = null;
-let auditLoading = false; // ИСПРАВЛЕНИЕ: Флаг активного аудита, чтобы не запускать повторно во время выполнения
-let currentAuditRequestId = 0; // ИСПРАВЛЕНИЕ: Отслеживание текущего запроса для предотвращения race condition
-let currentAuditAbortController = null; // ИСПРАВЛЕНИЕ: AbortController для отмены предыдущих запросов
-let prefetchedFennecAudit = null;
-let prefetchedFennecAuditAddr = null;
-let prefetchedFennecAuditTs = 0;
+const priceHistory = [];
+const burrowLoop = null;
+if (typeof window.auditIdentity === 'undefined') window.auditIdentity = null;
+if (typeof window.auditLoading === 'undefined') window.auditLoading = false; // ИСПРАВЛЕНИЕ: Флаг активного аудита, чтобы не запускать повторно во время выполнения
+if (typeof window.currentAuditRequestId === 'undefined') window.currentAuditRequestId = 0; // ИСПРАВЛЕНИЕ: Отслеживание текущего запроса для предотвращения race condition
+if (typeof window.currentAuditAbortController === 'undefined') window.currentAuditAbortController = null; // ИСПРАВЛЕНИЕ: AbortController для отмены предыдущих запросов
+if (typeof window.prefetchedFennecAudit === 'undefined') window.prefetchedFennecAudit = null;
+if (typeof window.prefetchedFennecAuditAddr === 'undefined') window.prefetchedFennecAuditAddr = null;
+if (typeof window.prefetchedFennecAuditTs === 'undefined') window.prefetchedFennecAuditTs = 0;
+
+try {
+    if (typeof window.isBuying === 'boolean') isBuying = window.isBuying;
+} catch (_) {}
+try {
+    Object.defineProperty(window, 'isBuying', {
+        get: () => isBuying,
+        set: v => {
+            isBuying = !!v;
+        },
+        configurable: true
+    });
+} catch (_) {
+    try {
+        window.isBuying = isBuying;
+    } catch (_) {}
+}
+
+try {
+    if (typeof window.currentSwapPair === 'string' && window.currentSwapPair) currentSwapPair = window.currentSwapPair;
+} catch (_) {}
+try {
+    Object.defineProperty(window, 'currentSwapPair', {
+        get: () => currentSwapPair,
+        set: v => {
+            currentSwapPair = String(v || '');
+        },
+        configurable: true
+    });
+} catch (_) {
+    try {
+        window.currentSwapPair = currentSwapPair;
+    } catch (_) {}
+}
+
+try {
+    if (typeof window.depositToken === 'string' && window.depositToken) depositToken = window.depositToken;
+} catch (_) {}
+try {
+    Object.defineProperty(window, 'depositToken', {
+        get: () => depositToken,
+        set: v => {
+            depositToken = String(v || '');
+        },
+        configurable: true
+    });
+} catch (_) {
+    try {
+        window.depositToken = depositToken;
+    } catch (_) {}
+}
+
+try {
+    if (typeof window.withdrawToken === 'string' && window.withdrawToken) withdrawToken = window.withdrawToken;
+} catch (_) {}
+try {
+    Object.defineProperty(window, 'withdrawToken', {
+        get: () => withdrawToken,
+        set: v => {
+            withdrawToken = String(v || '');
+        },
+        configurable: true
+    });
+} catch (_) {
+    try {
+        window.withdrawToken = withdrawToken;
+    } catch (_) {}
+}
+
+try {
+    if (window.userBalances && typeof window.userBalances === 'object') userBalances = window.userBalances;
+} catch (_) {}
+try {
+    Object.defineProperty(window, 'userBalances', {
+        get: () => userBalances,
+        set: v => {
+            if (v && typeof v === 'object') userBalances = v;
+        },
+        configurable: true
+    });
+} catch (_) {
+    try {
+        window.userBalances = userBalances;
+    } catch (_) {}
+}
+
+try {
+    if (window.walletBalances && typeof window.walletBalances === 'object') walletBalances = window.walletBalances;
+} catch (_) {}
+try {
+    Object.defineProperty(window, 'walletBalances', {
+        get: () => walletBalances,
+        set: v => {
+            if (v && typeof v === 'object') walletBalances = v;
+        },
+        configurable: true
+    });
+} catch (_) {
+    try {
+        window.walletBalances = walletBalances;
+    } catch (_) {}
+}
+
+try {
+    if (window.poolReserves && typeof window.poolReserves === 'object') poolReserves = window.poolReserves;
+} catch (_) {}
+try {
+    Object.defineProperty(window, 'poolReserves', {
+        get: () => poolReserves,
+        set: v => {
+            if (v && typeof v === 'object') poolReserves = v;
+        },
+        configurable: true
+    });
+} catch (_) {
+    try {
+        window.poolReserves = poolReserves;
+    } catch (_) {}
+}
+
+try {
+    window.BACKEND_URL = BACKEND_URL;
+    window.T_SFB = T_SFB;
+    window.T_FENNEC = T_FENNEC;
+    window.T_BTC = T_BTC;
+    window.T_SBTC = T_SBTC;
+} catch (_) {}
 
 const FENNEC_ID_EPOCH = '2026-01-02';
 const fennecIdKeyV2 = addr => `fennec_id_child_v3_${String(addr || '').trim()}`;
@@ -2070,12 +2667,12 @@ function ensureMetaTag(name, value) {
 
 window.setDebugAuditIdentity = function (identity) {
     try {
-        auditIdentity = identity;
+        window.auditIdentity = identity;
         if (identity && identity.metrics) {
             identity.metrics.address = identity.metrics.address || userAddress || window.userAddress || '';
         }
-        if (typeof initAudit === 'function') {
-            initAudit();
+        if (typeof window.initAudit === 'function') {
+            __fennecInitAuditSafe();
         }
         if (typeof switchTab === 'function') {
             switchTab('audit');
@@ -2139,11 +2736,18 @@ async function switchToFractal() {
         return false;
     }
 }
-let activeTickers = { tick0: '', tick1: '' };
+const activeTickers = { tick0: '', tick1: '' };
 
-// Кэширование для оптимизации
-let poolCache = { data: null, timestamp: 0, ttl: 30000 }; // 30 сек
-let balanceCache = { data: null, timestamp: 0, ttl: 60000 }; // 60 сек
+try {
+    window.activeTickers = activeTickers;
+} catch (_) {}
+
+try {
+    window.poolCache = { data: null, timestamp: 0, ttl: 30000 }; // 30 сек
+} catch (_) {}
+
+const poolCache = window.poolCache;
+const balanceCache = { data: null, timestamp: 0, ttl: 60000 }; // 60 сек
 let currentTheme = localStorage.getItem('fennec_theme') || 'dark';
 
 // Переводы
@@ -2427,7 +3031,7 @@ function showNotification(message, type = 'info', duration = 3000) {
     }, duration);
 }
 
-let __terminalTabRefreshState = { last: { swap: 0, deposit: 0, withdraw: 0 } };
+const __terminalTabRefreshState = { last: { swap: 0, deposit: 0, withdraw: 0 } };
 async function __refreshTerminalTab(tab, force = false) {
     try {
         if (document.hidden) return;
@@ -2488,7 +3092,7 @@ async function __refreshTerminalTab(tab, force = false) {
     }
 }
 
-function switchTab(tab) {
+function __legacy_switchTab(tab) {
     document.querySelectorAll('.tab-content').forEach(el => {
         el.classList.remove('active');
         el.classList.add('hidden');
@@ -2517,18 +3121,29 @@ function switchTab(tab) {
     }
 }
 
+var switchTab = window.switchTab || __legacy_switchTab;
+try {
+    window.switchTab = switchTab;
+} catch (_) {}
+
 // ИСПРАВЛЕНИЕ: Функция для добавления pending операции (минт, инскрипции и т.д.)
 function addPendingOperation(operation) {
     try {
         const pendingOps = JSON.parse(localStorage.getItem('pending_operations') || '[]');
         // Проверяем, нет ли уже такой операции
         const opOrderId = String(operation?.orderId || '').trim();
+        const opTxid = String(operation?.txid || '').trim();
+        const opId = String(operation?.id || '').trim();
+        const opKey = opOrderId || opTxid || opId;
         const exists = pendingOps.find(op => {
             if (!op || typeof op !== 'object') return false;
             if (String(op.type || '') !== String(operation?.type || '')) return false;
             const existingOrderId = String(op.orderId || '').trim();
-            if (!existingOrderId || !opOrderId) return false;
-            return existingOrderId === opOrderId;
+            const existingTxid = String(op.txid || '').trim();
+            const existingId = String(op.id || '').trim();
+            const existingKey = existingOrderId || existingTxid || existingId;
+            if (!existingKey || !opKey) return false;
+            return existingKey === opKey;
         });
         if (!exists) {
             pendingOps.push(operation);
@@ -2771,8 +3386,8 @@ async function checkPendingMints() {
                         if (typeof refreshPendingOperations === 'function') {
                             refreshPendingOperations();
                         }
-                        if (typeof initAudit === 'function') {
-                            initAudit();
+                        if (typeof window.initAudit === 'function') {
+                            __fennecInitAuditSafe();
                         }
                     } else if (status === 'inscribing') {
                         // Обновляем статус
@@ -2852,8 +3467,110 @@ async function refreshPendingOperations() {
         const activeInscriptions = pendingInscriptions.filter(p => p.status !== 'ready' && p.status !== 'failed');
 
         // ИСПРАВЛЕНИЕ: Get pending operations (минты) from localStorage
-        const pendingOperations = JSON.parse(localStorage.getItem('pending_operations') || '[]');
-        const activeMints = pendingOperations.filter(p => p.status === 'pending' || p.status === 'inscribing');
+        let pendingOperations = JSON.parse(localStorage.getItem('pending_operations') || '[]');
+
+        try {
+            const ops = Array.isArray(pendingOperations) ? pendingOperations : [];
+            const txOps = ops.filter(
+                op =>
+                    op &&
+                    typeof op === 'object' &&
+                    (op.type === 'swap' || op.type === 'deposit' || op.type === 'withdraw') &&
+                    (op.status === 'pending' || op.status === 'broadcasted' || op.status === 'created')
+            );
+            const limited = txOps
+                .slice()
+                .sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0))
+                .slice(0, 5);
+
+            if (limited.length > 0) {
+                let changed = false;
+                const toRemove = new Set();
+                for (const op of limited) {
+                    const txid = String(op.txid || '').trim();
+                    if (!__looksLikeTxid(txid)) continue;
+                    const chain = String(op.chain || 'FRACTAL')
+                        .trim()
+                        .toUpperCase();
+                    const json = await safeFetchJson(
+                        `${BACKEND_URL}?action=tx_info&txid=${encodeURIComponent(txid)}&chain=${encodeURIComponent(chain)}`,
+                        {
+                            timeoutMs: 9000,
+                            retries: 0
+                        }
+                    );
+                    const detail = json?.data?.detail || json?.data?.data?.detail || json?.data?.tx || null;
+                    const confirmations = Number(detail?.confirmations || json?.data?.confirmations || 0) || 0;
+                    const height = Number(detail?.height || json?.data?.height || 0) || 0;
+                    if (confirmations >= 1 || height > 0) {
+                        const orderId = String(op.orderId || '').trim();
+                        const id = String(op.id || '').trim();
+                        const key = orderId || txid || id;
+                        if (key) {
+                            toRemove.add(`${String(op.type || '')}:${key}`);
+                        }
+                    }
+                }
+
+                if (toRemove.size > 0) {
+                    const updated = ops.filter(op => {
+                        if (!op || typeof op !== 'object') return false;
+                        const type = String(op.type || '');
+                        const orderId = String(op.orderId || '').trim();
+                        const txid = String(op.txid || '').trim();
+                        const id = String(op.id || '').trim();
+                        const key = orderId || txid || id;
+                        if (!type || !key) return true;
+                        return !toRemove.has(`${type}:${key}`);
+                    });
+                    pendingOperations = updated;
+                    localStorage.setItem('pending_operations', JSON.stringify(updated));
+                    changed = true;
+                }
+
+                if (changed) {
+                    try {
+                        setTimeout(() => {
+                            try {
+                                if (typeof checkBalance === 'function') checkBalance();
+                            } catch (_) {}
+                            try {
+                                if (typeof refreshTransactionHistory === 'function') refreshTransactionHistory();
+                            } catch (_) {}
+                        }, 1200);
+                    } catch (_) {}
+                }
+            }
+        } catch (_) {}
+
+        const activeMints = (Array.isArray(pendingOperations) ? pendingOperations : []).filter(
+            p =>
+                p && typeof p === 'object' && p.type === 'mint' && (p.status === 'pending' || p.status === 'inscribing')
+        );
+
+        const activeSwaps = (Array.isArray(pendingOperations) ? pendingOperations : []).filter(
+            p =>
+                p &&
+                typeof p === 'object' &&
+                p.type === 'swap' &&
+                (p.status === 'pending' || p.status === 'broadcasted')
+        );
+
+        const activeLocalDeposits = (Array.isArray(pendingOperations) ? pendingOperations : []).filter(
+            p =>
+                p &&
+                typeof p === 'object' &&
+                p.type === 'deposit' &&
+                (p.status === 'pending' || p.status === 'broadcasted')
+        );
+
+        const activeLocalWithdrawals = (Array.isArray(pendingOperations) ? pendingOperations : []).filter(
+            p =>
+                p &&
+                typeof p === 'object' &&
+                p.type === 'withdraw' &&
+                (p.status === 'pending' || p.status === 'broadcasted')
+        );
 
         // Get pending deposits/withdrawals from API (if user is connected)
         let pendingDeposits = [];
@@ -2891,9 +3608,27 @@ async function refreshPendingOperations() {
             }
         }
 
+        const apiDepositTxids = new Set((pendingDeposits || []).map(d => __pickTxid(d)).filter(Boolean));
+        const apiWithdrawTxids = new Set((pendingWithdrawals || []).map(w => __pickTxid(w)).filter(Boolean));
+
+        const localDeposits = (activeLocalDeposits || []).filter(op => {
+            const txid = String(op.txid || '').trim();
+            if (!txid) return true;
+            return !apiDepositTxids.has(txid);
+        });
+
+        const localWithdrawals = (activeLocalWithdrawals || []).filter(op => {
+            const txid = String(op.txid || '').trim();
+            if (!txid) return true;
+            return !apiWithdrawTxids.has(txid);
+        });
+
         const allPending = [
             ...activeInscriptions.map(p => ({ ...p, type: 'inscription', sortTime: p.createdAt || 0 })),
             ...activeMints.map(m => ({ ...m, type: 'mint', sortTime: m.timestamp || 0 })),
+            ...activeSwaps.map(s => ({ ...s, type: 'swap', sortTime: s.timestamp || 0 })),
+            ...localDeposits.map(d => ({ ...d, type: 'local_deposit', sortTime: d.timestamp || 0 })),
+            ...localWithdrawals.map(w => ({ ...w, type: 'local_withdraw', sortTime: w.timestamp || 0 })),
             ...pendingDeposits.map(d => ({ ...d, type: 'deposit', sortTime: (d.ts || 0) * 1000 })),
             ...pendingWithdrawals.map(w => ({ ...w, type: 'withdraw', sortTime: (w.ts || 0) * 1000 }))
         ].sort((a, b) => b.sortTime - a.sortTime); // Sort by time, newest first
@@ -2912,6 +3647,9 @@ async function refreshPendingOperations() {
         // Group by type
         const inscriptions = allPending.filter(o => o.type === 'inscription');
         const mints = allPending.filter(o => o.type === 'mint');
+        const swaps = allPending.filter(o => o.type === 'swap');
+        const localDeposits2 = allPending.filter(o => o.type === 'local_deposit');
+        const localWithdrawals2 = allPending.filter(o => o.type === 'local_withdraw');
         const deposits = allPending.filter(o => o.type === 'deposit');
         const withdrawals = allPending.filter(o => o.type === 'withdraw');
 
@@ -2955,6 +3693,97 @@ async function refreshPendingOperations() {
                                                                                                                                             <div class="text-[10px] text-gray-500">Amount</div>
                                                                                                                                             <div class="text-xs font-mono text-fennec">${(op.amount / 100000000).toFixed(8)} FB</div>
                                                                                                                                             <button class="open-mint-html mt-2 text-[10px] font-black bg-fennec/15 text-fennec border border-fennec/30 px-3 py-1 rounded-lg hover:bg-fennec/25 transition" data-order-id="${__escapeHtml(op.orderId || '')}">OPEN CARD</button>
+                                                                                                                                        </div>
+                                                                                                                                    </div>
+                                                                                                                                </div>
+                                                                                                                            `;
+                })
+                .join('');
+        }
+
+        if (swaps.length > 0) {
+            html += '<div class="text-xs text-gray-500 mb-2 mt-4 font-bold uppercase">Swaps</div>';
+            html += swaps
+                .map(op => {
+                    const txid = String(op.txid || '').trim();
+                    const shortTx = __looksLikeTxid(txid) ? txid.slice(0, 8) : '';
+                    const inTick = op.tickIn || '';
+                    const outTick = op.tickOut || '';
+                    const amountIn = Number(op.amountIn || 0) || 0;
+                    const amountInStr = amountIn ? amountIn.toFixed(8).replace(/\.?0+$/, '') : '';
+                    const title =
+                        inTick && outTick && amountInStr
+                            ? `Swap ${__escapeHtml(amountInStr)} ${__escapeHtml(inTick)} → ${__escapeHtml(outTick)}`
+                            : 'Swap Pending';
+                    const txLine = shortTx ? `TXID: ${__escapeHtml(shortTx)}…` : 'TXID: N/A';
+                    return `
+                                                                                                                                <div class="bg-black/30 border border-white/5 rounded-lg p-4 mb-2">
+                                                                                                                                    <div class="flex items-center justify-between">
+                                                                                                                                        <div class="flex items-center gap-3">
+                                                                                                                                            <i class="fas fa-clock text-yellow-500 text-xl"></i>
+                                                                                                                                            <div>
+                                                                                                                                                <div class="text-sm font-bold text-white">${title}</div>
+                                                                                                                                                <div class="text-xs text-gray-400">${txLine}</div>
+                                                                                                                                            </div>
+                                                                                                                                        </div>
+                                                                                                                                    </div>
+                                                                                                                                </div>
+                                                                                                                            `;
+                })
+                .join('');
+        }
+
+        if (localDeposits2.length > 0) {
+            html += '<div class="text-xs text-gray-500 mb-2 mt-4 font-bold uppercase">Deposits (Pending)</div>';
+            html += localDeposits2
+                .map(op => {
+                    const txid = String(op.txid || '').trim();
+                    const shortTx = __looksLikeTxid(txid) ? txid.slice(0, 8) : '';
+                    const amount = Number(op.amount || 0) || 0;
+                    const amountStr = amount ? amount.toFixed(8).replace(/\.?0+$/, '') : '--';
+                    let displayTick = op.tick || 'FB';
+                    if (String(displayTick).includes('sFB') || displayTick === 'sFB___000') displayTick = 'FB';
+                    if (String(displayTick).includes('sBTC') || displayTick === 'sBTC___000') displayTick = 'BTC';
+                    if (String(displayTick).includes('FENNEC')) displayTick = 'FENNEC';
+                    return `
+                                                                                                                                <div class="bg-black/30 border border-white/5 rounded-lg p-4 mb-2">
+                                                                                                                                    <div class="flex items-center justify-between">
+                                                                                                                                        <div class="flex items-center gap-3">
+                                                                                                                                            <i class="fas fa-arrow-down text-green-500 text-xl"></i>
+                                                                                                                                           <div>
+                                                                                                                                                <div class="text-sm font-bold text-white">Deposit ${__escapeHtml(amountStr)} ${__escapeHtml(displayTick)}</div>
+                                                                                                                                                <div class="text-xs text-gray-400">${shortTx ? `TXID: ${__escapeHtml(shortTx)}…` : 'TXID: N/A'}</div>
+                                                                                                                                            </div>
+                                                                                                                                        </div>
+                                                                                                                                    </div>
+                                                                                                                                </div>
+                                                                                                                            `;
+                })
+                .join('');
+        }
+
+        if (localWithdrawals2.length > 0) {
+            html += '<div class="text-xs text-gray-500 mb-2 mt-4 font-bold uppercase">Withdrawals (Pending)</div>';
+            html += localWithdrawals2
+                .map(op => {
+                    const txid = String(op.txid || '').trim();
+                    const shortTx = __looksLikeTxid(txid) ? txid.slice(0, 8) : '';
+                    const amount = Number(op.amount || 0) || 0;
+                    const amountStr = amount ? amount.toFixed(8).replace(/\.?0+$/, '') : '--';
+                    let displayTick = op.tick || 'FB';
+                    if (String(displayTick).includes('sFB') || displayTick === 'sFB___000') displayTick = 'FB';
+                    if (String(displayTick).includes('sBTC') || displayTick === 'sBTC___000') displayTick = 'BTC';
+                    if (String(displayTick).includes('FENNEC')) displayTick = 'FENNEC';
+                    const id = String(op.id || '').trim();
+                    return `
+                                                                                                                                <div class="bg-black/30 border border-white/5 rounded-lg p-4 mb-2">
+                                                                                                                                    <div class="flex items-center justify-between">
+                                                                                                                                        <div class="flex items-center gap-3">
+                                                                                                                                            <i class="fas fa-arrow-up text-fennec text-xl"></i>
+                                                                                                                                           <div>
+                                                                                                                                                <div class="text-sm font-bold text-white">Withdraw ${__escapeHtml(amountStr)} ${__escapeHtml(displayTick)}</div>
+                                                                                                                                                <div class="text-xs text-gray-400">${shortTx ? `TXID: ${__escapeHtml(shortTx)}…` : id ? `ID: ${__escapeHtml(String(id).slice(-8))}` : 'TXID: N/A'}</div>
+                                                                                                                                            </div>
                                                                                                                                         </div>
                                                                                                                                     </div>
                                                                                                                                 </div>
@@ -3114,15 +3943,21 @@ async function refreshPendingOperations() {
                                                                                                                     `;
     }
 }
-function switchDir() {
+
+function __legacy_switchDir() {
     isBuying = !isBuying;
     document.getElementById('swapIn').value = '';
     document.getElementById('swapOut').value = '';
     updateUI();
 }
 
+const switchDir = window.switchDir || __legacy_switchDir;
+try {
+    window.switchDir = switchDir;
+} catch (_) {}
+
 // Set swap pair (FB_FENNEC or BTC_FB)
-function setSwapPair(pair) {
+function __legacy_setSwapPair(pair) {
     currentSwapPair = pair;
     isBuying = true; // Reset direction
     document.getElementById('swapIn').value = '';
@@ -3178,8 +4013,13 @@ function setSwapPair(pair) {
     }
 }
 
-function setMaxAmount() {
-    if (!userAddress) return connectWallet();
+const setSwapPair = window.setSwapPair || __legacy_setSwapPair;
+try {
+    window.setSwapPair = setSwapPair;
+} catch (_) {}
+
+function __legacy_setMaxAmount() {
+    if (!userAddress) return window.connectWallet();
     let bal;
     if (currentSwapPair === 'FB_FENNEC') {
         bal = isBuying ? userBalances.sFB : userBalances.FENNEC;
@@ -3201,6 +4041,11 @@ function setMaxAmount() {
         calc();
     }
 }
+
+const setMaxAmount = window.setMaxAmount || __legacy_setMaxAmount;
+try {
+    window.setMaxAmount = setMaxAmount;
+} catch (_) {}
 
 function triggerSwapSuccessFx() {
     const btn = document.getElementById('swapBtn');
@@ -3228,14 +4073,14 @@ function openAddLiquidityFromSwap() {
     openAddLiquidityModal(pair);
 }
 
-function closeAddLiquidityModal() {
+function __legacy_closeAddLiquidityModal() {
     const modal = document.getElementById('addLiquidityModal');
     if (modal) modal.classList.add('hidden');
     // Reset to Add tab
     switchLiquidityTab('add');
 }
 
-function switchLiquidityTab(tab) {
+function __legacy_switchLiquidityTab(tab) {
     const addContent = document.getElementById('liqAddContent');
     const removeContent = document.getElementById('liqRemoveContent');
     const addTab = document.getElementById('liqTabAdd');
@@ -3286,10 +4131,10 @@ function switchLiquidityTab(tab) {
     }
 }
 
-async function openAddLiquidityModal(pair) {
+async function __legacy_openAddLiquidityModal(pair) {
     if (!userAddress) {
         try {
-            await connectWallet();
+            await window.connectWallet();
         } catch (_) {}
         if (!userAddress) return;
     }
@@ -3358,6 +4203,42 @@ let liquidityPoolData = {
     poolLp: 0
 };
 
+try {
+    if (typeof window.currentLiquidityPair === 'string' && window.currentLiquidityPair)
+        currentLiquidityPair = window.currentLiquidityPair;
+} catch (_) {}
+try {
+    Object.defineProperty(window, 'currentLiquidityPair', {
+        get: () => currentLiquidityPair,
+        set: v => {
+            currentLiquidityPair = String(v || '');
+        },
+        configurable: true
+    });
+} catch (_) {
+    try {
+        window.currentLiquidityPair = currentLiquidityPair;
+    } catch (_) {}
+}
+
+try {
+    if (window.liquidityPoolData && typeof window.liquidityPoolData === 'object')
+        liquidityPoolData = window.liquidityPoolData;
+} catch (_) {}
+try {
+    Object.defineProperty(window, 'liquidityPoolData', {
+        get: () => liquidityPoolData,
+        set: v => {
+            liquidityPoolData = v;
+        },
+        configurable: true
+    });
+} catch (_) {
+    try {
+        window.liquidityPoolData = liquidityPoolData;
+    } catch (_) {}
+}
+
 function __extractPoolInfoData(json) {
     if (!json) return null;
     if (json.data && json.data.tick0) return json.data;
@@ -3384,7 +4265,7 @@ function __extractPoolLp(data) {
     return 0;
 }
 
-async function loadLiquidityPoolData(pair) {
+async function __legacy_loadLiquidityPoolData(pair) {
     const p = pair === 'BTC_FB' ? 'BTC_FB' : 'FB_FENNEC';
     const queryTick0 = p === 'BTC_FB' ? T_SBTC : T_FENNEC;
     const queryTick1 = T_SFB;
@@ -3430,7 +4311,7 @@ async function loadLiquidityPoolData(pair) {
     }
 }
 
-async function selectLiquidityPair(pair) {
+async function __legacy_selectLiquidityPair(pair) {
     currentLiquidityPair = pair === 'BTC_FB' ? 'BTC_FB' : 'FB_FENNEC';
     const btn0 = document.getElementById('liqPairFBF');
     const btn1 = document.getElementById('liqPairBFB');
@@ -3466,7 +4347,7 @@ async function selectLiquidityPair(pair) {
 let __myLiqCache = null;
 let __myLiqCacheAt = 0;
 
-async function fetchMyLiquiditySummary(force) {
+async function __legacy_fetchMyLiquiditySummary(force) {
     if (!userAddress) return null;
     const now = Date.now();
     if (!force && __myLiqCache && now - __myLiqCacheAt < 15000) return __myLiqCache;
@@ -3573,7 +4454,7 @@ function __prettyRewardLabel(key, tick0, tick1) {
     return t ? `${base} (${t})` : base;
 }
 
-async function refreshMyLiquidityForSelectedPair(force) {
+async function __legacy_refreshMyLiquidityForSelectedPair(force) {
     const box = document.getElementById('liqMyPos');
     const body = document.getElementById('liqMyPosBody');
     const withdrawBox = document.getElementById('liqWithdrawPanel');
@@ -3586,7 +4467,24 @@ async function refreshMyLiquidityForSelectedPair(force) {
         return;
     }
 
-    body.innerHTML = '<div class="text-[10px] text-gray-500 font-mono">Loading...</div>';
+    try {
+        window.__fennecUiCache =
+            window.__fennecUiCache && typeof window.__fennecUiCache === 'object'
+                ? window.__fennecUiCache
+                : { historyHtml: {}, inscriptionsHtml: {}, liquidityHtml: {} };
+    } catch (_) {}
+
+    try {
+        const key = `liq:${String(userAddress || '').trim()}:${String(currentLiquidityPair || '').trim()}`;
+        const cached = window.__fennecUiCache?.liquidityHtml?.[key];
+        if (!force && cached) {
+            body.innerHTML = String(cached);
+        } else {
+            body.innerHTML = '<div class="text-[10px] text-gray-500 font-mono">Loading...</div>';
+        }
+    } catch (_) {
+        body.innerHTML = '<div class="text-[10px] text-gray-500 font-mono">Loading...</div>';
+    }
     box.classList.remove('hidden');
     if (withdrawBox) withdrawBox.classList.add('hidden');
 
@@ -3656,6 +4554,13 @@ async function refreshMyLiquidityForSelectedPair(force) {
                                                                                                                 `;
 
     try {
+        const key = `liq:${String(userAddress || '').trim()}:${String(currentLiquidityPair || '').trim()}`;
+        if (window.__fennecUiCache && window.__fennecUiCache.liquidityHtml) {
+            window.__fennecUiCache.liquidityHtml[key] = String(body.innerHTML || '');
+        }
+    } catch (_) {}
+
+    try {
         const cfg = typeof getLiquidityConfig === 'function' ? getLiquidityConfig() : null;
         window.__liqWithdrawCtx = {
             pair,
@@ -3672,10 +4577,10 @@ async function refreshMyLiquidityForSelectedPair(force) {
     if (withdrawBox) withdrawBox.classList.add('hidden');
 }
 
-async function openRemoveLiquidityModal() {
+async function __legacy_openRemoveLiquidityModal() {
     if (!userAddress) {
         try {
-            await connectWallet();
+            await window.connectWallet();
         } catch (_) {}
         if (!userAddress) return;
     }
@@ -3686,7 +4591,12 @@ async function openRemoveLiquidityModal() {
     switchLiquidityTab('remove');
 }
 
-function setMaxRemoveLp() {
+function __legacy_closeRemoveLiquidityModal() {
+    const modal = document.getElementById('removeLiquidityModal');
+    if (modal) modal.classList.add('hidden');
+}
+
+function __legacy_setMaxRemoveLp() {
     const ctx = window.__liqWithdrawCtx || null;
     const lpAvail = Number(ctx?.lp || 0) || 0;
     const inp = document.getElementById('removeLpAmount');
@@ -3696,7 +4606,7 @@ function setMaxRemoveLp() {
 }
 
 let __removeQuoteTimeout = null;
-async function updateRemoveLiquidityEstimate() {
+async function __legacy_updateRemoveLiquidityEstimate() {
     clearTimeout(__removeQuoteTimeout);
     const inp = document.getElementById('removeLpAmount');
     const recv = document.getElementById('removeReceive');
@@ -3773,8 +4683,8 @@ async function updateRemoveLiquidityEstimate() {
     }, 500);
 }
 
-async function doRemoveLiquidity() {
-    if (!userAddress) return connectWallet();
+async function __legacy_doRemoveLiquidity() {
+    if (!userAddress) return window.connectWallet();
 
     const btn = document.getElementById('removeLiqBtn');
     const originalText = btn ? btn.innerText : '';
@@ -3956,7 +4866,7 @@ async function doRemoveLiquidity() {
     }
 }
 
-function getBalanceForTick(tick) {
+function __legacy_getBalanceForTick(tick) {
     const t = (tick || '').toString().toUpperCase();
     if (t.includes('FENNEC')) return Number(userBalances.FENNEC || 0) || 0;
     if (t.includes('SBTC') || t === 'BTC') return Number(poolReserves.user_sBTC || 0) || 0;
@@ -3964,7 +4874,7 @@ function getBalanceForTick(tick) {
     return 0;
 }
 
-function getLiquidityConfig() {
+function __legacy_getLiquidityConfig() {
     const p = currentLiquidityPair === 'BTC_FB' ? 'BTC_FB' : 'FB_FENNEC';
     const uiTick0 = p === 'BTC_FB' ? T_SBTC : T_FENNEC;
     const uiTick1 = T_SFB;
@@ -4002,7 +4912,7 @@ function getLiquidityConfig() {
     };
 }
 
-function updateLiquidityBalancesUI() {
+function __legacy_updateLiquidityBalancesUI() {
     const cfg = getLiquidityConfig();
     const b0 = document.getElementById('liqBal0');
     const b1 = document.getElementById('liqBal1');
@@ -4021,7 +4931,7 @@ function __toFixedTrim(num, maxDecimals) {
         .replace(/\.$/, '');
 }
 
-function __normalizeAmountStr(value, maxDecimals) {
+function __legacy__normalizeAmountStr(value, maxDecimals) {
     if (value === null || value === undefined) return '';
     const s = String(value).trim();
     if (!s) return '';
@@ -4041,7 +4951,7 @@ function __normalizeAmountStr(value, maxDecimals) {
     return __toFixedTrim(n, maxDecimals);
 }
 
-function computeExpectedLp(amount0, amount1, reserve0, reserve1, poolLp) {
+function __legacy_computeExpectedLp(amount0, amount1, reserve0, reserve1, poolLp) {
     const a0 = Number(amount0 || 0);
     const a1 = Number(amount1 || 0);
     const r0 = Number(reserve0 || 0);
@@ -4061,7 +4971,7 @@ function computeExpectedLp(amount0, amount1, reserve0, reserve1, poolLp) {
     return Math.max(0, Math.sqrt(a0 * a1));
 }
 
-function syncLiquidityAmounts(changedIndex) {
+function __legacy_syncLiquidityAmounts(changedIndex) {
     if (__liqSyncGuard) return;
     __liqSyncGuard = true;
     try {
@@ -4112,8 +5022,8 @@ function syncLiquidityAmounts(changedIndex) {
     }
 }
 
-function setMaxLiqAmount(which) {
-    if (!userAddress) return connectWallet();
+function __legacy_setMaxLiqAmount(which) {
+    if (!userAddress) return window.connectWallet();
     updateLiquidityBalancesUI();
     const cfg = getLiquidityConfig();
     const el0 = document.getElementById('liqAmount0');
@@ -4134,7 +5044,7 @@ function setMaxLiqAmount(which) {
     syncLiquidityAmounts(1);
 }
 
-async function copyLiquidityPairForSearch() {
+async function __legacy_copyLiquidityPairForSearch() {
     const cfg = getLiquidityConfig();
     try {
         if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
@@ -4143,8 +5053,8 @@ async function copyLiquidityPairForSearch() {
     } catch (e) {}
 }
 
-async function doAddLiquidity() {
-    if (!userAddress) return connectWallet();
+async function __legacy_doAddLiquidity() {
+    if (!userAddress) return window.connectWallet();
     try {
         await checkFractalNetwork();
     } catch (e) {
@@ -4311,6 +5221,112 @@ async function doAddLiquidity() {
         btn.innerText = originalText;
     }
 }
+
+var closeAddLiquidityModal = window.closeAddLiquidityModal || __legacy_closeAddLiquidityModal;
+try {
+    window.closeAddLiquidityModal = closeAddLiquidityModal;
+} catch (_) {}
+
+var switchLiquidityTab = window.switchLiquidityTab || __legacy_switchLiquidityTab;
+try {
+    window.switchLiquidityTab = switchLiquidityTab;
+} catch (_) {}
+
+var openAddLiquidityModal = window.openAddLiquidityModal || __legacy_openAddLiquidityModal;
+try {
+    window.openAddLiquidityModal = openAddLiquidityModal;
+} catch (_) {}
+
+var loadLiquidityPoolData = window.loadLiquidityPoolData || __legacy_loadLiquidityPoolData;
+try {
+    window.loadLiquidityPoolData = loadLiquidityPoolData;
+} catch (_) {}
+
+var selectLiquidityPair = window.selectLiquidityPair || __legacy_selectLiquidityPair;
+try {
+    window.selectLiquidityPair = selectLiquidityPair;
+} catch (_) {}
+
+var fetchMyLiquiditySummary = window.fetchMyLiquiditySummary || __legacy_fetchMyLiquiditySummary;
+try {
+    window.fetchMyLiquiditySummary = fetchMyLiquiditySummary;
+} catch (_) {}
+
+var refreshMyLiquidityForSelectedPair =
+    window.refreshMyLiquidityForSelectedPair || __legacy_refreshMyLiquidityForSelectedPair;
+try {
+    window.refreshMyLiquidityForSelectedPair = refreshMyLiquidityForSelectedPair;
+} catch (_) {}
+
+const openRemoveLiquidityModal = window.openRemoveLiquidityModal || __legacy_openRemoveLiquidityModal;
+try {
+    window.openRemoveLiquidityModal = openRemoveLiquidityModal;
+} catch (_) {}
+
+const closeRemoveLiquidityModal = window.closeRemoveLiquidityModal || __legacy_closeRemoveLiquidityModal;
+try {
+    window.closeRemoveLiquidityModal = closeRemoveLiquidityModal;
+} catch (_) {}
+
+const setMaxRemoveLp = window.setMaxRemoveLp || __legacy_setMaxRemoveLp;
+try {
+    window.setMaxRemoveLp = setMaxRemoveLp;
+} catch (_) {}
+
+var updateRemoveLiquidityEstimate = window.updateRemoveLiquidityEstimate || __legacy_updateRemoveLiquidityEstimate;
+try {
+    window.updateRemoveLiquidityEstimate = updateRemoveLiquidityEstimate;
+} catch (_) {}
+
+const doRemoveLiquidity = window.doRemoveLiquidity || __legacy_doRemoveLiquidity;
+try {
+    window.doRemoveLiquidity = doRemoveLiquidity;
+} catch (_) {}
+
+var getBalanceForTick = window.getBalanceForTick || __legacy_getBalanceForTick;
+try {
+    window.getBalanceForTick = getBalanceForTick;
+} catch (_) {}
+
+var getLiquidityConfig = window.getLiquidityConfig || __legacy_getLiquidityConfig;
+try {
+    window.getLiquidityConfig = getLiquidityConfig;
+} catch (_) {}
+
+var updateLiquidityBalancesUI = window.updateLiquidityBalancesUI || __legacy_updateLiquidityBalancesUI;
+try {
+    window.updateLiquidityBalancesUI = updateLiquidityBalancesUI;
+} catch (_) {}
+
+var __normalizeAmountStr = window.__normalizeAmountStr || __legacy__normalizeAmountStr;
+try {
+    window.__normalizeAmountStr = __normalizeAmountStr;
+} catch (_) {}
+
+var computeExpectedLp = window.computeExpectedLp || __legacy_computeExpectedLp;
+try {
+    window.computeExpectedLp = computeExpectedLp;
+} catch (_) {}
+
+var syncLiquidityAmounts = window.syncLiquidityAmounts || __legacy_syncLiquidityAmounts;
+try {
+    window.syncLiquidityAmounts = syncLiquidityAmounts;
+} catch (_) {}
+
+const setMaxLiqAmount = window.setMaxLiqAmount || __legacy_setMaxLiqAmount;
+try {
+    window.setMaxLiqAmount = setMaxLiqAmount;
+} catch (_) {}
+
+const copyLiquidityPairForSearch = window.copyLiquidityPairForSearch || __legacy_copyLiquidityPairForSearch;
+try {
+    window.copyLiquidityPairForSearch = copyLiquidityPairForSearch;
+} catch (_) {}
+
+const doAddLiquidity = window.doAddLiquidity || __legacy_doAddLiquidity;
+try {
+    window.doAddLiquidity = doAddLiquidity;
+} catch (_) {}
 function updateUI() {
     // Update UI based on current swap pair
     let inTick, outTick, inIcon, outIcon, bal;
@@ -4358,112 +5374,117 @@ function updateUI() {
     updateWithdrawUI();
 }
 
-// connectWallet is already defined at the top of the script
+// window.connectWallet is already defined at the top of the script
 
 async function fetchReserves() {
-    try {
-        // Проверяем кэш
-        const now = Date.now();
-        if (poolCache.data && now - poolCache.timestamp < poolCache.ttl) {
-            console.log('Using cached pool data');
-            return poolCache.data;
-        }
-
-        // Fetch pool info based on current swap pair
-        let queryParams = '';
-        if (currentSwapPair === 'BTC_FB') {
-            // Пробуем прямой порядок
-            queryParams = `tick0=${T_SBTC}&tick1=${T_SFB}`;
-        } else {
-            queryParams = `tick0=${T_FENNEC}&tick1=${T_SFB}`;
-        }
-
-        let poolUrl = `${BACKEND_URL}?action=quote&${queryParams}`;
-
-        const json = await safeFetchJson(poolUrl, { timeoutMs: 12000, retries: 2 });
-        if (!json) throw new Error('Failed to fetch pool data');
-        console.log(`Pool response for ${currentSwapPair}:`, json);
-
-        let data = null;
-        // Логика извлечения данных
-        if (json.data) {
-            if (json.data.tick0)
-                data = json.data; // Одиночный объект
-            else if (Array.isArray(json.data.list) && json.data.list.length > 0) data = json.data.list[0];
-        } else if (json.pool) {
-            data = json.pool;
-        }
-
-        // Если данных нет, и это пара BTC_FB, пробуем поменять тикеры местами
-        if (!data && currentSwapPair === 'BTC_FB') {
-            console.log('Retrying pool fetch with swapped tickers...');
-            queryParams = `tick0=${T_SFB}&tick1=${T_SBTC}`;
-            poolUrl = `${BACKEND_URL}?action=quote&${queryParams}&t=${now}`;
-            const retryJson = await safeFetchJson(poolUrl, { timeoutMs: 12000, retries: 1 });
-            if (retryJson.data && retryJson.data.tick0) {
-                data = retryJson.data;
-            } else if (retryJson.pool) {
-                data = retryJson.pool;
+    const __pairKey = String(currentSwapPair || '').trim() || 'default';
+    return await __fennecDedupe(`fetchReserves:${__pairKey}`, async () => {
+        try {
+            // Проверяем кэш
+            const now = Date.now();
+            if (poolCache.data && now - poolCache.timestamp < poolCache.ttl) {
+                console.log('Using cached pool data');
+                return poolCache.data;
             }
-        }
 
-        if (data) {
-            // Сохраняем активные тикеры, как они вернулись из API
-            activeTickers.tick0 = data.tick0;
-            activeTickers.tick1 = data.tick1;
-
-            console.log(
-                `Pool data: tick0=${data.tick0}, tick1=${data.tick1}, amount0=${data.amount0}, amount1=${data.amount1}`
-            );
-
-            // Парсим резервы
-            if (currentSwapPair === 'FB_FENNEC') {
-                if (data.tick0.includes('FENNEC')) {
-                    poolReserves.FENNEC = parseFloat(data.amount0);
-                    poolReserves.sFB = parseFloat(data.amount1);
-                } else {
-                    poolReserves.sFB = parseFloat(data.amount0);
-                    poolReserves.FENNEC = parseFloat(data.amount1);
-                }
+            // Fetch pool info based on current swap pair
+            let queryParams = '';
+            if (currentSwapPair === 'BTC_FB') {
+                // Пробуем прямой порядок
+                queryParams = `tick0=${T_SBTC}&tick1=${T_SFB}`;
             } else {
-                // sBTC - FB pair
-                // Проверяем точное совпадение или частичное
-                const isTick0BTC = data.tick0 === T_SBTC || data.tick0.includes('sBTC');
+                queryParams = `tick0=${T_FENNEC}&tick1=${T_SFB}`;
+            }
 
-                if (isTick0BTC) {
-                    poolReserves.BTC = parseFloat(data.amount0);
-                    poolReserves.sFB = parseFloat(data.amount1);
-                } else {
-                    poolReserves.sFB = parseFloat(data.amount0);
-                    poolReserves.BTC = parseFloat(data.amount1);
+            let poolUrl = `${BACKEND_URL}?action=quote&${queryParams}`;
+
+            const json = await safeFetchJson(poolUrl, { timeoutMs: 12000, retries: 2 });
+            if (!json) throw new Error('Failed to fetch pool data');
+            console.log(`Pool response for ${currentSwapPair}:`, json);
+
+            let data = null;
+            // Логика извлечения данных
+            if (json.data) {
+                if (json.data.tick0)
+                    data = json.data; // Одиночный объект
+                else if (Array.isArray(json.data.list) && json.data.list.length > 0) data = json.data.list[0];
+            } else if (json.pool) {
+                data = json.pool;
+            }
+
+            // Если данных нет, и это пара BTC_FB, пробуем поменять тикеры местами
+            if (!data && currentSwapPair === 'BTC_FB') {
+                console.log('Retrying pool fetch with swapped tickers...');
+                queryParams = `tick0=${T_SFB}&tick1=${T_SBTC}`;
+                poolUrl = `${BACKEND_URL}?action=quote&${queryParams}&t=${now}`;
+                const retryJson = await safeFetchJson(poolUrl, { timeoutMs: 12000, retries: 1 });
+                if (retryJson.data && retryJson.data.tick0) {
+                    data = retryJson.data;
+                } else if (retryJson.pool) {
+                    data = retryJson.pool;
                 }
             }
 
-            console.log(
-                `Pool reserves: BTC=${poolReserves.BTC}, sFB=${poolReserves.sFB}, FENNEC=${poolReserves.FENNEC}`
-            );
+            if (data) {
+                // Сохраняем активные тикеры, как они вернулись из API
+                activeTickers.tick0 = data.tick0;
+                activeTickers.tick1 = data.tick1;
 
-            const statusEl = document.getElementById('statusVal');
-            if (statusEl) statusEl.innerText = 'Active';
-            // Кэшируем данные
-            poolCache.data = data;
-            poolCache.timestamp = now;
-            // Если есть введенное значение, пересчитываем
-            if (document.getElementById('swapIn').value) calc();
-        } else {
-            console.warn('Pool data not found for query:', queryParams);
-            const statusEl2 = document.getElementById('statusVal');
-            if (statusEl2) statusEl2.innerText = 'Empty';
+                console.log(
+                    `Pool data: tick0=${data.tick0}, tick1=${data.tick1}, amount0=${data.amount0}, amount1=${data.amount1}`
+                );
+
+                // Парсим резервы
+                if (currentSwapPair === 'FB_FENNEC') {
+                    if (data.tick0.includes('FENNEC')) {
+                        poolReserves.FENNEC = parseFloat(data.amount0);
+                        poolReserves.sFB = parseFloat(data.amount1);
+                    } else {
+                        poolReserves.sFB = parseFloat(data.amount0);
+                        poolReserves.FENNEC = parseFloat(data.amount1);
+                    }
+                } else {
+                    // sBTC - FB pair
+                    // Проверяем точное совпадение или частичное
+                    const isTick0BTC = data.tick0 === T_SBTC || data.tick0.includes('sBTC');
+
+                    if (isTick0BTC) {
+                        poolReserves.BTC = parseFloat(data.amount0);
+                        poolReserves.sFB = parseFloat(data.amount1);
+                    } else {
+                        poolReserves.sFB = parseFloat(data.amount0);
+                        poolReserves.BTC = parseFloat(data.amount1);
+                    }
+                }
+
+                console.log(
+                    `Pool reserves: BTC=${poolReserves.BTC}, sFB=${poolReserves.sFB}, FENNEC=${poolReserves.FENNEC}`
+                );
+
+                const statusEl = document.getElementById('statusVal');
+                if (statusEl) statusEl.innerText = 'Active';
+                // Кэшируем данные
+                poolCache.data = data;
+                poolCache.timestamp = now;
+                // Если есть введенное значение, пересчитываем
+                const swapInEl = document.getElementById('swapIn');
+                if (swapInEl && swapInEl.value) calc();
+            } else {
+                console.warn('Pool data not found for query:', queryParams);
+                const statusEl2 = document.getElementById('statusVal');
+                if (statusEl2) statusEl2.innerText = 'Empty';
+            }
+        } catch (e) {
+            console.warn('Pool fetch error', e);
+            const statusEl3 = document.getElementById('statusVal');
+            if (statusEl3) statusEl3.innerText = 'Offline';
         }
-    } catch (e) {
-        console.warn('Pool fetch error', e);
-        const statusEl3 = document.getElementById('statusVal');
-        if (statusEl3) statusEl3.innerText = 'Offline';
-    }
+    });
 }
 async function checkBalance(force = false) {
     if (!userAddress) return;
-    try {
+    const __addrKey = String(userAddress || '').trim();
+    return await __fennecDedupe(`checkBalance:${__addrKey}:${force ? 1 : 0}`, async () => {
         const now = Date.now();
         try {
             if (!force && balanceCache && balanceCache.data && now - balanceCache.timestamp < balanceCache.ttl) {
@@ -4488,21 +5509,29 @@ async function checkBalance(force = false) {
                             poolReserves.user_sBTC = Number(cached.poolReserves.user_sBTC || 0) || 0;
                         }
                     } catch (_) {}
+
                     updatePnL();
                     updateUI();
-                    if (typeof updateLiquidityBalancesUI === 'function') {
-                        updateLiquidityBalancesUI();
-                    }
-                    const liqModal = document.getElementById('addLiquidityModal');
-                    if (liqModal && !liqModal.classList.contains('hidden')) {
-                        if (typeof loadLiquidityPoolData === 'function') {
-                            loadLiquidityPoolData(currentLiquidityPair);
+                    try {
+                        if (typeof updateLiquidityBalancesUI === 'function') updateLiquidityBalancesUI();
+                    } catch (_) {}
+
+                    try {
+                        const liqModal = document.getElementById('addLiquidityModal');
+                        if (liqModal && !liqModal.classList.contains('hidden')) {
+                            if (typeof loadLiquidityPoolData === 'function') {
+                                loadLiquidityPoolData(currentLiquidityPair);
+                            }
                         }
-                    }
+                    } catch (_) {}
+
                     return;
                 }
             }
-        } catch (_) {}
+        } catch (e) {
+            console.warn('Balance check failed', e);
+            return;
+        }
 
         // ОПТИМИЗАЦИЯ: Используем batch endpoint для получения всех балансов за один запрос
         const ticks = [T_SFB, T_FENNEC, T_SBTC].join(',');
@@ -4539,6 +5568,27 @@ async function checkBalance(force = false) {
         } catch (e) {
             console.warn('Failed to refresh FB wallet balance (checkBalance):', e);
             walletBalances.sFB = 0;
+        }
+
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => {
+                try {
+                    controller.abort();
+                } catch (_) {}
+            }, 6000);
+            const btcBalanceRes = await fetch(`${BACKEND_URL}?action=btc_balance&address=${userAddress}`, {
+                signal: controller.signal,
+                headers: { Accept: 'application/json' }
+            })
+                .then(r => (r.ok ? r.json().catch(() => null) : null))
+                .catch(() => null);
+            clearTimeout(timeoutId);
+            const b = Number(btcBalanceRes?.data?.balance || 0) || 0;
+            walletBalances.BTC = b;
+        } catch (e) {
+            console.warn('Failed to refresh BTC wallet balance (checkBalance):', e);
+            walletBalances.BTC = Number(walletBalances.BTC || 0) || 0;
         }
 
         // 2. Native FB Balance (Wallet) - уже загружен выше
@@ -4594,9 +5644,7 @@ async function checkBalance(force = false) {
             };
             balanceCache.timestamp = now;
         } catch (_) {}
-    } catch (e) {
-        console.warn('Balance check failed', e);
-    }
+    });
 }
 
 // ===== PERSONAL PNL (MY STASH) =====
@@ -4698,53 +5746,99 @@ function stopDiggingAnimation() {
 let lastWhaleTx = '';
 
 // ИСПРАВЛЕНИЕ: Кэш для swap_history чтобы не делать дублирующиеся запросы
-let swapHistoryCache = {
+const swapHistoryCache = {
     data: null,
     timestamp: 0,
-    ttl: 30000 // 30 секунд кэш
+    ttl: 45000 // 45 секунд кэш
 };
 
 // ИСПРАВЛЕНИЕ: Единая функция загрузки swap_history для всех вкладок
 async function loadSwapHistory(useCache = true) {
     const now = Date.now();
+    const __lsKey = 'fennec_swap_history_cache_v2';
+    const __readLs = () => {
+        try {
+            const raw = localStorage.getItem(__lsKey);
+            if (!raw) return null;
+            const parsed = JSON.parse(raw);
+            if (!parsed || typeof parsed !== 'object') return null;
+            const ts = Number(parsed.ts || 0) || 0;
+            if (!ts || now - ts > swapHistoryCache.ttl) return null;
+            const data = parsed.data;
+            if (!data || typeof data !== 'object') return null;
+            return data;
+        } catch (_) {
+            return null;
+        }
+    };
 
-    // Используем кэш если он свежий
-    if (useCache && swapHistoryCache.data && now - swapHistoryCache.timestamp < swapHistoryCache.ttl) {
-        console.log('Using cached swap history');
-        return swapHistoryCache.data;
-    }
+    return await __fennecDedupe(`loadSwapHistory:${useCache ? 1 : 0}`, async () => {
+        // 1) memory cache
+        if (useCache && swapHistoryCache.data && now - swapHistoryCache.timestamp < swapHistoryCache.ttl) {
+            return swapHistoryCache.data;
+        }
 
-    try {
-        console.log('Loading swap history (all pairs)...');
-        // ИСПРАВЛЕНИЕ: Загружаем обе пары одним запросом (параллельно)
-        const [sResFB_FENNEC, sResBTC_FB] = await Promise.all([
-            safeFetchJson(`${BACKEND_URL}?action=swap_history&start=0&limit=10&tick=sFB___000/FENNEC`, {
-                timeoutMs: 12000,
-                retries: 2
-            }).then(r => r || { code: -1 }),
-            safeFetchJson(`${BACKEND_URL}?action=swap_history&start=0&limit=10&tick=sBTC___000/sFB___000`, {
-                timeoutMs: 12000,
-                retries: 2
-            }).then(r => r || { code: -1 })
-        ]);
+        // 2) localStorage cache (warm-start)
+        if (useCache) {
+            const cached = __readLs();
+            if (cached) {
+                swapHistoryCache.data = cached;
+                swapHistoryCache.timestamp = now;
+                return cached;
+            }
+        }
 
-        const result = {
-            fbFennec: sResFB_FENNEC,
-            btcFb: sResBTC_FB,
-            timestamp: now
-        };
+        try {
+            const limit = 50;
+            const [sResFB_FENNEC, sResBTC_FB] = await Promise.all([
+                safeFetchJson(`${BACKEND_URL}?action=swap_history&start=0&limit=${limit}&tick=sFB___000/FENNEC`, {
+                    timeoutMs: 12000,
+                    retries: 2
+                }).then(r => r || { code: -1 }),
+                safeFetchJson(`${BACKEND_URL}?action=swap_history&start=0&limit=${limit}&tick=sBTC___000/sFB___000`, {
+                    timeoutMs: 12000,
+                    retries: 2
+                }).then(r => r || { code: -1 })
+            ]);
 
-        // Сохраняем в кэш
-        swapHistoryCache.data = result;
-        swapHistoryCache.timestamp = now;
+            const result = {
+                fbFennec: sResFB_FENNEC,
+                btcFb: sResBTC_FB,
+                timestamp: now
+            };
 
-        console.log('Swap history loaded and cached');
-        return result;
-    } catch (e) {
-        console.warn('Swap history load error', e);
-        return swapHistoryCache.data || { fbFennec: { code: -1 }, btcFb: { code: -1 } };
-    }
+            swapHistoryCache.data = result;
+            swapHistoryCache.timestamp = now;
+
+            try {
+                localStorage.setItem(__lsKey, JSON.stringify({ ts: now, data: result }));
+            } catch (_) {}
+
+            return result;
+        } catch (e) {
+            return swapHistoryCache.data || { fbFennec: { code: -1 }, btcFb: { code: -1 } };
+        }
+    });
 }
+
+try {
+    window.fetchReserves = fetchReserves;
+} catch (_) {}
+try {
+    window.checkBalance = checkBalance;
+} catch (_) {}
+try {
+    window.refreshTransactionHistory = refreshTransactionHistory;
+} catch (_) {}
+try {
+    window.loadSwapHistory = loadSwapHistory;
+} catch (_) {}
+try {
+    window.checkWhales = checkWhales;
+} catch (_) {}
+try {
+    window.updateUI = updateUI;
+} catch (_) {}
 
 async function checkWhales() {
     try {
@@ -4851,7 +5945,7 @@ async function calc() {
         // ВАЖНО: address обязателен для quote_swap, если нет - используем пустую строку или подключаем кошелек
         if (!userAddress) {
             console.warn('No address for quote_swap, connecting wallet...');
-            connectWallet();
+            window.connectWallet();
             // Используем fallback расчет если адрес недоступен
             throw new Error('Address required');
         }
@@ -4967,7 +6061,7 @@ async function calcReverse() {
         // ВАЖНО: address обязателен для quote_swap
         if (!userAddress) {
             console.warn('No address for quote_swap, connecting wallet...');
-            connectWallet();
+            window.connectWallet();
             throw new Error('Address required');
         }
         const quoteUrl = `${BACKEND_URL}${separator}action=quote_swap&exactType=exactOut&tickIn=${tickIn}&tickOut=${tickOut}&amount=${desiredOut}&address=${userAddress}`;
@@ -5053,7 +6147,7 @@ async function calcReverse() {
 }
 
 async function doSwap() {
-    if (!userAddress) return connectWallet();
+    if (!userAddress) return window.connectWallet();
 
     // CHECK NETWORK FIRST
     try {
@@ -5210,8 +6304,8 @@ async function doSwap() {
 
         const signatures = [];
         showNotification(`✍️ Signing ${preSwap.signMsgs.length} message(s)...`, 'info', 2000);
-        for (let msg of preSwap.signMsgs) {
-            let m = typeof msg === 'object' ? msg.text || msg.id : msg;
+        for (const msg of preSwap.signMsgs) {
+            const m = typeof msg === 'object' ? msg.text || msg.id : msg;
             await new Promise(r => setTimeout(r, 500));
             const sig = await window.unisat.signMessage(m, 'bip322-simple');
             signatures.push(sig);
@@ -5250,9 +6344,26 @@ async function doSwap() {
         if (sub.code === 0) {
             triggerSwapSuccessFx();
             if (typeof showNotification === 'function') showNotification('Swap successful', 'swap', 3200);
-            document.getElementById('successTxId').innerText = sub.data || sub.txid || 'Swap success!';
+            const swapTxid = __pickTxid(sub?.data) || __pickTxid(sub);
+            document.getElementById('successTxId').innerText = swapTxid || sub.data || sub.txid || 'Swap success!';
             document.getElementById('successModal').classList.remove('hidden');
             setTimeout(checkBalance, 2000);
+            try {
+                if (typeof addPendingOperation === 'function') {
+                    addPendingOperation({
+                        type: 'swap',
+                        status: 'pending',
+                        txid: swapTxid,
+                        address: userAddress,
+                        tickIn,
+                        tickOut,
+                        amountIn: amount,
+                        amountOut: expectedOut,
+                        chain: 'FRACTAL',
+                        timestamp: Date.now()
+                    });
+                }
+            } catch (_) {}
         } else throw new Error(sub.msg || 'Submission failed');
     } catch (e) {
         console.error('Swap error:', e);
@@ -5343,7 +6454,7 @@ async function setDepositToken(tok, opts) {
                 console.warn('Failed to refresh BTC balance:', e);
                 walletBalances.BTC = 0;
                 if (balanceDisplayEl) {
-                    balanceDisplayEl.innerText = `Balance: 0.00000000 BTC`;
+                    balanceDisplayEl.innerText = 'Balance: 0.00000000 BTC';
                 }
             }
         } else {
@@ -5371,7 +6482,7 @@ async function setDepositToken(tok, opts) {
                 console.warn('Failed to refresh FB balance:', e);
                 walletBalances.sFB = 0;
                 if (balanceDisplayEl) {
-                    balanceDisplayEl.innerText = `Balance: 0.00000000 FB`;
+                    balanceDisplayEl.innerText = 'Balance: 0.00000000 FB';
                 }
             }
         }
@@ -5409,11 +6520,14 @@ function setDepositFee(speed) {
         }
         // Highlight custom button, reset others
         if (customEl)
-            customEl.className = `flex-1 py-2 text-xs font-bold border transition cursor-pointer border-fennec bg-fennec/10 text-fennec`;
+            customEl.className =
+                'flex-1 py-2 text-xs font-bold border transition cursor-pointer border-fennec bg-fennec/10 text-fennec';
         if (mediumEl)
-            mediumEl.className = `flex-1 py-2 text-xs font-bold border transition cursor-pointer border-white/10 text-gray-500 hover:text-white`;
+            mediumEl.className =
+                'flex-1 py-2 text-xs font-bold border transition cursor-pointer border-white/10 text-gray-500 hover:text-white';
         if (fastEl)
-            fastEl.className = `flex-1 py-2 text-xs font-bold border transition cursor-pointer border-white/10 text-gray-500 hover:text-white`;
+            fastEl.className =
+                'flex-1 py-2 text-xs font-bold border transition cursor-pointer border-white/10 text-gray-500 hover:text-white';
         return;
     }
 
@@ -5424,7 +6538,8 @@ function setDepositFee(speed) {
     if (fastEl)
         fastEl.className = `flex-1 py-2 text-xs font-bold border transition cursor-pointer ${speed === 'fast' ? 'border-fennec bg-fennec/10 text-fennec' : 'border-white/10 text-gray-500 hover:text-white'}`;
     if (customEl)
-        customEl.className = `flex-1 py-2 text-xs font-bold border transition cursor-pointer border-white/10 text-gray-500 hover:text-white`;
+        customEl.className =
+            'flex-1 py-2 text-xs font-bold border transition cursor-pointer border-white/10 text-gray-500 hover:text-white';
     if (customInput) customInput.style.display = 'none';
 }
 
@@ -5436,11 +6551,14 @@ function setDepositFeeCustom(value) {
         const mediumEl = document.getElementById('dep-fee-medium');
         const fastEl = document.getElementById('dep-fee-fast');
         if (customEl)
-            customEl.className = `flex-1 py-2 text-xs font-bold border transition cursor-pointer border-fennec bg-fennec/10 text-fennec`;
+            customEl.className =
+                'flex-1 py-2 text-xs font-bold border transition cursor-pointer border-fennec bg-fennec/10 text-fennec';
         if (mediumEl)
-            mediumEl.className = `flex-1 py-2 text-xs font-bold border transition cursor-pointer border-white/10 text-gray-500 hover:text-white`;
+            mediumEl.className =
+                'flex-1 py-2 text-xs font-bold border transition cursor-pointer border-white/10 text-gray-500 hover:text-white';
         if (fastEl)
-            fastEl.className = `flex-1 py-2 text-xs font-bold border transition cursor-pointer border-white/10 text-gray-500 hover:text-white`;
+            fastEl.className =
+                'flex-1 py-2 text-xs font-bold border transition cursor-pointer border-white/10 text-gray-500 hover:text-white';
     }
 }
 
@@ -5458,11 +6576,14 @@ function setWithdrawFee(speed) {
         }
         // Highlight custom button, reset others
         if (customEl)
-            customEl.className = `flex-1 py-2 text-xs font-bold border transition cursor-pointer border-fennec bg-fennec/10 text-fennec`;
+            customEl.className =
+                'flex-1 py-2 text-xs font-bold border transition cursor-pointer border-fennec bg-fennec/10 text-fennec';
         if (mediumEl)
-            mediumEl.className = `flex-1 py-2 text-xs font-bold border transition cursor-pointer border-white/10 text-gray-500 hover:text-white`;
+            mediumEl.className =
+                'flex-1 py-2 text-xs font-bold border transition cursor-pointer border-white/10 text-gray-500 hover:text-white';
         if (fastEl)
-            fastEl.className = `flex-1 py-2 text-xs font-bold border transition cursor-pointer border-white/10 text-gray-500 hover:text-white`;
+            fastEl.className =
+                'flex-1 py-2 text-xs font-bold border transition cursor-pointer border-white/10 text-gray-500 hover:text-white';
         return;
     }
 
@@ -5473,7 +6594,8 @@ function setWithdrawFee(speed) {
     if (fastEl)
         fastEl.className = `flex-1 py-2 text-xs font-bold border transition cursor-pointer ${speed === 'fast' ? 'border-fennec bg-fennec/10 text-fennec' : 'border-white/10 text-gray-500 hover:text-white'}`;
     if (customEl)
-        customEl.className = `flex-1 py-2 text-xs font-bold border transition cursor-pointer border-white/10 text-gray-500 hover:text-white`;
+        customEl.className =
+            'flex-1 py-2 text-xs font-bold border transition cursor-pointer border-white/10 text-gray-500 hover:text-white';
     if (customInput) customInput.style.display = 'none';
 }
 
@@ -5485,11 +6607,14 @@ function setWithdrawFeeCustom(value) {
         const mediumEl = document.getElementById('wd-fee-medium');
         const fastEl = document.getElementById('wd-fee-fast');
         if (customEl)
-            customEl.className = `flex-1 py-2 text-xs font-bold border transition cursor-pointer border-fennec bg-fennec/10 text-fennec`;
+            customEl.className =
+                'flex-1 py-2 text-xs font-bold border transition cursor-pointer border-fennec bg-fennec/10 text-fennec';
         if (mediumEl)
-            mediumEl.className = `flex-1 py-2 text-xs font-bold border transition cursor-pointer border-white/10 text-gray-500 hover:text-white`;
+            mediumEl.className =
+                'flex-1 py-2 text-xs font-bold border transition cursor-pointer border-white/10 text-gray-500 hover:text-white';
         if (fastEl)
-            fastEl.className = `flex-1 py-2 text-xs font-bold border transition cursor-pointer border-white/10 text-gray-500 hover:text-white`;
+            fastEl.className =
+                'flex-1 py-2 text-xs font-bold border transition cursor-pointer border-white/10 text-gray-500 hover:text-white';
     }
 }
 
@@ -5552,7 +6677,7 @@ window.loadFees = loadFees;
 async function doDeposit() {
     // Route to correct function based on token
     if (depositToken === 'FENNEC') {
-        return doDepositFennec();
+        return window.doDepositFennec();
     }
 
     if (depositToken === 'BTC') {
@@ -5560,7 +6685,7 @@ async function doDeposit() {
     }
 
     // FB deposit (native)
-    if (!userAddress) return connectWallet();
+    if (!userAddress) return window.connectWallet();
 
     // CHECK NETWORK FIRST
     try {
@@ -5614,7 +6739,8 @@ async function doDeposit() {
 
         console.log('Confirm response:', conf);
         if (conf.code === 0) {
-            const txid = conf.data?.txid || conf.data || 'Deposit sent!';
+            const txid =
+                __pickTxid(conf?.data) || __pickTxid(conf) || (typeof conf?.data === 'string' ? conf.data : '');
 
             // Auto-swap BTC to FB after deposit (only for BTC deposits)
             if (depositToken === 'BTC') {
@@ -5639,6 +6765,20 @@ async function doDeposit() {
             }
 
             trackDepositProgress(txid, depositToken);
+            try {
+                if (typeof addPendingOperation === 'function') {
+                    addPendingOperation({
+                        type: 'deposit',
+                        status: 'pending',
+                        txid: __looksLikeTxid(txid) ? txid : '',
+                        address: userAddress,
+                        tick: 'FB',
+                        amount: amount,
+                        chain: 'FRACTAL',
+                        timestamp: Date.now()
+                    });
+                }
+            } catch (_) {}
         } else throw new Error(conf.msg || 'Deposit confirmation failed');
     } catch (e) {
         console.error('Deposit error:', e);
@@ -5651,7 +6791,7 @@ async function doDeposit() {
 }
 
 async function doDepositBTC() {
-    if (!userAddress) return connectWallet();
+    if (!userAddress) return window.connectWallet();
 
     // For BTC deposit from Bitcoin Mainnet, we need to switch to Bitcoin Mainnet first
     // Then use Simple Bridge to deposit to Fractal Bitcoin
@@ -5715,7 +6855,7 @@ async function doDepositBTC() {
 
         console.log('Confirm response:', conf);
         if (conf.code === 0) {
-            const txid = conf.data?.txid || conf.data || 'Deposit sent!';
+            const txid = __pickTxid(conf?.data) || __pickTxid(conf) || conf.data || 'Deposit sent!';
 
             // Switch back to Fractal Bitcoin
             try {
@@ -5725,6 +6865,20 @@ async function doDepositBTC() {
             }
 
             trackDepositProgress(txid, depositToken);
+            try {
+                if (typeof addPendingOperation === 'function') {
+                    addPendingOperation({
+                        type: 'deposit',
+                        status: 'pending',
+                        txid: __looksLikeTxid(txid) ? txid : '',
+                        address: userAddress,
+                        tick: 'BTC',
+                        amount: amount,
+                        chain: 'BITCOIN',
+                        timestamp: Date.now()
+                    });
+                }
+            } catch (_) {}
         } else throw new Error(conf.msg || 'Deposit confirmation failed');
     } catch (e) {
         console.error('BTC Deposit error:', e);
@@ -5744,7 +6898,7 @@ async function doDepositBTC() {
 }
 
 async function doDepositOLD() {
-    if (!userAddress) return connectWallet();
+    if (!userAddress) return window.connectWallet();
     const amount = parseFloat(document.getElementById('depAmount').value);
     if (!amount) return alert('Enter amount');
     const btn = document.getElementById('btnDeposit');
@@ -5779,7 +6933,7 @@ async function doDepositOLD() {
         btn.innerText = 'SIGN IN WALLET...';
 
         // Подписываем PSBT с правильными параметрами
-        let signOptions = {};
+        const signOptions = {};
 
         // Если API вернул параметры подписи - используем их
         if (res.data.toSignInputs) {
@@ -5875,11 +7029,29 @@ async function doDepositOLD() {
     }
 }
 // LOAD FENNEC INSCRIPTIONS (InSwap style - cards with checkboxes)
-async function loadFennecInscriptions() {
-    if (!userAddress) return connectWallet();
+async function loadFennecInscriptions(force = false) {
+    if (!userAddress) return window.connectWallet();
 
     const cardsEl = document.getElementById('inscriptionCards');
-    cardsEl.innerHTML = '<div class="text-center py-4 text-gray-500 text-xs col-span-3">Loading...</div>';
+
+    try {
+        window.__fennecUiCache =
+            window.__fennecUiCache && typeof window.__fennecUiCache === 'object'
+                ? window.__fennecUiCache
+                : { historyHtml: {}, inscriptionsHtml: {}, liquidityHtml: {} };
+    } catch (_) {}
+
+    try {
+        const key = `insc:${String(userAddress || '').trim()}`;
+        const cached = window.__fennecUiCache?.inscriptionsHtml?.[key];
+        if (!force && cached) {
+            cardsEl.innerHTML = String(cached);
+        } else {
+            cardsEl.innerHTML = '<div class="text-center py-4 text-gray-500 text-xs col-span-3">Loading...</div>';
+        }
+    } catch (_) {
+        cardsEl.innerHTML = '<div class="text-center py-4 text-gray-500 text-xs col-span-3">Loading...</div>';
+    }
 
     try {
         // Get FENNEC balance info
@@ -5964,7 +7136,7 @@ async function loadFennecInscriptions() {
                 const limit = 100;
 
                 // Оптимизация: ограничиваем количество запросов и добавляем таймаут
-                let maxRequests = 5; // Максимум 5 запросов (500 инскрипций)
+                const maxRequests = 5; // Максимум 5 запросов (500 инскрипций)
                 let requestCount = 0;
 
                 while (hasMore && walletInscriptions.length < 500 && requestCount < maxRequests) {
@@ -6034,6 +7206,13 @@ async function loadFennecInscriptions() {
         if (displayList.length === 0) {
             cardsEl.innerHTML =
                 '<div class="text-center py-8 text-gray-500 text-xs col-span-3">No transfer inscriptions.<br><button onclick="createFennecInscription()" class="text-fennec hover:text-white mt-2">Create one</button></div>';
+
+            try {
+                const key = `insc:${String(userAddress || '').trim()}`;
+                if (window.__fennecUiCache && window.__fennecUiCache.inscriptionsHtml) {
+                    window.__fennecUiCache.inscriptionsHtml[key] = String(cardsEl.innerHTML || '');
+                }
+            } catch (_) {}
             return;
         }
 
@@ -6056,6 +7235,13 @@ async function loadFennecInscriptions() {
                                                                                                                         `;
             })
             .join('');
+
+        try {
+            const key = `insc:${String(userAddress || '').trim()}`;
+            if (window.__fennecUiCache && window.__fennecUiCache.inscriptionsHtml) {
+                window.__fennecUiCache.inscriptionsHtml[key] = String(cardsEl.innerHTML || '');
+            }
+        } catch (_) {}
     } catch (e) {
         console.error('Error loading inscriptions:', e);
         cardsEl.innerHTML =
@@ -6152,7 +7338,7 @@ async function openInscriptionModal() {
 }
 // CREATE FENNEC TRANSFER INSCRIPTION
 async function createFennecInscription() {
-    if (!userAddress) return connectWallet();
+    if (!userAddress) return window.connectWallet();
 
     // Try to get amount from input field (may not exist if UI changed)
     const amountInput =
@@ -6359,6 +7545,11 @@ async function executeDeposit(inscriptionId) {
         console.error('Deposit button not found');
         return;
     }
+
+    // Find the inscription data to get amount
+    const insc = selectedInscriptions.find(i => i.inscriptionId === inscriptionId);
+    const amount = insc ? insc.amount : 0;
+
     try {
         if (document.getElementById('inscriptionModal')) {
             document.getElementById('inscriptionModal').classList.add('hidden');
@@ -6411,15 +7602,30 @@ async function executeDeposit(inscriptionId) {
         console.log('Confirm response:', JSON.stringify(conf, null, 2));
 
         if (conf.code === 0) {
-            const txid = conf.data?.txid || conf.data || 'FENNEC deposited!';
+            const txid = __pickTxid(conf?.data) || __pickTxid(conf) || conf.data || 'FENNEC deposited!';
             // Block inscription from being used again
-            let pendingInscriptions = JSON.parse(localStorage.getItem('pendingDepositInscriptions') || '[]');
+            const pendingInscriptions = JSON.parse(localStorage.getItem('pendingDepositInscriptions') || '[]');
             if (!pendingInscriptions.includes(inscriptionId)) {
                 pendingInscriptions.push(inscriptionId);
                 localStorage.setItem('pendingDepositInscriptions', JSON.stringify(pendingInscriptions));
             }
             trackDepositProgress(txid, 'FENNEC');
             showSuccess(`FENNEC deposit successful! TXID: ${txid}`);
+            try {
+                if (typeof addPendingOperation === 'function') {
+                    const amt = Number(amount || 0) || 0;
+                    addPendingOperation({
+                        type: 'deposit',
+                        status: 'pending',
+                        txid: __looksLikeTxid(txid) ? txid : '',
+                        address: userAddress,
+                        tick: 'FENNEC',
+                        amount: amt,
+                        chain: 'FRACTAL',
+                        timestamp: Date.now()
+                    });
+                }
+            } catch (_) {}
             selectedInscriptions.length = 0;
             updateSelectedAmount();
             loadFennecInscriptions(); // Refresh list
@@ -6467,7 +7673,7 @@ function updateWithdrawUI() {
 
 function setMaxWithdrawAmount() {
     if (!userAddress) {
-        connectWallet();
+        window.connectWallet();
         return;
     }
     const bal = withdrawToken === 'sFB' ? userBalances.sFB : userBalances.FENNEC;
@@ -6481,7 +7687,7 @@ function setMaxWithdrawAmount() {
 
 function setMaxDepositAmount() {
     if (!userAddress) {
-        connectWallet();
+        window.connectWallet();
         return;
     }
     const depAmountEl = document.getElementById('depAmount');
@@ -6503,7 +7709,7 @@ function setMaxDepositAmount() {
     }
 }
 async function doWithdraw() {
-    if (!userAddress) return connectWallet();
+    if (!userAddress) return window.connectWallet();
 
     const amount = parseFloat(document.getElementById('wdAmount').value);
     // ИСПРАВЛЕНИЕ ОТ GEMINI: Определяем параметры правильно
@@ -6750,6 +7956,21 @@ async function doWithdraw() {
             // Progress polling must use withdraw order id (withdraw_process expects id).
             trackWithdrawProgress(id, tick);
             showSuccess(txid && txid !== '' ? `Withdrawal initiated! TXID: ${txid}` : 'Withdrawal initiated!');
+            try {
+                if (typeof addPendingOperation === 'function') {
+                    addPendingOperation({
+                        type: 'withdraw',
+                        status: 'pending',
+                        id: id,
+                        txid: __looksLikeTxid(txid) ? txid : '',
+                        address: userAddress,
+                        tick: tick,
+                        amount: amount,
+                        chain: 'FRACTAL',
+                        timestamp: Date.now()
+                    });
+                }
+            } catch (_) {}
         } else {
             throw new Error(sub.msg || 'Withdrawal confirmation failed');
         }
@@ -6771,7 +7992,7 @@ async function doWithdraw() {
 // ===== PRICE CHART =====
 // chartTimeframe and priceChart already defined above
 
-function seedChartPriceFromCache() {
+function __legacy_seedChartPriceFromCache() {
     try {
         const stored = JSON.parse(localStorage.getItem('fennec_prices') || '[]');
         if (!Array.isArray(stored) || stored.length === 0) return;
@@ -6787,7 +8008,7 @@ function seedChartPriceFromCache() {
     } catch (_) {}
 }
 
-function initChart() {
+function __legacy_initChart() {
     const ctx = document.getElementById('priceChart');
     if (!ctx || typeof Chart === 'undefined') {
         console.log('Chart.js not loaded yet, retrying...');
@@ -6804,7 +8025,7 @@ function initChart() {
         }
     }
 
-    priceChart = new Chart(ctx, {
+    priceChart = new window.Chart(ctx, {
         type: 'line',
         data: {
             labels: [],
@@ -6865,9 +8086,14 @@ function initChart() {
     });
 }
 
-async function loadHistoricalPrices() {
+async function __legacy_loadHistoricalPrices() {
     try {
-        console.log('Loading history from InSwap...', chartTimeframe);
+        const __chartDebug =
+            (typeof window !== 'undefined' && (window.__fennecChartDebug === true || window.__debugChart === true)) ||
+            (typeof localStorage !== 'undefined' && localStorage.getItem('fennec_debug_chart') === '1') ||
+            (typeof location !== 'undefined' && /[?&]debug_chart=1/.test(location.search));
+
+        if (__chartDebug) console.log('Loading history from InSwap...', chartTimeframe);
 
         // Load history based on current timeframe
         // For 'all', use '90d' since InSwap doesn't store more than 90 days
@@ -6887,7 +8113,7 @@ async function loadHistoricalPrices() {
         );
         if (!json) throw new Error('Failed to load price history');
 
-        console.log('Price line API response:', json);
+        if (__chartDebug) console.log('Price line API response:', json);
 
         if (json.code === 0 && json.data && json.data.list && json.data.list.length > 0) {
             // API returns price directly in item.price field (FB per FENNEC)
@@ -6956,13 +8182,14 @@ async function loadHistoricalPrices() {
 
                 // Save all data (no limit - keep full 90+ day history)
                 localStorage.setItem('fennec_prices', JSON.stringify(deduplicated));
-                console.log(`Chart data saved: ${apiData.length} new points, ${deduplicated.length} total points`);
-                console.log(`Timeframe: ${chartTimeframe}, timeRange: ${timeRange}`);
+                if (__chartDebug)
+                    console.log(`Chart data saved: ${apiData.length} new points, ${deduplicated.length} total points`);
+                if (__chartDebug) console.log(`Timeframe: ${chartTimeframe}, timeRange: ${timeRange}`);
             } else {
-                console.warn(`No valid price data from API for ${timeRange}`);
+                if (__chartDebug) console.warn(`No valid price data from API for ${timeRange}`);
             }
         } else {
-            console.warn(`No data from price_line API for ${timeRange}, code: ${json.code}`);
+            if (__chartDebug) console.warn(`No data from price_line API for ${timeRange}, code: ${json.code}`);
         }
 
         // Always update chart after loading (even if no new data)
@@ -6974,61 +8201,79 @@ async function loadHistoricalPrices() {
     }
 }
 
-async function updatePriceData() {
+async function __legacy_updatePriceData(force = false) {
+    const __now = Date.now();
     try {
-        const json = await safeFetchJson(`${BACKEND_URL}?action=quote`, {
-            timeoutMs: 12000,
-            retries: 2
-        });
-        if (!json) throw new Error('Failed to fetch quote');
+        window.__fennecPriceFetchState =
+            window.__fennecPriceFetchState && typeof window.__fennecPriceFetchState === 'object'
+                ? window.__fennecPriceFetchState
+                : { lastFetchAt: 0 };
+        const last = Number(window.__fennecPriceFetchState.lastFetchAt || 0) || 0;
+        if (!force && last > 0 && __now - last < 60000) return;
+        window.__fennecPriceFetchState.lastFetchAt = __now;
+    } catch (_) {}
 
-        let data = null;
-        if (json.data) {
-            if (json.data.tick0) data = json.data;
-            else if (Array.isArray(json.data.list) && json.data.list.length > 0) data = json.data.list[0];
-        }
+    return await __fennecDedupe('updatePriceData', async () => {
+        try {
+            const json = await safeFetchJson(`${BACKEND_URL}?action=quote`, {
+                timeoutMs: 12000,
+                retries: 2
+            });
+            if (!json) throw new Error('Failed to fetch quote');
 
-        if (data && data.amount0 && data.amount1) {
-            const amount0 = parseFloat(data.amount0);
-            const amount1 = parseFloat(data.amount1);
-            // Determine which is FENNEC and which is FB
-            const isFennecFirst = data.tick0 && data.tick0.includes('FENNEC');
-            // Price = FB per FENNEC (how much FB you get for 1 FENNEC)
-            // If FENNEC is first: amount0 = FENNEC, amount1 = FB, so price = FB/FENNEC = amount1/amount0
-            // If FB is first: amount0 = FB, amount1 = FENNEC, so price = FB/FENNEC = amount0/amount1
-            const price = isFennecFirst ? amount1 / amount0 : amount0 / amount1;
-
-            // Validate price is reasonable (between 0.00001 and 10 FB per FENNEC)
-            if (isNaN(price) || price <= 0 || price > 10 || price < 0.00001) {
-                console.warn('Invalid price calculated:', price, 'from', data);
-                return;
+            let data = null;
+            if (json.data) {
+                if (json.data.tick0) data = json.data;
+                else if (Array.isArray(json.data.list) && json.data.list.length > 0) data = json.data.list[0];
             }
-            const timestamp = Date.now();
 
-            const stored = JSON.parse(localStorage.getItem('fennec_prices') || '[]');
-            const lastPoint = stored[stored.length - 1];
+            if (data && data.amount0 && data.amount1) {
+                const amount0 = parseFloat(data.amount0);
+                const amount1 = parseFloat(data.amount1);
+                // Determine which is FENNEC and which is FB
+                const isFennecFirst = data.tick0 && data.tick0.includes('FENNEC');
+                // Price = FB per FENNEC (how much FB you get for 1 FENNEC)
+                // If FENNEC is first: amount0 = FENNEC, amount1 = FB, so price = FB/FENNEC = amount1/amount0
+                // If FB is first: amount0 = FB, amount1 = FENNEC, so price = FB/FENNEC = amount0/amount1
+                const price = isFennecFirst ? amount1 / amount0 : amount0 / amount1;
 
-            // Добавляем точку если прошло > 1 минуты или цена изменилась значительно
-            if (
-                !lastPoint ||
-                timestamp - lastPoint.timestamp > 60000 ||
-                Math.abs(lastPoint.price - price) / lastPoint.price > 0.01
-            ) {
-                stored.push({ price, timestamp });
-                // Храним максимум 500 точек для производительности
-                if (stored.length > 500) stored.shift();
-                localStorage.setItem('fennec_prices', JSON.stringify(stored));
-                console.log(`New price: ${price.toFixed(6)} FB/FENNEC`);
-                updateChart();
+                // Validate price is reasonable (between 0.00001 and 10 FB per FENNEC)
+                if (isNaN(price) || price <= 0 || price > 10 || price < 0.00001) {
+                    console.warn('Invalid price calculated:', price, 'from', data);
+                    return;
+                }
+                const timestamp = Date.now();
+
+                const stored = JSON.parse(localStorage.getItem('fennec_prices') || '[]');
+                const lastPoint = stored[stored.length - 1];
+
+                // Добавляем точку если прошло > 1 минуты или цена изменилась значительно
+                if (
+                    !lastPoint ||
+                    timestamp - lastPoint.timestamp > 60000 ||
+                    Math.abs(lastPoint.price - price) / lastPoint.price > 0.01
+                ) {
+                    stored.push({ price, timestamp });
+                    // Храним максимум 500 точек для производительности
+                    if (stored.length > 500) stored.shift();
+                    localStorage.setItem('fennec_prices', JSON.stringify(stored));
+                    console.log(`New price: ${price.toFixed(6)} FB/FENNEC`);
+                    updateChart();
+                }
             }
+        } catch (e) {
+            console.error('Price update error:', e);
         }
-    } catch (e) {
-        console.error('Price update error:', e);
-    }
+    });
 }
 
-function updateChart() {
+function __legacy_updateChart() {
     if (!priceChart) return;
+
+    const __chartDebug =
+        (typeof window !== 'undefined' && (window.__fennecChartDebug === true || window.__debugChart === true)) ||
+        (typeof localStorage !== 'undefined' && localStorage.getItem('fennec_debug_chart') === '1') ||
+        (typeof location !== 'undefined' && /[?&]debug_chart=1/.test(location.search));
 
     const stored = JSON.parse(localStorage.getItem('fennec_prices') || '[]');
     const now = Date.now();
@@ -7045,7 +8290,7 @@ function updateChart() {
 
     const filtered = stored.filter(p => p.timestamp > cutoff);
 
-    console.log(`Chart: ${chartTimeframe} | ${filtered.length} points`);
+    if (__chartDebug) console.log(`Chart: ${chartTimeframe} | ${filtered.length} points`);
 
     // Если нет данных за выбранный период - показываем последнюю известную цену
     if (filtered.length === 0 && stored.length > 0) {
@@ -7328,7 +8573,7 @@ async function updateMarketStats(fennecPriceInFB) {
     }
 }
 
-function setChartTimeframe(tf) {
+function __legacy_setChartTimeframe(tf) {
     chartTimeframe = tf;
 
     // Show loading indicator
@@ -7394,7 +8639,37 @@ function updateChartTimeframe(tf, event) {
 
 // Live ticker update with prices and fees
 // GLOBAL VARIABLES FOR PRICES
-let globalPrices = { btc: 0, fb: 0, fennec: 0 };
+const globalPrices = { btc: 0, fb: 0, fennec: 0 };
+
+function __seedDashboardPricesFromCache() {
+    try {
+        const raw = localStorage.getItem('fennec_dashboard_prices_v1');
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        const p = parsed && typeof parsed === 'object' ? parsed.prices : null;
+        if (!p || typeof p !== 'object') return;
+        const btc = Number(p.btc || 0) || 0;
+        const fb = Number(p.fb || 0) || 0;
+        const fennec = Number(p.fennec || 0) || 0;
+        if (!(globalPrices.btc > 0) && btc > 0) globalPrices.btc = btc;
+        if (!(globalPrices.fb > 0) && fb > 0) globalPrices.fb = fb;
+        if (!(globalPrices.fennec > 0) && fennec > 0) globalPrices.fennec = fennec;
+    } catch (_) {}
+}
+
+function __storeDashboardPricesToCache() {
+    try {
+        const payload = {
+            ts: Date.now(),
+            prices: {
+                btc: Number(globalPrices.btc || 0) || 0,
+                fb: Number(globalPrices.fb || 0) || 0,
+                fennec: Number(globalPrices.fennec || 0) || 0
+            }
+        };
+        localStorage.setItem('fennec_dashboard_prices_v1', JSON.stringify(payload));
+    } catch (_) {}
+}
 
 function __getTickerBaseTs() {
     try {
@@ -7416,131 +8691,133 @@ function __syncTickerMarqueePhase() {
         const marquee = tickerEl.querySelector('.ticker-marquee');
         if (!marquee) return;
 
-        const baseMs = __getTickerBaseTs();
-        const elapsedSec = (Date.now() - baseMs) / 1000;
-        const durRaw = String(getComputedStyle(marquee).animationDuration || '').trim();
-        const dur = durRaw.endsWith('ms')
-            ? Math.max(0.1, (parseFloat(durRaw) || 0) / 1000)
-            : Math.max(0.1, parseFloat(durRaw) || 35);
-        const phase = ((elapsedSec % dur) + dur) % dur;
-        marquee.style.animationDelay = `-${phase}s`;
+        marquee.style.animation = 'none';
+        void marquee.offsetHeight;
+        marquee.style.animation = '';
+        marquee.style.animationDelay = '0s';
     } catch (_) {}
 }
 
 // UPDATED TICKER FUNCTION - Использует CoinMarketCap через worker
-async function updateLiveTicker() {
-    try {
-        const tickerEl = document.getElementById('liveTicker');
-        if (!tickerEl) return;
+async function __legacy_updateLiveTicker() {
+    return await __fennecDedupe('updateLiveTicker', async () => {
+        try {
+            const tickerEl = document.getElementById('liveTicker');
+            if (!tickerEl) return;
 
-        const tickerContent = tickerEl.querySelector('#ticker-content') || tickerEl;
+            const tickerContent = tickerEl.querySelector('#ticker-content') || tickerEl;
 
-        // Seed instantly from cache so it never stays blank on slow API
-        seedChartPriceFromCache();
+            // Seed instantly from cache so it never stays blank on slow API
+            seedChartPriceFromCache();
+            __seedDashboardPricesFromCache();
 
-        const dash = await fetch(`${BACKEND_URL}?action=get_dashboard_data`, {
-            cache: 'force-cache'
-        })
-            .then(r => (r.ok ? r.json().catch(() => null) : null))
-            .catch(() => null);
+            const dash = await fetch(`${BACKEND_URL}?action=get_dashboard_data`, {
+                cache: 'force-cache'
+            })
+                .then(r => (r.ok ? r.json().catch(() => null) : null))
+                .catch(() => null);
 
-        const priceRes = dash?.data?.prices || null;
-        const fractalFee = dash?.data?.fees?.fractal || { fastestFee: 1 };
-        const btcFeeRes = dash?.data?.fees?.bitcoin || { fastestFee: 1 };
+            const priceRes = dash?.data?.prices || null;
+            const fractalFee = dash?.data?.fees?.fractal || { fastestFee: 1 };
+            const btcFeeRes = dash?.data?.fees?.bitcoin || { fastestFee: 1 };
 
-        if (priceRes) {
-            globalPrices.btc = priceRes.btc || globalPrices.btc || 0;
-            globalPrices.fb = priceRes.fb || globalPrices.fb || 0;
-            globalPrices.fennec = priceRes.fennec_in_fb || globalPrices.fennec || 0;
+            if (priceRes) {
+                globalPrices.btc = priceRes.btc || globalPrices.btc || 0;
+                globalPrices.fb = priceRes.fb || globalPrices.fb || 0;
+                globalPrices.fennec = priceRes.fennec_in_fb || globalPrices.fennec || 0;
 
-            // Обновляем заголовок вкладки браузера
-            if (globalPrices.fb > 0) {
-                document.title = `$${globalPrices.fb.toFixed(2)} FB | $FENNEC`;
+                __storeDashboardPricesToCache();
+
+                // Обновляем заголовок вкладки браузера
+                if (globalPrices.fb > 0) {
+                    document.title = `$${globalPrices.fb.toFixed(2)} FB | $FENNEC`;
+                }
             }
+
+            // 3. Формируем HTML
+            const items = [];
+
+            // BTC (округляем до целых)
+            if (globalPrices.btc > 0) {
+                items.push(
+                    `<span class="ticker-item text-white"><img src="img/BTC.svg" class="w-4 h-4 rounded-full" onerror="this.style.display='none'"><span>BTC: $${globalPrices.btc.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span></span>`
+                );
+            }
+
+            // FB (показываем 2 знака, если цена > 1, иначе 4)
+            if (globalPrices.fb > 0) {
+                const fbDecimals = globalPrices.fb >= 1 ? 2 : 4;
+                items.push(
+                    `<span class="ticker-item text-white"><img src="img/FB.png" class="w-4 h-4 rounded-full" onerror="this.style.display='none'"><span>FB: $${globalPrices.fb.toFixed(fbDecimals)}</span></span>`
+                );
+            } else {
+                items.push(
+                    '<span class="ticker-item text-white"><img src="img/FB.png" class="w-4 h-4 rounded-full" onerror="this.style.display=\'none\'"><span>FB: --</span></span>'
+                );
+            }
+
+            // FENNEC - always show last known price (seeded from cache/pool)
+            let fennecPrice = globalPrices.fennec;
+            // Fallback к poolReserves если цена не загрузилась
+            if (
+                fennecPrice === 0 &&
+                typeof poolReserves !== 'undefined' &&
+                poolReserves &&
+                poolReserves.FENNEC > 0 &&
+                poolReserves.sFB > 0
+            ) {
+                fennecPrice = poolReserves.sFB / poolReserves.FENNEC;
+                globalPrices.fennec = fennecPrice; // Сохраняем для следующего обновления
+            }
+
+            if (fennecPrice > 0) {
+                items.push(
+                    `<span class="ticker-item text-fennec"><img src="img/phav.png" class="w-4 h-4 rounded-full" onerror="this.style.display='none'"><span>FENNEC: ${fennecPrice.toFixed(6)} FB</span></span>`
+                );
+            } else {
+                items.push(
+                    '<span class="ticker-item text-fennec"><img src="img/phav.png" class="w-4 h-4 rounded-full" onerror="this.style.display=\'none\'"><span>FENNEC: --</span></span>'
+                );
+            }
+
+            // Gas
+            const fractalGas = fractalFee.fastestFee || 1;
+            const btcGas = btcFeeRes.fastestFee || 1;
+            items.push(`<span class="ticker-item text-white"><span>⛽ Bitcoin fee: ${btcGas} sat/vB</span></span>`);
+            items.push(`<span class="ticker-item text-white"><span>⛽ Fractal fee: ${fractalGas} sat/vB</span></span>`);
+
+            const trackHtml = items.join('<span class="ticker-divider"></span>');
+            const tickerHtml = `<div class="ticker-marquee">${trackHtml}</div>`;
+
+            // ИСПРАВЛЕНИЕ: Убираем дублирование - показываем только один раз
+            if (tickerContent) {
+                tickerContent.innerHTML = tickerHtml;
+            } else {
+                tickerEl.innerHTML = tickerHtml;
+            }
+
+            try {
+                __syncTickerMarqueePhase();
+            } catch (_) {}
+        } catch (e) {
+            console.error('Ticker update error:', e);
+            const tickerEl = document.getElementById('liveTicker');
+            if (tickerEl) {
+                tickerEl.innerHTML =
+                    '<div class="ticker-marquee"><span class="ticker-item text-fennec"><img src="img/phav.png" class="w-4 h-4 rounded-full" onerror="this.style.display=\'none\'"><span>FENNEC SYSTEM ONLINE</span></span></div>';
+            }
+
+            try {
+                __syncTickerMarqueePhase();
+            } catch (_) {}
         }
-
-        // 3. Формируем HTML
-        const items = [];
-
-        // BTC (округляем до целых)
-        if (globalPrices.btc > 0) {
-            items.push(
-                `<span class="ticker-item text-white"><img src="img/BTC.svg" class="w-4 h-4 rounded-full" onerror="this.style.display='none'"><span>BTC: $${globalPrices.btc.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span></span>`
-            );
-        }
-
-        // FB (показываем 2 знака, если цена > 1, иначе 4)
-        if (globalPrices.fb > 0) {
-            const fbDecimals = globalPrices.fb >= 1 ? 2 : 4;
-            items.push(
-                `<span class="ticker-item text-white"><img src="img/FB.png" class="w-4 h-4 rounded-full" onerror="this.style.display='none'"><span>FB: $${globalPrices.fb.toFixed(fbDecimals)}</span></span>`
-            );
-        } else {
-            items.push(
-                `<span class="ticker-item text-white"><img src="img/FB.png" class="w-4 h-4 rounded-full" onerror="this.style.display='none'"><span>FB: Loading...</span></span>`
-            );
-        }
-
-        // FENNEC - always show last known price (seeded from cache/pool)
-        let fennecPrice = globalPrices.fennec;
-        // Fallback к poolReserves если цена не загрузилась
-        if (
-            fennecPrice === 0 &&
-            typeof poolReserves !== 'undefined' &&
-            poolReserves &&
-            poolReserves.FENNEC > 0 &&
-            poolReserves.sFB > 0
-        ) {
-            fennecPrice = poolReserves.sFB / poolReserves.FENNEC;
-            globalPrices.fennec = fennecPrice; // Сохраняем для следующего обновления
-        }
-
-        if (fennecPrice > 0) {
-            items.push(
-                `<span class="ticker-item text-fennec"><img src="img/phav.png" class="w-4 h-4 rounded-full" onerror="this.style.display='none'"><span>FENNEC: ${fennecPrice.toFixed(6)} FB</span></span>`
-            );
-        } else {
-            items.push(
-                `<span class="ticker-item text-fennec"><img src="img/phav.png" class="w-4 h-4 rounded-full" onerror="this.style.display='none'"><span>FENNEC: --</span></span>`
-            );
-        }
-
-        // Gas
-        const fractalGas = fractalFee.fastestFee || 1;
-        const btcGas = btcFeeRes.fastestFee || 1;
-        items.push(`<span class="ticker-item text-white"><span>⛽ Bitcoin fee: ${btcGas} sat/vB</span></span>`);
-        items.push(`<span class="ticker-item text-white"><span>⛽ Fractal fee: ${fractalGas} sat/vB</span></span>`);
-
-        const trackHtml = items.join('<span class="ticker-divider"></span>');
-        const tickerHtml = `<div class="ticker-marquee">${trackHtml}</div>`;
-
-        // ИСПРАВЛЕНИЕ: Убираем дублирование - показываем только один раз
-        if (tickerContent) {
-            tickerContent.innerHTML = tickerHtml;
-        } else {
-            tickerEl.innerHTML = tickerHtml;
-        }
-
-        try {
-            __syncTickerMarqueePhase();
-        } catch (_) {}
-    } catch (e) {
-        console.error('Ticker update error:', e);
-        const tickerEl = document.getElementById('liveTicker');
-        if (tickerEl) {
-            tickerEl.innerHTML =
-                '<div class="ticker-marquee"><span class="ticker-item text-fennec"><img src="img/phav.png" class="w-4 h-4 rounded-full" onerror="this.style.display=\'none\'"><span>FENNEC SYSTEM ONLINE</span></span></div>';
-        }
-
-        try {
-            __syncTickerMarqueePhase();
-        } catch (_) {}
-    }
+    });
 }
 
 let __publicTickerInterval = null;
-function startPublicTickerUpdates() {
-    if (__publicTickerInterval) return;
+function __legacy_startPublicTickerUpdates() {
+    // ИСПРАВЛЕНИЕ: Проверяем guard переменную из module implementation
+    if (window.__fennecTickerSetup || __publicTickerInterval) return;
     __publicTickerInterval = setInterval(() => {
         try {
             updateLiveTicker();
@@ -7548,182 +8825,104 @@ function startPublicTickerUpdates() {
     }, 600000);
 }
 
-function stopPublicTickerUpdates() {
+function __legacy_stopPublicTickerUpdates() {
     if (__publicTickerInterval) {
         clearInterval(__publicTickerInterval);
         __publicTickerInterval = null;
     }
 }
 
-// Инициализация - загружаем данные один раз при загрузке страницы
-if (
-    (typeof window.__isTerminalPage === 'function' ? window.__isTerminalPage() : false) &&
-    document.getElementById('priceChart')
-) {
-    seedChartPriceFromCache();
-    try {
-        if (typeof prewarmBackendCaches === 'function') prewarmBackendCaches();
-    } catch (_) {}
-    fetchReserves();
-    updatePriceData();
+var seedChartPriceFromCache = window.seedChartPriceFromCache || __legacy_seedChartPriceFromCache;
+window.seedChartPriceFromCache = seedChartPriceFromCache;
+var initChart = window.initChart || __legacy_initChart;
+window.initChart = initChart;
+var loadHistoricalPrices = window.loadHistoricalPrices || __legacy_loadHistoricalPrices;
+window.loadHistoricalPrices = loadHistoricalPrices;
+var updatePriceData = window.updatePriceData || __legacy_updatePriceData;
+window.updatePriceData = updatePriceData;
+var updateChart = window.updateChart || __legacy_updateChart;
+window.updateChart = updateChart;
+const setChartTimeframe = window.setChartTimeframe || __legacy_setChartTimeframe;
+window.setChartTimeframe = setChartTimeframe;
+var updateLiveTicker = window.updateLiveTicker || __legacy_updateLiveTicker;
+window.updateLiveTicker = updateLiveTicker;
+const startPublicTickerUpdates = window.startPublicTickerUpdates || __legacy_startPublicTickerUpdates;
+window.startPublicTickerUpdates = startPublicTickerUpdates;
+const stopPublicTickerUpdates = window.stopPublicTickerUpdates || __legacy_stopPublicTickerUpdates;
+window.stopPublicTickerUpdates = stopPublicTickerUpdates;
 
-    // Load transaction history on page load if wallet connected (только один раз)
-    if (userAddress) {
-        setTimeout(() => {
-            checkBalance();
-            refreshTransactionHistory();
-        }, 2000);
-    }
-}
-updateLiveTicker(); // Первый запуск тикера
+let __fennecSmartPollInterval = null;
+let __fennecLastTipHeight = 0;
 
-startPublicTickerUpdates();
-// Force Scroll to Top Logic
-window.onbeforeunload = function () {
-    window.scrollTo(0, 0);
-};
-
-function stopPublicTickerUpdates() {
-    if (__publicTickerInterval) {
-        clearInterval(__publicTickerInterval);
-        __publicTickerInterval = null;
-    }
-}
-
-// ИСПРАВЛЕНИЕ: Оптимизированные автоматические обновления с правильными интервалами
-// Баланс обновляется чаще, остальное - реже
-
-// Функция для ручного обновления всех данных
-async function manualRefresh() {
-    const btn = document.getElementById('refreshBtn');
-    if (btn) {
-        btn.classList.add('animate-spin');
-        btn.disabled = true;
-    }
-
-    try {
-        // Обновляем все данные параллельно
-        await Promise.all([
-            fetchReserves(),
-            userAddress ? checkBalance() : Promise.resolve(),
-            userAddress ? refreshTransactionHistory() : Promise.resolve(),
-            updateLiveTicker(),
-            updatePriceData()
-        ]);
-
-        // Показываем уведомление
-        if (typeof showNotification === 'function') {
-            showNotification('Data updated', 'success', 2000);
-        }
-    } catch (e) {
-        console.error('Refresh error:', e);
-        if (typeof showNotification === 'function') {
-            showNotification('Refresh error', 'error', 2000);
-        }
-    } finally {
-        if (btn) {
-            btn.classList.remove('animate-spin');
-            btn.disabled = false;
-        }
-    }
-}
-
-// Инициализация - загружаем данные один раз при загрузке страницы
-if (
-    (typeof window.__isTerminalPage === 'function' ? window.__isTerminalPage() : false) &&
-    document.getElementById('priceChart')
-) {
-    seedChartPriceFromCache();
-    fetchReserves();
-    updatePriceData();
-
-    // Load transaction history on page load if wallet connected (только один раз)
-    if (userAddress) {
-        setTimeout(() => {
-            checkBalance();
-            refreshTransactionHistory();
-        }, 2000);
-    }
-}
-updateLiveTicker(); // Первый запуск тикера
-
-startPublicTickerUpdates();
-// Force Scroll to Top Logic
-window.onbeforeunload = function () {
-    window.scrollTo(0, 0);
-};
-window.onload = function () {
-    setTimeout(() => window.scrollTo(0, 0), 10);
-    setTimeout(() => window.scrollTo(0, 0), 100);
-};
-
-// Scroll to top on page load
-window.scrollTo(0, 0);
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-        window.scrollTo(0, 0);
-        setTimeout(() => window.scrollTo(0, 0), 10);
-        if (
-            (typeof window.__isTerminalPage === 'function' ? window.__isTerminalPage() : false) &&
-            document.getElementById('priceChart')
-        )
-            setTimeout(initChart, 1000);
+async function __fennecGetTipHeight() {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
         try {
-            if (typeof window.__ensureAuditUi === 'function') window.__ensureAuditUi();
+            controller.abort();
         } catch (_) {}
-    });
-} else {
-    window.scrollTo(0, 0);
-    setTimeout(() => window.scrollTo(0, 0), 10);
-    if (
-        (typeof window.__isTerminalPage === 'function' ? window.__isTerminalPage() : false) &&
-        document.getElementById('priceChart')
-    )
-        setTimeout(initChart, 1000);
+    }, 6000);
     try {
-        if (typeof window.__ensureAuditUi === 'function') window.__ensureAuditUi();
-    } catch (_) {}
+        const res = await fetch('https://mempool.fractalbitcoin.io/api/blocks/tip/height', {
+            signal: controller.signal,
+            cache: 'no-store'
+        });
+        if (!res.ok) return 0;
+        const text = await res.text().catch(() => '');
+        const n = Number(String(text || '').trim() || 0) || 0;
+        return Number.isFinite(n) && n > 0 ? n : 0;
+    } catch (_) {
+        return 0;
+    } finally {
+        try {
+            clearTimeout(timeoutId);
+        } catch (_) {}
+    }
 }
 
-document.addEventListener('visibilitychange', () => {
+async function __fennecSmartPollOnce() {
     try {
-        if (document.hidden) {
-            stopPublicTickerUpdates();
-            stopAutoUpdate();
-        } else {
-            window.scrollTo(0, 0);
-            startPublicTickerUpdates();
-            if (window.__autoUpdateWanted && userAddress) startAutoUpdate();
+        if (document.hidden) return;
+        if (!userAddress) return;
+        const h = await __fennecGetTipHeight();
+        if (!(h > 0)) return;
+        const prev = Number(__fennecLastTipHeight || 0) || 0;
+        __fennecLastTipHeight = h;
+        if (prev > 0 && h !== prev) {
+            try {
+                await Promise.all([
+                    typeof checkBalance === 'function' ? checkBalance(true) : Promise.resolve(),
+                    typeof refreshTransactionHistory === 'function'
+                        ? refreshTransactionHistory(true)
+                        : Promise.resolve(),
+                    typeof fetchReserves === 'function' ? fetchReserves() : Promise.resolve(),
+                    typeof updatePriceData === 'function' ? updatePriceData(false) : Promise.resolve()
+                ]);
+            } catch (_) {}
         }
     } catch (_) {}
-});
-
-if (
-    (typeof window.__isTerminalPage === 'function' ? window.__isTerminalPage() : false) &&
-    document.getElementById('priceChart')
-) {
-    console.log('Chart loading historical data from InSwap API...');
 }
 
-setTimeout(() => {
+function __fennecStartSmartPolling() {
+    if (__fennecSmartPollInterval) return;
+    __fennecSmartPollInterval = setInterval(() => {
+        try {
+            __fennecSmartPollOnce();
+        } catch (_) {}
+    }, 25000);
     try {
-        const restorePromise =
-            typeof window.tryRestoreWalletSession === 'function'
-                ? window.tryRestoreWalletSession()
-                : Promise.resolve(false);
-
-        Promise.resolve(restorePromise)
-            .catch(() => false)
-            .finally(() => {
-                try {
-                    if (document.getElementById('auditContainer')) {
-                        if (typeof initAudit === 'function') initAudit();
-                        else if (typeof window.__ensureAuditUi === 'function') window.__ensureAuditUi();
-                    }
-                } catch (_) {}
-            });
+        __fennecSmartPollOnce();
     } catch (_) {}
-}, 0);
+}
+
+function __fennecStopSmartPolling() {
+    if (__fennecSmartPollInterval) {
+        clearInterval(__fennecSmartPollInterval);
+        __fennecSmartPollInterval = null;
+    }
+}
+
+window.__fennecStartSmartPolling = __fennecStartSmartPolling;
+window.__fennecStopSmartPolling = __fennecStopSmartPolling;
 
 // ===== PROGRESS TRACKING =====
 let progressInterval = null;
@@ -7903,10 +9102,11 @@ async function fetchHistory() {
         // 2. Грузим историю FB (Native)
         let resFB = { code: -1 };
         try {
-            const fbRes = await fetch(`${BACKEND_URL}?action=history&address=${userAddress}&tick=FB`);
-            if (fbRes.ok) {
-                resFB = await fbRes.json();
-            }
+            const api =
+                (window.__fennecApi && typeof window.__fennecApi === 'object' ? window.__fennecApi : null) ||
+                (await (window.__fennecApiModulePromise || (window.__fennecApiModulePromise = import('/js/api.js'))));
+            const txsNative = api && typeof api.getHistory === 'function' ? await api.getHistory(userAddress) : [];
+            resFB = { code: 0, data: { detail: Array.isArray(txsNative) ? txsNative : [] } };
         } catch (e) {
             console.warn('Failed to fetch FB history:', e);
         }
@@ -7928,18 +9128,46 @@ async function fetchHistory() {
 
         // Парсим FB (Native)
         if (resFB.code === 0 && resFB.data && resFB.data.detail) {
+            const addr = String(userAddress || '').trim();
+            const arr = Array.isArray(resFB.data.detail) ? resFB.data.detail : [];
             txs = txs.concat(
-                resFB.data.detail.map(item => {
-                    // Вычисляем изменение баланса для определения типа
-                    const netAmount = item.inSatoshi - item.outSatoshi; // Грубая оценка
-                    return {
-                        type: 'Tx',
-                        amount: (Math.abs(item.inSatoshi || item.outSatoshi || 0) / 1e8).toFixed(4), // Просто показываем объем
-                        tick: 'FB',
-                        time: item.timestamp || item.blocktime,
-                        txid: item.txid
-                    };
-                })
+                arr
+                    .map(tx => {
+                        try {
+                            const status = tx && tx.status && typeof tx.status === 'object' ? tx.status : null;
+                            const ts = Number(status?.block_time || 0) || 0;
+                            const vin = Array.isArray(tx?.vin) ? tx.vin : [];
+                            const vout = Array.isArray(tx?.vout) ? tx.vout : [];
+                            let inSum = 0;
+                            let outSum = 0;
+                            for (const v of vin) {
+                                const p = v?.prevout;
+                                const a = String(p?.scriptpubkey_address || '').trim();
+                                if (a && a === addr) {
+                                    inSum += Number(p?.value || 0) || 0;
+                                }
+                            }
+                            for (const o of vout) {
+                                const a = String(o?.scriptpubkey_address || '').trim();
+                                if (a && a === addr) {
+                                    outSum += Number(o?.value || 0) || 0;
+                                }
+                            }
+                            const net = outSum - inSum;
+                            const typ = net > 0 ? 'Receive' : net < 0 ? 'Send' : 'Tx';
+                            const amount = (Math.abs(net) / 1e8).toFixed(4);
+                            return {
+                                type: typ,
+                                amount,
+                                tick: 'FB',
+                                time: ts,
+                                txid: String(tx?.txid || '').trim()
+                            };
+                        } catch (_) {
+                            return null;
+                        }
+                    })
+                    .filter(Boolean)
             );
         }
 
@@ -8007,537 +9235,598 @@ async function fetchHistory() {
 }
 
 // ===== TRANSACTION HISTORY (FIXED) =====
-async function refreshTransactionHistory() {
-    const currentTab = document.querySelector('.tab-btn.active')?.id?.replace('tab-', '') || 'swap';
+async function refreshTransactionHistory(force = false) {
+    const __tabKey = String(document.querySelector('.tab-btn.active')?.id?.replace('tab-', '') || 'swap');
+    const __addrKey = String(userAddress || '').trim() || 'public';
+    const __vKey =
+        __tabKey === 'swap'
+            ? String(currentSwapPair || '').trim()
+            : __tabKey === 'deposit'
+              ? String(depositToken || '').trim()
+              : __tabKey === 'withdraw'
+                ? String(withdrawToken || '').trim()
+                : '';
+    return await __fennecDedupe(`refreshTxHistory:${__addrKey}:${__tabKey}:${__vKey}:${force ? 1 : 0}`, async () => {
+        const __historyDebug =
+            (typeof window !== 'undefined' &&
+                (window.__fennecHistoryDebug === true || window.__debugHistory === true)) ||
+            (typeof localStorage !== 'undefined' && localStorage.getItem('fennec_debug_history') === '1') ||
+            (typeof location !== 'undefined' && /[?&]debug_history=1/.test(location.search));
 
-    // Find the correct history element based on current tab
-    let historyEl;
-    if (currentTab === 'swap') {
-        historyEl = document.getElementById('swapHistory') || document.getElementById('transactionHistory');
-    } else if (currentTab === 'deposit') {
-        historyEl = document.getElementById('depositHistory') || document.getElementById('transactionHistory');
-    } else if (currentTab === 'withdraw') {
-        historyEl = document.getElementById('withdrawHistory') || document.getElementById('transactionHistory');
-    } else {
-        historyEl = document.getElementById('transactionHistory');
-    }
+        const currentTab = document.querySelector('.tab-btn.active')?.id?.replace('tab-', '') || 'swap';
 
-    if (!historyEl) {
-        // For pending tab, it's normal - it has its own content
-        if (currentTab === 'pending') return;
-        console.warn('History element not found for tab:', currentTab);
-        return;
-    }
+        // Find the correct history element based on current tab
+        let historyEl;
+        if (currentTab === 'swap') {
+            historyEl = document.getElementById('swapHistory') || document.getElementById('transactionHistory');
+        } else if (currentTab === 'deposit') {
+            historyEl = document.getElementById('depositHistory') || document.getElementById('transactionHistory');
+        } else if (currentTab === 'withdraw') {
+            historyEl = document.getElementById('withdrawHistory') || document.getElementById('transactionHistory');
+        } else {
+            historyEl = document.getElementById('transactionHistory');
+        }
 
-    // For swap history, load immediately without wallet
-    if (!userAddress && currentTab !== 'swap') {
-        historyEl.innerHTML = `<div class="text-center py-4 text-gray-500 text-xs">Connect wallet to view history</div>`;
-        return;
-    }
+        if (!historyEl) {
+            // For pending tab, it's normal - it has its own content
+            if (currentTab === 'pending') return;
+            if (__historyDebug) console.warn('History element not found for tab:', currentTab);
+            return;
+        }
 
-    // Load swap history immediately even without wallet
-    if (currentTab === 'swap' || !currentTab) {
-        // Continue to load swap history
-    }
-
-    try {
-        let filterTick = null;
-        let filterType = currentTab === 'deposit' ? 'deposit' : currentTab === 'withdraw' ? 'withdraw' : 'swap';
-
-        if (filterType === 'deposit')
-            filterTick = depositToken === 'BTC' ? 'BTC' : depositToken === 'FENNEC' ? 'FENNEC' : 'FB';
-        // For withdraw, show both FB and FENNEC together (no filter)
-        else if (filterType === 'withdraw') filterTick = null; // Show all withdraws
-
-        // Загружаем данные параллельно
-        let deposits = [],
-            withdrawals = [];
-        if (userAddress) {
-            try {
-                // Запрашиваем все withdrawals без фильтра по tick (API может не поддерживать параметр tick)
-                const [dRes, wRes] = await Promise.all([
-                    safeFetchJson(`${BACKEND_URL}?action=deposit_list&address=${userAddress}&start=0&limit=20`, {
-                        timeoutMs: 12000,
-                        retries: 2
-                    }).then(r => r || { code: -1 }),
-                    safeFetchJson(`${BACKEND_URL}?action=withdraw_history&address=${userAddress}&start=0&limit=50`, {
-                        timeoutMs: 12000,
-                        retries: 2
-                    }).then(r => r || { code: -1 })
-                ]);
-                if (dRes.code === 0) deposits = dRes.data?.list || [];
-                if (wRes.code === 0) withdrawals = wRes.data?.list || [];
-            } catch (e) {
-                console.warn('Fetch history error', e);
+        try {
+            window.__fennecUiCache =
+                window.__fennecUiCache && typeof window.__fennecUiCache === 'object'
+                    ? window.__fennecUiCache
+                    : { historyHtml: {}, inscriptionsHtml: {}, liquidityHtml: {} };
+            const v =
+                currentTab === 'swap'
+                    ? String(currentSwapPair || '').trim()
+                    : currentTab === 'deposit'
+                      ? String(depositToken || '').trim()
+                      : '';
+            const key = `hist:${String(currentTab || '').trim()}:${v}`;
+            const cached = window.__fennecUiCache?.historyHtml?.[key];
+            if (!force && cached && (!historyEl.innerHTML || historyEl.innerHTML.length < 32)) {
+                historyEl.innerHTML = String(cached);
             }
+        } catch (_) {}
+
+        // For swap history, load immediately without wallet
+        if (!userAddress && currentTab !== 'swap') {
+            historyEl.innerHTML =
+                '<div class="text-center py-4 text-gray-500 text-xs">Connect wallet to view history</div>';
+            return;
         }
 
-        let allTxs = [];
-
-        // --- ЛОГИКА DEPOSIT (показываем последние 10 для всех токенов) ---
-        if (filterType === 'deposit') {
-            // Показываем все депозиты (BTC, FB, FENNEC) вместе, последние 10
-            allTxs = deposits
-                .map(d => {
-                    let tick = d.tick || 'FB';
-                    if (tick.includes('sFB')) tick = 'FB';
-                    if (tick === 'FENNEC') tick = 'FENNEC';
-                    if (tick === 'BTC' || tick.includes('BTC')) tick = 'BTC';
-                    return { ...d, type: 'deposit', tick };
-                })
-                .sort((a, b) => (b.ts || b.timestamp || 0) - (a.ts || a.timestamp || 0)) // Сортируем по времени (новые первые)
-                .slice(0, 10); // Берем последние 10
+        // Load swap history immediately even without wallet
+        if (currentTab === 'swap' || !currentTab) {
+            // Continue to load swap history
         }
-        // --- ЛОГИКА WITHDRAW (ИСПРАВЛЕНО: Строгая фильтрация на клиенте по полю tick) ---
-        else if (filterType === 'withdraw') {
-            console.log(`Loading withdraw history: ${withdrawals.length} total entries from API`);
 
-            // 1. Строгая фильтрация на клиенте - только FB и FENNEC withdrawals для текущего адреса
-            const basicList = withdrawals
-                .filter(w => {
-                    // Проверяем адрес (если есть в ответе API)
-                    if (w.address && w.address.toLowerCase() !== userAddress.toLowerCase()) {
-                        console.log(`Skipping withdraw - wrong address. Expected: ${userAddress}, Got: ${w.address}`);
-                        return false;
-                    }
+        try {
+            let filterTick = null;
+            const filterType = currentTab === 'deposit' ? 'deposit' : currentTab === 'withdraw' ? 'withdraw' : 'swap';
 
-                    // Проверяем поле tick в ответе API
-                    const tick = (w.tick || '').toString();
+            if (filterType === 'deposit')
+                filterTick = depositToken === 'BTC' ? 'BTC' : depositToken === 'FENNEC' ? 'FENNEC' : 'FB';
+            // For withdraw, show both FB and FENNEC together (no filter)
+            else if (filterType === 'withdraw') filterTick = null; // Show all withdraws
 
-                    // Только FB (sFB___000, sFB, FB) и FENNEC
-                    const isFB =
-                        tick === 'sFB___000' ||
-                        tick === 'sFB' ||
-                        tick === 'FB' ||
-                        tick.toUpperCase() === 'SFB___000' ||
-                        tick.toUpperCase() === 'SFB';
-                    const isFENNEC = tick === 'FENNEC' || tick.toUpperCase() === 'FENNEC';
-
-                    // Allow sBTC for BTC withdrawals
-                    const isBTC = tick === 'sBTC___000' || tick === 'sBTC' || tick === 'BTC';
-                    if (!isFB && !isFENNEC && !isBTC) {
-                        console.log(`Skipping withdraw - not FB/FENNEC/BTC. Tick: "${tick}"`, w);
-                        return false;
-                    }
-
-                    // Логируем успешный withdrawal для отладки
-                    console.log(`Valid withdraw: ${w.amount || 0} ${tick} (ID: ${w.id})`);
-                    return true;
-                })
-                .map(w => {
-                    // Нормализуем тикер для отображения
-                    let tick = (w.tick || '').toString();
-                    if (
-                        tick === 'sFB___000' ||
-                        tick === 'sFB' ||
-                        tick.toUpperCase() === 'SFB___000' ||
-                        tick.toUpperCase() === 'SFB'
-                    ) {
-                        tick = 'FB';
-                    } else if (tick === 'FENNEC' || tick.toUpperCase() === 'FENNEC') {
-                        tick = 'FENNEC';
-                    } else if (tick === 'sBTC___000' || tick === 'sBTC' || tick === 'BTC') {
-                        // sBTC is valid for BTC withdrawals
-                        tick = 'BTC';
-                    } else {
-                        // Fallback - если не распознали, но прошли фильтр, оставляем как есть
-                        console.warn(`Unknown tick format but passed filter: "${tick}"`, w);
-                    }
-                    return { ...w, tick };
-                });
-
-            const isLikelyHash = value => {
-                const v = (value || '').toString();
-                return v.length >= 32 && v.length <= 128 && /^[a-fA-F0-9]+$/.test(v);
-            };
-
-            const limitedList = basicList
-                .sort((a, b) => (b.ts || b.timestamp || 0) - (a.ts || a.timestamp || 0))
-                .slice(0, 10);
-
-            console.log(
-                `Filtered to ${basicList.length} valid withdrawals (FB + FENNEC) from ${withdrawals.length} total`
-            );
-
-            // 2. Обогащаем данные: запрашиваем детали для получения реального TXID
-            // Используем Promise.all для параллельной загрузки (быстро)
-            allTxs = await Promise.all(
-                limitedList.map(async w => {
-                    let tick = w.tick || 'FB';
-                    if (tick.includes('sFB') || tick === 'sFB___000') tick = 'FB';
-                    if (tick === 'FENNEC' || tick.includes('FENNEC')) tick = 'FENNEC';
-                    if (tick === 'BTC' || tick.includes('BTC')) tick = 'BTC';
-
-                    // По умолчанию берем то, что есть (часто это ID ордера)
-                    let displayTxid =
-                        w.receiveTxid ||
-                        w.receiveTxId ||
-                        w.receive_txid ||
-                        w.receiveTxHash ||
-                        w.txid ||
-                        w.hash ||
-                        w.approveTxid ||
-                        w.approveTxId ||
-                        w.approve_txid ||
-                        w.rollUpTxid ||
-                        w.rollUpTxId ||
-                        w.rollUp_txid ||
-                        w.inscribeTxid ||
-                        w.inscribeTxId ||
-                        w.inscribe_txid ||
-                        w.paymentTxid ||
-                        w.paymentTxId ||
-                        w.payment_txid ||
-                        '';
-                    let status = w.status;
-
-                    const needsResolution = !isLikelyHash(displayTxid);
-
-                    // ИСПРАВЛЕНИЕ: Всегда запрашиваем детали для получения receiveTxid (не payTxid)
-                    // Для withdraw транзакций нужно использовать receiveTxid, а не payTxid
-                    if (needsResolution) {
-                        try {
-                            // Запрашиваем детали БЕЗ параметра address (только ID)
-                            const detailRes = await safeFetchJson(`${BACKEND_URL}?action=withdraw_process&id=${w.id}`, {
+            // Загружаем данные параллельно
+            let deposits = [],
+                withdrawals = [];
+            if (userAddress) {
+                try {
+                    // Запрашиваем все withdrawals без фильтра по tick (API может не поддерживать параметр tick)
+                    const [dRes, wRes] = await Promise.all([
+                        safeFetchJson(`${BACKEND_URL}?action=deposit_list&address=${userAddress}&start=0&limit=20`, {
+                            timeoutMs: 12000,
+                            retries: 2
+                        }).then(r => r || { code: -1 }),
+                        safeFetchJson(
+                            `${BACKEND_URL}?action=withdraw_history&address=${userAddress}&start=0&limit=50`,
+                            {
                                 timeoutMs: 12000,
                                 retries: 2
-                            });
-
-                            if (detailRes && detailRes.code === 0 && detailRes.data) {
-                                // ИСПРАВЛЕНИЕ: Приоритет receiveTxid (это транзакция получения на Bitcoin Mainnet)
-                                // НЕ используем payTxid (это транзакция сжигания на Fractal)
-                                const realHash =
-                                    detailRes.data.receiveTxid ||
-                                    detailRes.data.receiveTxId ||
-                                    detailRes.data.receive_txid ||
-                                    detailRes.data.receiveTxHash ||
-                                    detailRes.data.txid ||
-                                    detailRes.data.hash ||
-                                    detailRes.data.approveTxid ||
-                                    detailRes.data.approveTxId ||
-                                    detailRes.data.approve_txid ||
-                                    detailRes.data.rollUpTxid ||
-                                    detailRes.data.rollUpTxId ||
-                                    detailRes.data.rollUp_txid ||
-                                    detailRes.data.inscribeTxid ||
-                                    detailRes.data.inscribeTxId ||
-                                    detailRes.data.inscribe_txid ||
-                                    detailRes.data.paymentTxid ||
-                                    detailRes.data.paymentTxId ||
-                                    detailRes.data.payment_txid ||
-                                    displayTxid;
-
-                                // НЕ используем payTxid, так как это транзакция сжигания, а не получения
-                                // payTxid = транзакция сжигания на Fractal
-                                // receiveTxid = транзакция получения на Bitcoin Mainnet (это то, что нужно)
-
-                                if (isLikelyHash(realHash)) {
-                                    displayTxid = realHash;
-                                    // console.log(`Using receiveTxid for withdraw ${w.id} (${tick}) -> ${realHash}`);
-                                }
                             }
-                        } catch (err) {
-                            console.warn(`Failed to verify withdraw ${w.id}`, err);
+                        ).then(r => r || { code: -1 })
+                    ]);
+                    if (dRes.code === 0) deposits = dRes.data?.list || [];
+                    if (wRes.code === 0) withdrawals = wRes.data?.list || [];
+                } catch (e) {
+                    console.warn('Fetch history error', e);
+                }
+            }
+
+            let allTxs = [];
+
+            // --- ЛОГИКА DEPOSIT (показываем последние 10 для всех токенов) ---
+            if (filterType === 'deposit') {
+                // Показываем все депозиты (BTC, FB, FENNEC) вместе, последние 10
+                allTxs = deposits
+                    .map(d => {
+                        let tick = d.tick || 'FB';
+                        if (tick.includes('sFB')) tick = 'FB';
+                        if (tick === 'FENNEC') tick = 'FENNEC';
+                        if (tick === 'BTC' || tick.includes('BTC')) tick = 'BTC';
+                        return { ...d, type: 'deposit', tick };
+                    })
+                    .sort((a, b) => (b.ts || b.timestamp || 0) - (a.ts || a.timestamp || 0)) // Сортируем по времени (новые первые)
+                    .slice(0, 10); // Берем последние 10
+            }
+            // --- ЛОГИКА WITHDRAW (ИСПРАВЛЕНО: Строгая фильтрация на клиенте по полю tick) ---
+            else if (filterType === 'withdraw') {
+                if (__historyDebug)
+                    console.log(`Loading withdraw history: ${withdrawals.length} total entries from API`);
+
+                // 1. Строгая фильтрация на клиенте - только FB и FENNEC withdrawals для текущего адреса
+                const basicList = withdrawals
+                    .filter(w => {
+                        // Проверяем адрес (если есть в ответе API)
+                        if (w.address && w.address.toLowerCase() !== userAddress.toLowerCase()) {
+                            if (__historyDebug)
+                                console.log(
+                                    `Skipping withdraw - wrong address. Expected: ${userAddress}, Got: ${w.address}`
+                                );
+                            return false;
                         }
-                    }
 
-                    return {
-                        ...w,
-                        type: 'withdraw',
-                        tick,
-                        txid: displayTxid, // Теперь тут реальный хеш
-                        status: status,
-                        ts: w.ts || w.timestamp || Math.floor(Date.now() / 1000) // Добавляем timestamp для сортировки
-                    };
-                })
-            );
+                        // Проверяем поле tick в ответе API
+                        const tick = (w.tick || '').toString();
 
-            // Сортируем по времени (новые первые)
-            allTxs.sort((a, b) => (b.ts || 0) - (a.ts || 0));
-            console.log(`Processed ${allTxs.length} withdrawals (sorted by time)`);
-        }
-        // --- ЛОГИКА SWAP (ИСПРАВЛЕНО: Используем кэшированные данные) ---
-        else if (filterType === 'swap') {
-            let swapList = [];
+                        // Только FB (sFB___000, sFB, FB) и FENNEC
+                        const isFB =
+                            tick === 'sFB___000' ||
+                            tick === 'sFB' ||
+                            tick === 'FB' ||
+                            tick.toUpperCase() === 'SFB___000' ||
+                            tick.toUpperCase() === 'SFB';
+                        const isFENNEC = tick === 'FENNEC' || tick.toUpperCase() === 'FENNEC';
 
-            // ИСПРАВЛЕНИЕ: Используем единую функцию загрузки с кэшем
-            try {
-                const swapData = await loadSwapHistory(true);
-                const sResFB_FENNEC = swapData.fbFennec;
-                const sResBTC_FB = swapData.btcFb;
+                        // Allow sBTC for BTC withdrawals
+                        const isBTC = tick === 'sBTC___000' || tick === 'sBTC' || tick === 'BTC';
+                        if (!isFB && !isFENNEC && !isBTC) {
+                            if (__historyDebug)
+                                console.log(`Skipping withdraw - not FB/FENNEC/BTC. Tick: "${tick}"`, w);
+                            return false;
+                        }
 
-                // Обрабатываем историю FB-FENNEC
-                if (sResFB_FENNEC.code === 0 && sResFB_FENNEC.data?.list) {
-                    const fbFennecSwaps = sResFB_FENNEC.data.list.map(s => {
-                        const tickIn = s.tickIn || s.tick0 || '';
-                        const tickOut = s.tickOut || s.tick1 || '';
-                        const amountIn = parseFloat(s.amountIn || s.amount0 || s.amount || 0);
-                        const amountOut = parseFloat(s.amountOut || s.amount1 || 0);
-
-                        let payTick, receiveTick;
-                        if (tickIn.includes('FENNEC')) {
-                            payTick = 'FENNEC';
-                            receiveTick = tickOut.includes('FB') || tickOut.includes('sFB') ? 'FB' : tickOut;
-                        } else if (tickIn.includes('FB') || tickIn.includes('sFB')) {
-                            payTick = 'FB';
-                            receiveTick = tickOut.includes('FENNEC') ? 'FENNEC' : tickOut;
+                        // Логируем успешный withdrawal для отладки
+                        if (__historyDebug) console.log(`Valid withdraw: ${w.amount || 0} ${tick} (ID: ${w.id})`);
+                        return true;
+                    })
+                    .map(w => {
+                        // Нормализуем тикер для отображения
+                        let tick = (w.tick || '').toString();
+                        if (
+                            tick === 'sFB___000' ||
+                            tick === 'sFB' ||
+                            tick.toUpperCase() === 'SFB___000' ||
+                            tick.toUpperCase() === 'SFB'
+                        ) {
+                            tick = 'FB';
+                        } else if (tick === 'FENNEC' || tick.toUpperCase() === 'FENNEC') {
+                            tick = 'FENNEC';
+                        } else if (tick === 'sBTC___000' || tick === 'sBTC' || tick === 'BTC') {
+                            // sBTC is valid for BTC withdrawals
+                            tick = 'BTC';
                         } else {
-                            payTick = tickIn;
-                            receiveTick = tickOut;
+                            // Fallback - если не распознали, но прошли фильтр, оставляем как есть
+                            if (__historyDebug) console.warn(`Unknown tick format but passed filter: "${tick}"`, w);
                         }
-
-                        return {
-                            ...s,
-                            type: 'swap',
-                            ts: s.ts || s.timestamp || Math.floor(Date.now() / 1000),
-                            payAmount: amountIn,
-                            receiveAmount: amountOut,
-                            payTick: payTick,
-                            receiveTick: receiveTick,
-                            txid: s.txid || s.hash || s.id
-                        };
+                        return { ...w, tick };
                     });
-                    swapList = swapList.concat(fbFennecSwaps);
-                }
 
-                // Обрабатываем историю BTC-FB
-                if (sResBTC_FB.code === 0 && sResBTC_FB.data?.list) {
-                    const btcFbSwaps = sResBTC_FB.data.list.map(s => {
-                        const tickIn = s.tickIn || s.tick0 || '';
-                        const tickOut = s.tickOut || s.tick1 || '';
-                        const amountIn = parseFloat(s.amountIn || s.amount0 || s.amount || 0);
-                        const amountOut = parseFloat(s.amountOut || s.amount1 || 0);
-
-                        let payTick, receiveTick;
-                        if (tickIn.includes('BTC') || tickIn.includes('sBTC')) {
-                            payTick = 'BTC'; // Отображаем как BTC, не sBTC
-                            receiveTick = tickOut.includes('FB') || tickOut.includes('sFB') ? 'FB' : tickOut;
-                        } else if (tickIn.includes('FB') || tickIn.includes('sFB')) {
-                            payTick = 'FB';
-                            receiveTick = tickOut.includes('BTC') || tickOut.includes('sBTC') ? 'BTC' : tickOut; // Отображаем как BTC
-                        } else {
-                            payTick = tickIn.includes('sBTC') ? 'BTC' : tickIn;
-                            receiveTick = tickOut.includes('sBTC') ? 'BTC' : tickOut;
-                        }
-
-                        return {
-                            ...s,
-                            type: 'swap',
-                            ts: s.ts || s.timestamp || Math.floor(Date.now() / 1000),
-                            payAmount: amountIn,
-                            receiveAmount: amountOut,
-                            payTick: payTick,
-                            receiveTick: receiveTick,
-                            txid: s.txid || s.hash || s.id
-                        };
-                    });
-                    swapList = swapList.concat(btcFbSwaps);
-                }
-
-                console.log(`Loaded ${swapList.length} swaps from API (FB-FENNEC + BTC-FB)`);
-            } catch (e) {
-                console.error('Failed to fetch swap history:', e);
-            }
-
-            // 2. Fallback на LocalStorage (ТОЛЬКО SWAP)
-            if (swapList.length === 0) {
-                const localHist = JSON.parse(localStorage.getItem('fennec_history') || '[]');
-                // !!! ФИЛЬТРУЕМ СТРОГО ПО ТИПУ SWAP !!!
-                swapList = localHist
-                    .filter(tx => tx.type === 'swap')
-                    .map(tx => ({
-                        ...tx,
-                        ts: Math.floor((tx.timestamp || Date.now()) / 1000)
-                    }));
-            }
-
-            // 3. ФИЛЬТРАЦИЯ ПО ТЕКУЩЕЙ ПАРЕ (ИСПРАВЛЕНО)
-            // Показываем только свапы для выбранной пары
-            if (currentSwapPair === 'FB_FENNEC') {
-                // Для пары FB-FENNEC показываем только свапы между FB и FENNEC (без BTC)
-                swapList = swapList.filter(s => {
-                    const payTick = s.payTick || '';
-                    const receiveTick = s.receiveTick || '';
-                    // Исключаем свапы с BTC
-                    const hasBTC = payTick.includes('BTC') || receiveTick.includes('BTC');
-                    // Включаем только свапы между FB и FENNEC
-                    const hasFB = payTick.includes('FB') || receiveTick.includes('FB');
-                    const hasFENNEC = payTick.includes('FENNEC') || receiveTick.includes('FENNEC');
-                    return !hasBTC && hasFB && hasFENNEC;
-                });
-            } else if (currentSwapPair === 'BTC_FB') {
-                // Для пары BTC-FB показываем только свапы между BTC и FB (без FENNEC)
-                swapList = swapList.filter(s => {
-                    const payTick = s.payTick || '';
-                    const receiveTick = s.receiveTick || '';
-                    // Исключаем свапы с FENNEC
-                    const hasFENNEC = payTick.includes('FENNEC') || receiveTick.includes('FENNEC');
-                    // Включаем только свапы между BTC и FB
-                    const hasBTC = payTick.includes('BTC') || receiveTick.includes('BTC');
-                    const hasFB = payTick.includes('FB') || receiveTick.includes('FB');
-                    return !hasFENNEC && hasBTC && hasFB;
-                });
-            }
-
-            console.log(`Filtered to ${swapList.length} swaps for pair ${currentSwapPair}`);
-            allTxs = swapList;
-        }
-
-        // Рендер
-        allTxs.sort((a, b) => (b.ts || 0) - (a.ts || 0));
-
-        if (allTxs.length === 0) {
-            if (historyEl) {
-                historyEl.innerHTML = '';
-                const empty = document.createElement('div');
-                empty.className = 'text-center py-4 text-gray-500 text-xs';
-                empty.textContent = `No ${filterType} history found`;
-                historyEl.appendChild(empty);
-            }
-            return;
-        }
-
-        // ИСПРАВЛЕНИЕ: Проверяем что historyEl существует перед рендером
-        if (!historyEl) {
-            console.warn('History element not found for rendering');
-            return;
-        }
-
-        historyEl.innerHTML = allTxs
-            .map(tx => {
-                const date = new Date((tx.ts || 0) * 1000);
-                const dateStr =
-                    date.toLocaleDateString('en-GB', {
-                        day: '2-digit',
-                        month: '2-digit',
-                        year: 'numeric'
-                    }) +
-                    ', ' +
-                    date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
-                const isDeposit = tx.type === 'deposit';
-                const isSwap = tx.type === 'swap';
-
-                // Статус
-                let status = tx.status || 'completed';
-                let statusColor = 'text-green-400';
-                let statusText = status;
-
-                // Для вывода обрабатываем подтверждения
-                if (tx.type === 'withdraw') {
-                    if (status === 'completed' || status === 'success' || tx.isSuccess) {
-                        statusText = 'Success';
-                        statusColor = 'text-green-400';
-                    } else {
-                        const cur = tx.cur || tx.totalConfirmedNum || 0;
-                        const sum = tx.sum || tx.totalNum || 1;
-                        statusText = `${cur}/${sum} confirm`;
-                        statusColor = 'text-yellow-400';
-                    }
-                }
-
-                // Получаем реальный TXID (улучшенная логика для всех типов транзакций)
-                let realTxid = '';
-
-                if (tx.type === 'withdraw') {
-                    realTxid =
-                        tx.receiveTxid ||
-                        tx.receiveTxId ||
-                        tx.receive_txid ||
-                        tx.receiveTxHash ||
-                        tx.txid ||
-                        tx.approveTxid ||
-                        tx.approveTxId ||
-                        tx.approve_txid ||
-                        tx.rollUpTxid ||
-                        tx.rollUpTxId ||
-                        tx.rollUp_txid ||
-                        tx.inscribeTxid ||
-                        tx.inscribeTxId ||
-                        tx.inscribe_txid ||
-                        tx.paymentTxid ||
-                        tx.paymentTxId ||
-                        tx.payment_txid ||
-                        tx.hash ||
-                        '';
-                } else if (tx.type === 'deposit') {
-                    // Для депозита: txid, hash, id
-                    realTxid = tx.txid || tx.hash || tx.id || '';
-                } else {
-                    // Для других типов (swap и т.д.)
-                    realTxid = tx.txid || tx.hash || tx.id || '';
-                }
-
-                // Проверяем, что это валидный хеш транзакции (минимум 32 символа hex, максимум 128)
-                // Bitcoin/Fractal транзакции обычно 64 символа, но могут быть и другие форматы
-                const isHash =
-                    realTxid &&
-                    realTxid.length >= 32 &&
-                    realTxid.length <= 128 &&
-                    /^[a-fA-F0-9]+$/.test(realTxid) &&
-                    !realTxid.includes('_') && // Исключаем ID ордеров с подчеркиваниями
-                    !realTxid.includes('-'); // Исключаем UUID
-
-                let txLink = '';
-                if (tx.type !== 'swap' && isHash) {
-                    // ИСПРАВЛЕНО: Все действия происходят во Fractal, кроме депозита BTC
-                    // Для вывода: всегда Uniscan (Fractal), так как вывод происходит из Fractal
-                    // Для депозита: только BTC депозиты ведут на mempool.space, остальное - Uniscan
-                    const rawTick = (tx.tick || '').toString().toUpperCase();
-                    const tickNorm =
-                        rawTick.includes('SBTC') || rawTick === 'BTC' || rawTick.includes('BTC')
-                            ? 'BTC'
-                            : rawTick.includes('SFB') || rawTick === 'FB'
-                              ? 'FB'
-                              : rawTick.includes('FENNEC')
-                                ? 'FENNEC'
-                                : rawTick;
-                    const useMempool = tickNorm === 'BTC';
-
-                    txLink = useMempool
-                        ? `<a href="https://mempool.space/tx/${realTxid}" target="_blank" class="text-[10px] text-fennec hover:text-white mt-1 block truncate w-20">View TX</a>`
-                        : `<a href="https://uniscan.cc/fractal/tx/${realTxid}" target="_blank" class="text-[10px] text-fennec hover:text-white mt-1 block truncate w-20">View TX</a>`;
-                }
-
-                // Format amounts with proper separators
-                const formatAmount = amt => {
-                    const num = parseFloat(amt || 0);
-                    if (num === 0) return '0';
-                    // Use comma for thousands, period for decimals
-                    const parts = num
-                        .toFixed(8)
-                        .replace(/\.?0+$/, '')
-                        .split('.');
-                    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-                    return parts.join('.');
+                const isLikelyHash = value => {
+                    const v = (value || '').toString();
+                    return v.length >= 32 && v.length <= 128 && /^[a-fA-F0-9]+$/.test(v);
                 };
 
-                // For swap, show Pay/Receive format with icons
-                if (isSwap) {
-                    const payAmt = formatAmount(tx.payAmount || tx.amountIn || tx.amount);
-                    const receiveAmt = formatAmount(tx.receiveAmount || tx.amountOut || 0);
-                    const payTick = tx.payTick || (tx.tickIn?.includes('FENNEC') ? 'FENNEC' : 'FB');
-                    const receiveTick = tx.receiveTick || (tx.tickOut?.includes('FENNEC') ? 'FENNEC' : 'FB');
+                const limitedList = basicList
+                    .sort((a, b) => (b.ts || b.timestamp || 0) - (a.ts || a.timestamp || 0))
+                    .slice(0, 10);
+                if (__historyDebug) {
+                    console.log(
+                        `Filtered to ${basicList.length} valid withdrawals (FB + FENNEC) from ${withdrawals.length} total`
+                    );
+                }
 
-                    const safePayAmt = __escapeHtml(payAmt);
-                    const safeReceiveAmt = __escapeHtml(receiveAmt);
-                    const safeDateStr = __escapeHtml(dateStr);
+                // 2. Обогащаем данные: запрашиваем детали для получения реального TXID
+                // Используем Promise.all для параллельной загрузки (быстро)
+                allTxs = await Promise.all(
+                    limitedList.map(async w => {
+                        let tick = w.tick || 'FB';
+                        if (tick.includes('sFB') || tick === 'sFB___000') tick = 'FB';
+                        if (tick === 'FENNEC' || tick.includes('FENNEC')) tick = 'FENNEC';
+                        if (tick === 'BTC' || tick.includes('BTC')) tick = 'BTC';
 
-                    // Icons for tokens (using site assets from img folder)
-                    const payIcon =
-                        payTick === 'FENNEC'
-                            ? '<img src="img/phav.png" class="w-4 h-4 rounded-full" onerror="this.style.display=\'none\'">'
-                            : payTick === 'BTC'
-                              ? '<img src="img/BTC.svg" class="w-4 h-4 rounded-full" onerror="this.style.display=\'none\'">'
-                              : '<img src="img/FB.png" class="w-4 h-4 rounded-full" onerror="this.style.display=\'none\'">';
-                    const receiveIcon =
-                        receiveTick === 'FENNEC'
-                            ? '<img src="img/phav.png" class="w-4 h-4 rounded-full" onerror="this.style.display=\'none\'">'
-                            : receiveTick === 'BTC'
-                              ? '<img src="img/BTC.svg" class="w-4 h-4 rounded-full" onerror="this.style.display=\'none\'">'
-                              : '<img src="img/FB.png" class="w-4 h-4 rounded-full" onerror="this.style.display=\'none\'">';
+                        // По умолчанию берем то, что есть (часто это ID ордера)
+                        let displayTxid =
+                            w.receiveTxid ||
+                            w.receiveTxId ||
+                            w.receive_txid ||
+                            w.receiveTxHash ||
+                            w.txid ||
+                            w.hash ||
+                            w.approveTxid ||
+                            w.approveTxId ||
+                            w.approve_txid ||
+                            w.rollUpTxid ||
+                            w.rollUpTxId ||
+                            w.rollUp_txid ||
+                            w.inscribeTxid ||
+                            w.inscribeTxId ||
+                            w.inscribe_txid ||
+                            w.paymentTxid ||
+                            w.paymentTxId ||
+                            w.payment_txid ||
+                            '';
+                        const status = w.status;
 
-                    return `
+                        const needsResolution = !isLikelyHash(displayTxid);
+
+                        // ИСПРАВЛЕНИЕ: Всегда запрашиваем детали для получения receiveTxid (не payTxid)
+                        // Для withdraw транзакций нужно использовать receiveTxid, а не payTxid
+                        if (needsResolution) {
+                            try {
+                                // Запрашиваем детали БЕЗ параметра address (только ID)
+                                const detailRes = await safeFetchJson(
+                                    `${BACKEND_URL}?action=withdraw_process&id=${w.id}`,
+                                    {
+                                        timeoutMs: 12000,
+                                        retries: 2
+                                    }
+                                );
+
+                                if (detailRes && detailRes.code === 0 && detailRes.data) {
+                                    // ИСПРАВЛЕНИЕ: Приоритет receiveTxid (это транзакция получения на Bitcoin Mainnet)
+                                    // НЕ используем payTxid (это транзакция сжигания на Fractal)
+                                    const realHash =
+                                        detailRes.data.receiveTxid ||
+                                        detailRes.data.receiveTxId ||
+                                        detailRes.data.receive_txid ||
+                                        detailRes.data.receiveTxHash ||
+                                        detailRes.data.txid ||
+                                        detailRes.data.hash ||
+                                        detailRes.data.approveTxid ||
+                                        detailRes.data.approveTxId ||
+                                        detailRes.data.approve_txid ||
+                                        detailRes.data.rollUpTxid ||
+                                        detailRes.data.rollUpTxId ||
+                                        detailRes.data.rollUp_txid ||
+                                        detailRes.data.inscribeTxid ||
+                                        detailRes.data.inscribeTxId ||
+                                        detailRes.data.inscribe_txid ||
+                                        detailRes.data.paymentTxid ||
+                                        detailRes.data.paymentTxId ||
+                                        detailRes.data.payment_txid ||
+                                        displayTxid;
+
+                                    // НЕ используем payTxid, так как это транзакция сжигания, а не получения
+                                    // payTxid = транзакция сжигания на Fractal
+                                    // receiveTxid = транзакция получения на Bitcoin Mainnet (это то, что нужно)
+
+                                    if (isLikelyHash(realHash)) {
+                                        displayTxid = realHash;
+                                        // console.log(`Using receiveTxid for withdraw ${w.id} (${tick}) -> ${realHash}`);
+                                    }
+                                }
+                            } catch (err) {
+                                if (__historyDebug) console.warn(`Failed to verify withdraw ${w.id}`, err);
+                            }
+                        }
+
+                        return {
+                            ...w,
+                            type: 'withdraw',
+                            tick,
+                            txid: displayTxid, // Теперь тут реальный хеш
+                            status: status,
+                            ts: w.ts || w.timestamp || Math.floor(Date.now() / 1000) // Добавляем timestamp для сортировки
+                        };
+                    })
+                );
+
+                // Сортируем по времени (новые первые)
+                allTxs.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+                if (__historyDebug) console.log(`Processed ${allTxs.length} withdrawals (sorted by time)`);
+            }
+            // --- ЛОГИКА SWAP (ИСПРАВЛЕНО: Используем кэшированные данные) ---
+            else if (filterType === 'swap') {
+                let swapList = [];
+
+                // ИСПРАВЛЕНИЕ: Используем единую функцию загрузки с кэшем
+                try {
+                    const swapData = await loadSwapHistory(true);
+                    const sResFB_FENNEC = swapData.fbFennec;
+                    const sResBTC_FB = swapData.btcFb;
+
+                    // Обрабатываем историю FB-FENNEC
+                    if (sResFB_FENNEC.code === 0 && sResFB_FENNEC.data?.list) {
+                        const fbFennecSwaps = sResFB_FENNEC.data.list.map(s => {
+                            const tickIn = s.tickIn || s.tick0 || '';
+                            const tickOut = s.tickOut || s.tick1 || '';
+                            const amountIn = parseFloat(s.amountIn || s.amount0 || s.amount || 0);
+                            const amountOut = parseFloat(s.amountOut || s.amount1 || 0);
+
+                            let payTick, receiveTick;
+                            if (tickIn.includes('FENNEC')) {
+                                payTick = 'FENNEC';
+                                receiveTick = tickOut.includes('FB') || tickOut.includes('sFB') ? 'FB' : tickOut;
+                            } else if (tickIn.includes('FB') || tickIn.includes('sFB')) {
+                                payTick = 'FB';
+                                receiveTick = tickOut.includes('FENNEC') ? 'FENNEC' : tickOut;
+                            } else {
+                                payTick = tickIn;
+                                receiveTick = tickOut;
+                            }
+
+                            return {
+                                ...s,
+                                type: 'swap',
+                                ts: s.ts || s.timestamp || Math.floor(Date.now() / 1000),
+                                payAmount: amountIn,
+                                receiveAmount: amountOut,
+                                payTick: payTick,
+                                receiveTick: receiveTick,
+                                txid: s.txid || s.hash || s.id
+                            };
+                        });
+                        swapList = swapList.concat(fbFennecSwaps);
+                    }
+
+                    // Обрабатываем историю BTC-FB
+                    if (sResBTC_FB.code === 0 && sResBTC_FB.data?.list) {
+                        const btcFbSwaps = sResBTC_FB.data.list.map(s => {
+                            const tickIn = s.tickIn || s.tick0 || '';
+                            const tickOut = s.tickOut || s.tick1 || '';
+                            const amountIn = parseFloat(s.amountIn || s.amount0 || s.amount || 0);
+                            const amountOut = parseFloat(s.amountOut || s.amount1 || 0);
+
+                            let payTick, receiveTick;
+                            if (tickIn.includes('BTC') || tickIn.includes('sBTC')) {
+                                payTick = 'BTC'; // Отображаем как BTC, не sBTC
+                                receiveTick = tickOut.includes('FB') || tickOut.includes('sFB') ? 'FB' : tickOut;
+                            } else if (tickIn.includes('FB') || tickIn.includes('sFB')) {
+                                payTick = 'FB';
+                                receiveTick = tickOut.includes('BTC') || tickOut.includes('sBTC') ? 'BTC' : tickOut; // Отображаем как BTC
+                            } else {
+                                payTick = tickIn.includes('sBTC') ? 'BTC' : tickIn;
+                                receiveTick = tickOut.includes('sBTC') ? 'BTC' : tickOut;
+                            }
+
+                            return {
+                                ...s,
+                                type: 'swap',
+                                ts: s.ts || s.timestamp || Math.floor(Date.now() / 1000),
+                                payAmount: amountIn,
+                                receiveAmount: amountOut,
+                                payTick: payTick,
+                                receiveTick: receiveTick,
+                                txid: s.txid || s.hash || s.id
+                            };
+                        });
+                        swapList = swapList.concat(btcFbSwaps);
+                    }
+
+                    console.log(`Loaded ${swapList.length} swaps from API (FB-FENNEC + BTC-FB)`);
+                } catch (e) {
+                    console.error('Failed to fetch swap history:', e);
+                }
+
+                // 2. Fallback на LocalStorage (ТОЛЬКО SWAP)
+                if (swapList.length === 0) {
+                    const localHist = JSON.parse(localStorage.getItem('fennec_history') || '[]');
+                    // !!! ФИЛЬТРУЕМ СТРОГО ПО ТИПУ SWAP !!!
+                    swapList = localHist
+                        .filter(tx => tx.type === 'swap')
+                        .map(tx => ({
+                            ...tx,
+                            ts: Math.floor((tx.timestamp || Date.now()) / 1000)
+                        }));
+                }
+
+                // 3. ФИЛЬТРАЦИЯ ПО ТЕКУЩЕЙ ПАРЕ (ИСПРАВЛЕНО)
+                // Показываем только свапы для выбранной пары
+                if (currentSwapPair === 'FB_FENNEC') {
+                    // Для пары FB-FENNEC показываем только свапы между FB и FENNEC (без BTC)
+                    swapList = swapList.filter(s => {
+                        const payTick = s.payTick || '';
+                        const receiveTick = s.receiveTick || '';
+                        // Исключаем свапы с BTC
+                        const hasBTC = payTick.includes('BTC') || receiveTick.includes('BTC');
+                        // Включаем только свапы между FB и FENNEC
+                        const hasFB = payTick.includes('FB') || receiveTick.includes('FB');
+                        const hasFENNEC = payTick.includes('FENNEC') || receiveTick.includes('FENNEC');
+                        return !hasBTC && hasFB && hasFENNEC;
+                    });
+                } else if (currentSwapPair === 'BTC_FB') {
+                    // Для пары BTC-FB показываем только свапы между BTC и FB (без FENNEC)
+                    swapList = swapList.filter(s => {
+                        const payTick = s.payTick || '';
+                        const receiveTick = s.receiveTick || '';
+                        // Исключаем свапы с FENNEC
+                        const hasFENNEC = payTick.includes('FENNEC') || receiveTick.includes('FENNEC');
+                        // Включаем только свапы между BTC и FB
+                        const hasBTC = payTick.includes('BTC') || receiveTick.includes('BTC');
+                        const hasFB = payTick.includes('FB') || receiveTick.includes('FB');
+                        return !hasFENNEC && hasBTC && hasFB;
+                    });
+                }
+
+                console.log(`Filtered to ${swapList.length} swaps for pair ${currentSwapPair}`);
+                allTxs = swapList;
+            }
+
+            // Рендер
+            allTxs.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+
+            if (allTxs.length === 0) {
+                if (historyEl) {
+                    historyEl.innerHTML = '';
+                    const empty = document.createElement('div');
+                    empty.className = 'text-center py-4 text-gray-500 text-xs';
+                    empty.textContent = `No ${filterType} history found`;
+                    historyEl.appendChild(empty);
+                }
+
+                try {
+                    const v =
+                        currentTab === 'swap'
+                            ? String(currentSwapPair || '').trim()
+                            : currentTab === 'deposit'
+                              ? String(depositToken || '').trim()
+                              : '';
+                    const key = `hist:${String(currentTab || '').trim()}:${v}`;
+                    if (window.__fennecUiCache && window.__fennecUiCache.historyHtml) {
+                        window.__fennecUiCache.historyHtml[key] = String(historyEl.innerHTML || '');
+                    }
+                } catch (_) {}
+                return;
+            }
+
+            // ИСПРАВЛЕНИЕ: Проверяем что historyEl существует перед рендером
+            if (!historyEl) {
+                console.warn('History element not found for rendering');
+                return;
+            }
+
+            historyEl.innerHTML = allTxs
+                .map(tx => {
+                    const date = new Date((tx.ts || 0) * 1000);
+                    const dateStr =
+                        date.toLocaleDateString('en-GB', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric'
+                        }) +
+                        ', ' +
+                        date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+                    const isDeposit = tx.type === 'deposit';
+                    const isSwap = tx.type === 'swap';
+
+                    // Статус
+                    const status = tx.status || 'completed';
+                    let statusColor = 'text-green-400';
+                    let statusText = status;
+
+                    // Для вывода обрабатываем подтверждения
+                    if (tx.type === 'withdraw') {
+                        if (status === 'completed' || status === 'success' || tx.isSuccess) {
+                            statusText = 'Success';
+                            statusColor = 'text-green-400';
+                        } else {
+                            const cur = tx.cur || tx.totalConfirmedNum || 0;
+                            const sum = tx.sum || tx.totalNum || 1;
+                            statusText = `${cur}/${sum} confirm`;
+                            statusColor = 'text-yellow-400';
+                        }
+                    }
+
+                    // Получаем реальный TXID (улучшенная логика для всех типов транзакций)
+                    let realTxid = '';
+
+                    if (tx.type === 'withdraw') {
+                        realTxid =
+                            tx.receiveTxid ||
+                            tx.receiveTxId ||
+                            tx.receive_txid ||
+                            tx.receiveTxHash ||
+                            tx.txid ||
+                            tx.approveTxid ||
+                            tx.approveTxId ||
+                            tx.approve_txid ||
+                            tx.rollUpTxid ||
+                            tx.rollUpTxId ||
+                            tx.rollUp_txid ||
+                            tx.inscribeTxid ||
+                            tx.inscribeTxId ||
+                            tx.inscribe_txid ||
+                            tx.paymentTxid ||
+                            tx.paymentTxId ||
+                            tx.payment_txid ||
+                            tx.hash ||
+                            '';
+                    } else if (tx.type === 'deposit') {
+                        // Для депозита: txid, hash, id
+                        realTxid = tx.txid || tx.hash || tx.id || '';
+                    } else {
+                        // Для других типов (swap и т.д.)
+                        realTxid = tx.txid || tx.hash || tx.id || '';
+                    }
+
+                    // Проверяем, что это валидный хеш транзакции (минимум 32 символа hex, максимум 128)
+                    // Bitcoin/Fractal транзакции обычно 64 символа, но могут быть и другие форматы
+                    const isHash =
+                        realTxid &&
+                        realTxid.length >= 32 &&
+                        realTxid.length <= 128 &&
+                        /^[a-fA-F0-9]+$/.test(realTxid) &&
+                        !realTxid.includes('_') && // Исключаем ID ордеров с подчеркиваниями
+                        !realTxid.includes('-'); // Исключаем UUID
+
+                    let txLink = '';
+                    if (tx.type !== 'swap' && isHash) {
+                        // ИСПРАВЛЕНО: Все действия происходят во Fractal, кроме депозита BTC
+                        // Для вывода: всегда Uniscan (Fractal), так как вывод происходит из Fractal
+                        // Для депозита: только BTC депозиты ведут на mempool.space, остальное - Uniscan
+                        const rawTick = (tx.tick || '').toString().toUpperCase();
+                        const tickNorm =
+                            rawTick.includes('SBTC') || rawTick === 'BTC' || rawTick.includes('BTC')
+                                ? 'BTC'
+                                : rawTick.includes('SFB') || rawTick === 'FB'
+                                  ? 'FB'
+                                  : rawTick.includes('FENNEC')
+                                    ? 'FENNEC'
+                                    : rawTick;
+                        const useMempool = tickNorm === 'BTC';
+
+                        txLink = useMempool
+                            ? `<a href="https://mempool.space/tx/${realTxid}" target="_blank" class="text-[10px] text-fennec hover:text-white mt-1 block truncate w-20">View TX</a>`
+                            : `<a href="https://uniscan.cc/fractal/tx/${realTxid}" target="_blank" class="text-[10px] text-fennec hover:text-white mt-1 block truncate w-20">View TX</a>`;
+                    }
+
+                    // Format amounts with proper separators
+                    const formatAmount = amt => {
+                        const num = parseFloat(amt || 0);
+                        if (num === 0) return '0';
+                        // Use comma for thousands, period for decimals
+                        const parts = num
+                            .toFixed(8)
+                            .replace(/\.?0+$/, '')
+                            .split('.');
+                        parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+                        return parts.join('.');
+                    };
+
+                    // For swap, show Pay/Receive format with icons
+                    if (isSwap) {
+                        const payAmt = formatAmount(tx.payAmount || tx.amountIn || tx.amount);
+                        const receiveAmt = formatAmount(tx.receiveAmount || tx.amountOut || 0);
+                        const payTick = tx.payTick || (tx.tickIn?.includes('FENNEC') ? 'FENNEC' : 'FB');
+                        const receiveTick = tx.receiveTick || (tx.tickOut?.includes('FENNEC') ? 'FENNEC' : 'FB');
+
+                        const safePayAmt = __escapeHtml(payAmt);
+                        const safeReceiveAmt = __escapeHtml(receiveAmt);
+                        const safeDateStr = __escapeHtml(dateStr);
+
+                        // Icons for tokens (using site assets from img folder)
+                        const payIcon =
+                            payTick === 'FENNEC'
+                                ? '<img src="img/phav.png" class="w-4 h-4 rounded-full" onerror="this.style.display=\'none\'">'
+                                : payTick === 'BTC'
+                                  ? '<img src="img/BTC.svg" class="w-4 h-4 rounded-full" onerror="this.style.display=\'none\'">'
+                                  : '<img src="img/FB.png" class="w-4 h-4 rounded-full" onerror="this.style.display=\'none\'">';
+                        const receiveIcon =
+                            receiveTick === 'FENNEC'
+                                ? '<img src="img/phav.png" class="w-4 h-4 rounded-full" onerror="this.style.display=\'none\'">'
+                                : receiveTick === 'BTC'
+                                  ? '<img src="img/BTC.svg" class="w-4 h-4 rounded-full" onerror="this.style.display=\'none\'">'
+                                  : '<img src="img/FB.png" class="w-4 h-4 rounded-full" onerror="this.style.display=\'none\'">';
+
+                        return `
                                                                                                                                 <div class="bg-black/30 border border-white/5 rounded-lg p-3 mb-2 hover:bg-black/40 transition">
                                                                                                                                     <div class="grid grid-cols-3 gap-2 text-xs">
                                                                                                                                         <div>
@@ -8562,24 +9851,24 @@ async function refreshTransactionHistory() {
                                                                                                                                     </div>
                                                                                                                                 </div>
                                                                                                                             `;
-                }
+                    }
 
-                // For deposit/withdraw, show simple format
-                let amount = formatAmount(tx.amount || tx.totalAmount || 0);
+                    // For deposit/withdraw, show simple format
+                    const amount = formatAmount(tx.amount || tx.totalAmount || 0);
 
-                // Нормализуем тикер: убираем префиксы sFB, sBTC и т.д.
-                let displayTick = tx.tick || 'FB';
-                if (displayTick.includes('sFB') || displayTick === 'sFB___000') displayTick = 'FB';
-                if (displayTick.includes('sBTC') || displayTick === 'sBTC___000') displayTick = 'BTC';
-                if (displayTick.includes('FENNEC')) displayTick = 'FENNEC';
+                    // Нормализуем тикер: убираем префиксы sFB, sBTC и т.д.
+                    let displayTick = tx.tick || 'FB';
+                    if (displayTick.includes('sFB') || displayTick === 'sFB___000') displayTick = 'FB';
+                    if (displayTick.includes('sBTC') || displayTick === 'sBTC___000') displayTick = 'BTC';
+                    if (displayTick.includes('FENNEC')) displayTick = 'FENNEC';
 
-                const safeType = __escapeHtml(String(tx.type || '').toUpperCase());
-                const safeAmount = __escapeHtml(String(amount || ''));
-                const safeDisplayTick = __escapeHtml(String(displayTick || ''));
-                const safeDateStr = __escapeHtml(String(dateStr || ''));
-                const safeStatusText = __escapeHtml(String(statusText || ''));
+                    const safeType = __escapeHtml(String(tx.type || '').toUpperCase());
+                    const safeAmount = __escapeHtml(String(amount || ''));
+                    const safeDisplayTick = __escapeHtml(String(displayTick || ''));
+                    const safeDateStr = __escapeHtml(String(dateStr || ''));
+                    const safeStatusText = __escapeHtml(String(statusText || ''));
 
-                return `
+                    return `
                                                                                                                             <div class="bg-black/30 border border-white/5 rounded-lg p-3 mb-2 hover:bg-black/40 transition">
                                                                                                                                 <div class="flex items-center justify-between">
                                                                                                                                     <div class="flex items-center gap-2">
@@ -8598,16 +9887,30 @@ async function refreshTransactionHistory() {
                                                                                                                                 </div>
                                                                                                                             </div>
                                                                                                                         `;
-            })
-            .join('');
-    } catch (e) {
-        console.error('Hist Error', e);
-        historyEl.innerHTML = `<div class="text-center py-4 text-red-500 text-xs">Error loading history</div>`;
-    }
+                })
+                .join('');
+
+            try {
+                const v =
+                    currentTab === 'swap'
+                        ? String(currentSwapPair || '').trim()
+                        : currentTab === 'deposit'
+                          ? String(depositToken || '').trim()
+                          : '';
+                const key = `hist:${String(currentTab || '').trim()}:${v}`;
+                if (window.__fennecUiCache && window.__fennecUiCache.historyHtml) {
+                    window.__fennecUiCache.historyHtml[key] = String(historyEl.innerHTML || '');
+                }
+            } catch (_) {}
+        } catch (e) {
+            console.error('Hist Error', e);
+            historyEl.innerHTML = '<div class="text-center py-4 text-red-500 text-xs">Error loading history</div>';
+        }
+    });
 }
 
 // ===== FENNEC ORACLE LOGIC =====
-let isOracleOpen = false;
+const isOracleOpen = false;
 
 // toggleChat is already defined at top, no need to redefine
 
@@ -8744,7 +10047,8 @@ window.oracleQuick = function (type) {
         } catch (e) {}
         const chat = document.getElementById('chatMessages');
         if (chat) {
-            chat.innerHTML = `<div class="flex gap-3"><div class="w-6 h-6 flex items-center"><img src="img/FENNECAI.png" class="w-full h-full object-contain ai-avatar"></div><div class="bg-white/5 p-2 rounded-lg rounded-tl-none">Ask me anything about Fennec.</div></div>`;
+            chat.innerHTML =
+                '<div class="flex gap-3"><div class="w-6 h-6 flex items-center"><img src="img/FENNECAI.png" class="w-full h-full object-contain ai-avatar"></div><div class="bg-white/5 p-2 rounded-lg rounded-tl-none">Ask me anything about Fennec.</div></div>';
         }
         const input = document.getElementById('chatInput');
         if (input) input.focus();
@@ -8842,7 +10146,7 @@ async function sendMessage() {
         } catch (_) {}
         chat.scrollTop = chat.scrollHeight;
     } catch (e) {
-        chat.innerHTML += `<div class="text-red-500 text-center text-[10px]">Error</div>`;
+        chat.innerHTML += '<div class="text-red-500 text-center text-[10px]">Error</div>';
     } finally {
         setChatLoading(false);
     }
@@ -8891,7 +10195,7 @@ async function executeAIAction(action) {
     // 3. ПОДКЛЮЧЕНИЕ КОШЕЛЬКА
     if (action.type === 'CONNECT_WALLET') {
         if (!userAddress) {
-            await connectWallet();
+            await window.connectWallet();
         }
         highlightElement('connectBtn');
     }
@@ -8900,7 +10204,7 @@ async function executeAIAction(action) {
     if (action.type === 'EXECUTE_SWAP') {
         // Проверяем кошелек
         if (!userAddress) {
-            await connectWallet();
+            await window.connectWallet();
             await new Promise(r => setTimeout(r, 1000));
             if (!userAddress) return;
         }
@@ -8938,7 +10242,7 @@ async function executeAIAction(action) {
     // 5. ЗАПОЛНЕНИЕ ФОРМЫ СВАПА (без выполнения)
     if (action.type === 'FILL_SWAP') {
         if (!userAddress) {
-            await connectWallet();
+            await window.connectWallet();
             await new Promise(r => setTimeout(r, 1000));
             if (!userAddress) return;
         }
@@ -8976,7 +10280,7 @@ async function executeAIAction(action) {
     // 6. ОТКРЫТИЕ FENNEC ID
     if (action.type === 'OPEN_ID' || action.type === 'GET_ID') {
         if (!userAddress) {
-            await connectWallet();
+            await window.connectWallet();
             if (typeof switchTab === 'function') {
                 switchTab('audit');
             }
@@ -9017,8 +10321,8 @@ async function executeAIAction(action) {
 
     // 11. ОБНОВЛЕНИЕ БАЛАНСОВ
     if (action.type === 'REFRESH_BALANCES') {
-        if (typeof fetchBalances === 'function') {
-            await fetchBalances();
+        if (typeof window.fetchBalances === 'function') {
+            await window.fetchBalances();
         }
     }
 }
@@ -9043,7 +10347,7 @@ function highlightElement(id) {
 // REMOVED - Burrow section disabled per user request
 
 // ===== FENNEC GRAND AUDIT =====
-// auditIdentity already defined above
+// window.auditIdentity already defined above
 
 // Calculate Fennec Identity (Logic from React component)
 // Функция расчета (Использует готовые stats)
@@ -9166,7 +10470,7 @@ function calculateFennecIdentity(data) {
     const isSandSweeper = !abandonedUtxoCountMissing && abandonedUtxoCountNum < 100;
 
     // Collection of all earned badges (v6)
-    let badges = [];
+    const badges = [];
     if (isGenesis)
         badges.push({
             name: 'GENESIS',
@@ -9329,8 +10633,8 @@ function calculateFennecIdentity(data) {
     }
 
     // Статус для UI (дублирует эволюцию для ясности)
-    let activityStatus = rarityName;
-    let activityColor = rarityColor; // ИСПРАВЛЕНИЕ: Определяем activityColor
+    const activityStatus = rarityName;
+    const activityColor = rarityColor; // ИСПРАВЛЕНИЕ: Определяем activityColor
 
     // ИСПРАВЛЕНИЕ: hasFennecSoul уже объявлен выше (строка 6329), не дублируем
 
@@ -9397,7 +10701,7 @@ function calculateFennecIdentity(data) {
 }
 
 // Fetch Fennec ID data (v5 - Exact Counts from API)
-async function fetchAuditData(abortSignal = null, silent = false) {
+async function __legacy_fetchAuditData(abortSignal = null, silent = false) {
     let addr = String(userAddress || window.userAddress || '').trim();
     if (!addr) {
         const shouldConnect = confirm('Please connect your wallet first. Would you like to connect now?');
@@ -9431,8 +10735,8 @@ async function fetchAuditData(abortSignal = null, silent = false) {
         const pubkey = userPubkey || '';
         // ИСПРАВЛЕНИЕ: Убрана подпись пользователя - не требуется для API запросов
         const url = pubkey
-            ? `${BACKEND_URL}?action=fractal_audit&address=${addr}&pubkey=${pubkey}&fast=1`
-            : `${BACKEND_URL}?action=fractal_audit&address=${addr}&fast=1`;
+            ? `${BACKEND_URL}?action=fractal_audit&address=${addr}&pubkey=${pubkey}`
+            : `${BACKEND_URL}?action=fractal_audit&address=${addr}`;
 
         let workerRes = null;
         let retryCount = 0;
@@ -9446,13 +10750,29 @@ async function fetchAuditData(abortSignal = null, silent = false) {
                     throw abortError;
                 }
 
+                const localController = new AbortController();
+                const localTimeoutId = setTimeout(() => {
+                    try {
+                        localController.abort();
+                    } catch (_) {}
+                }, 90000);
+                try {
+                    if (abortSignal) {
+                        if (abortSignal.aborted) localController.abort();
+                        else abortSignal.addEventListener('abort', () => localController.abort(), { once: true });
+                    }
+                } catch (_) {}
+
                 const response = await fetch(url, {
-                    signal: abortSignal,
+                    signal: localController.signal,
                     cache: retryCount > 0 ? 'no-cache' : 'default',
                     headers: {
                         Accept: 'application/json'
                     }
                 });
+                try {
+                    clearTimeout(localTimeoutId);
+                } catch (_) {}
 
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
@@ -9475,7 +10795,8 @@ async function fetchAuditData(abortSignal = null, silent = false) {
                 console.warn(`Audit fetch attempt ${retryCount + 1} failed:`, e);
 
                 if (retryCount >= maxRetries) {
-                    throw new Error(`Failed to load audit data after ${maxRetries + 1} attempts: ${e.message}`);
+                    workerRes = null;
+                    break;
                 }
 
                 retryCount++;
@@ -9520,9 +10841,36 @@ async function fetchAuditData(abortSignal = null, silent = false) {
         const prices = apiData.prices || { btc: 98000, fb: 4.5, fennec_in_fb: 0 };
 
         // Stats
-        const utxoCount = apiData.utxo_count || 0;
-        const txCount = apiData.tx_count || 0;
-        const nativeBalance = apiData.native_balance || 0;
+        let utxoCount = apiData.utxo_count || 0;
+        let txCount = apiData.tx_count || 0;
+        let nativeBalance = apiData.native_balance || 0;
+
+        try {
+            const api =
+                (window.__fennecApi && typeof window.__fennecApi === 'object' ? window.__fennecApi : null) ||
+                (await (window.__fennecApiModulePromise || (window.__fennecApiModulePromise = import('/js/api.js'))));
+
+            if (api && typeof api.getNativeBalance === 'function') {
+                const [sat, utxos, st] = await Promise.all([
+                    api.getNativeBalance(addr, { signal: abortSignal, timeoutMs: 6500, retries: 1 }).catch(() => 0),
+                    api.getUtxos(addr, { signal: abortSignal, timeoutMs: 7000, retries: 1 }).catch(() => []),
+                    api.getAddressStats(addr, { signal: abortSignal, timeoutMs: 6500, retries: 1 }).catch(() => null)
+                ]);
+                const nativeSat = Number(sat || 0) || 0;
+                if (nativeSat > 0) {
+                    nativeBalance = nativeSat / 100000000;
+                }
+                if (Array.isArray(utxos)) {
+                    utxoCount = utxos.length;
+                }
+                if (st && typeof st === 'object') {
+                    const c = st.chain_stats && typeof st.chain_stats === 'object' ? st.chain_stats : {};
+                    const m = st.mempool_stats && typeof st.mempool_stats === 'object' ? st.mempool_stats : {};
+                    const t = Number(c.tx_count || 0) + Number(m.tx_count || 0);
+                    if (Number.isFinite(t) && t > 0) txCount = t;
+                }
+            }
+        } catch (_) {}
 
         // Age
         // ИСПРАВЛЕНИЕ: Без fallback - возвращаем ошибку если timestamp невалидный
@@ -9532,6 +10880,10 @@ async function fetchAuditData(abortSignal = null, silent = false) {
 
         // ИСПРАВЛЕНИЕ: НЕ используем fallback - только реальные данные
         let firstTxTs = apiData.first_tx_ts || 0;
+
+        try {
+            void abortSignal;
+        } catch (_) {}
 
         // ИСПРАВЛЕНИЕ: Проверяем, не в миллисекундах ли timestamp
         if (firstTxTs > 1000000000000) {
@@ -9726,14 +11078,14 @@ async function fetchAuditData(abortSignal = null, silent = false) {
         // fbSwapBal уже определен выше из sFbBalRes
 
         // ИСПРАВЛЕНИЕ: Стейкинг отключен (временно) - убран из расчетов
-        let fbStakedBal = 0; // Всегда 0, так как стейкинг отключен
+        const fbStakedBal = 0; // Всегда 0, так как стейкинг отключен
 
         // --- WEALTH CALCULATION (NO STAKING) ---
         const fbTotalBal = fbNativeBal + fbSwapBal; // Без стейкинга
 
         // 3. LP (Liquidity Pools) - ИСПРАВЛЕНИЕ: Используем данные из API, если они есть
-        let lpValueFB = parseFloat(apiData.lp_value_fb || 0);
-        let lpValueUSD = parseFloat(apiData.lp_value_usd || 0);
+        const lpValueFB = parseFloat(apiData.lp_value_fb || 0);
+        const lpValueUSD = parseFloat(apiData.lp_value_usd || 0);
 
         // ИСПРАВЛЕНИЕ: Если LP не загрузились из my_pool_list, но есть в all_balance, используем их
         // Это fallback для случаев, когда my_pool_list возвращает null
@@ -9764,7 +11116,7 @@ async function fetchAuditData(abortSignal = null, silent = false) {
 
         // ИСПРАВЛЕНИЕ: Логика расчета Net Worth согласно требованиям:
         // Net Worth = all_tokens_value_usd + lp_value_usd + токены с кошелька, которых нет в InSwap
-        let allTokensValueUSD = parseFloat(apiData.all_tokens_value_usd || 0);
+        const allTokensValueUSD = parseFloat(apiData.all_tokens_value_usd || 0);
         // ИСПРАВЛЕНИЕ: lpValueUSD уже объявлен выше (строка 6537), используем существующую переменную
         // const lpValueUSD = parseFloat(apiData.lp_value_usd || 0); // УДАЛЕНО: дублирование объявления
 
@@ -9816,7 +11168,7 @@ async function fetchAuditData(abortSignal = null, silent = false) {
 
         // ИСПРАВЛЕНИЕ: BRC-20 count - учитываем и InSwap балансы
         // Если есть BRC-20 токены в InSwap, которые не учтены в brc20Count, добавляем их
-        let brc20CountFinal = brc20Count;
+        const brc20CountFinal = brc20Count;
         // Проверяем есть ли BRC-20 токены в InSwap балансах (через all_balance или отдельные запросы)
         // Пока используем brc20Count из API, но можно расширить логику
 
@@ -9882,9 +11234,9 @@ async function fetchAuditData(abortSignal = null, silent = false) {
         };
 
         // Debug logging для проверки передачи
-        console.log(`auditInput.stats:`, JSON.stringify(auditInput.stats));
+        console.log('auditInput.stats:', JSON.stringify(auditInput.stats));
         console.log(
-            `FENNEC price:`,
+            'FENNEC price:',
             fennecPriceInFB,
             `(from terminal: ${poolReserves && poolReserves.FENNEC > 0 ? 'yes' : 'no'})`
         );
@@ -9893,27 +11245,30 @@ async function fetchAuditData(abortSignal = null, silent = false) {
     } catch (e) {
         if (e.name === 'AbortError') {
             console.log('Audit fetch aborted');
-            throw e; // пробрасываем, чтобы runAudit корректно обработал отмену
+            throw e; // пробрасываем, чтобы window.runAudit корректно обработал отмену
         }
         console.error('Audit Fatal:', e);
         throw e;
     }
 }
 
+var fetchAuditData = window.fetchAuditData || __legacy_fetchAuditData;
+window.fetchAuditData = fetchAuditData;
+
 // Initialize Audit UI
-let initAuditLoading = false;
-async function initAudit() {
+window.initAuditLoading = false;
+async function __legacy_initAudit() {
     const container = document.getElementById('auditContainer');
     if (!container) return;
 
     // ПРИНУДИТЕЛЬНАЯ ОЧИСТКА при смене кошелька или любом вызове
     const addrNow = String(window.userAddress || userAddress || '').trim();
-    if (initAuditLoading) return;
+    if (window.initAuditLoading) return;
     try {
         const uiModeNow = String((window.__fennecAuditUi && window.__fennecAuditUi.mode) || 'idle');
-        if (auditLoading && uiModeNow !== 'opening' && uiModeNow !== 'scanning') return;
+        if (window.auditLoading && uiModeNow !== 'opening' && uiModeNow !== 'scanning') return;
     } catch (_) {
-        if (auditLoading) return;
+        if (window.auditLoading) return;
     }
     const prevAddr = String(window.__auditUiAddr || '').trim();
 
@@ -9939,16 +11294,16 @@ async function initAudit() {
         }
     } catch (_) {}
 
-    // Если адрес изменился - всегда очищаем и сбрасываем auditIdentity
+    // Если адрес изменился - всегда очищаем и сбрасываем window.auditIdentity
     if (addrNow !== prevAddr) {
         console.log('Wallet changed, clearing audit state');
         try {
-            const idAddr = String(auditIdentity?.metrics?.address || '').trim();
+            const idAddr = String(window.auditIdentity?.metrics?.address || '').trim();
             if (!(idAddr && addrNow && idAddr === addrNow)) {
-                auditIdentity = null;
+                window.auditIdentity = null;
             }
         } catch (_) {
-            auditIdentity = null;
+            window.auditIdentity = null;
         }
     } else {
         // Даже если адрес тот же, очищаем legacy сцены
@@ -9956,13 +11311,16 @@ async function initAudit() {
         if (hasLegacyScene) {
             console.log('Clearing legacy scene');
         } else if (container.querySelector('#fennecIdIframe')) {
-            console.log('Audit UI already present, skipping initAudit');
+            console.log('Audit UI already present, skipping window.initAudit');
+            try {
+                if (typeof window.__syncFennecIdButtonsUI === 'function') window.__syncFennecIdButtonsUI();
+            } catch (_) {}
             return;
         }
     }
     window.__auditUiAddr = addrNow;
 
-    initAuditLoading = true;
+    window.initAuditLoading = true;
 
     try {
         let currentAddr = window.userAddress || userAddress || null;
@@ -9986,10 +11344,10 @@ async function initAudit() {
 
         const previewOk = (() => {
             try {
-                if (!auditIdentity || typeof auditIdentity !== 'object') return false;
+                if (!window.auditIdentity || typeof window.auditIdentity !== 'object') return false;
                 if (!currentAddr) return false;
                 const a1 = String(currentAddr || '').trim();
-                const a2 = String(auditIdentity?.metrics?.address || '').trim();
+                const a2 = String(window.auditIdentity?.metrics?.address || '').trim();
                 return !!(a1 && a2 && a1 === a2);
             } catch (_) {
                 return false;
@@ -10174,9 +11532,8 @@ async function initAudit() {
                                                                                                 </div>
                                                                                             </div>
                                                                                             <div class="flex flex-col gap-3 w-full max-w-md mx-auto" style="margin-top: 32px;">
-                                                                                                <button onclick="window.openFennecIdInternal(event)" id="fidOpenBtn" style="${opened ? 'display:none;' : ''}"
-                                                                                                    class="px-6 py-4 bg-fennec/15 border border-fennec rounded-lg text-white font-bold shadow-[inset_0_0_15px_rgba(255,107,53,0.3)] hover:bg-fennec/25 hover:border-orange-300 hover:shadow-[inset_0_0_20px_rgba(255,107,53,0.4)] hover:scale-[1.02] transition-all text-base uppercase tracking-widest"
-                                                                                                    style="backdrop-filter: blur(10px);">
+                                                                                                <button onclick="window.openFennecIdInternal(event)" id="fidOpenBtn" style="${opened ? 'display:none;' : ''};backdrop-filter: blur(10px);"
+                                                                                                    class="px-6 py-4 bg-fennec/15 border border-fennec rounded-lg text-white font-bold shadow-[inset_0_0_15px_rgba(255,107,53,0.3)] hover:bg-fennec/25 hover:border-orange-300 hover:shadow-[inset_0_0_20px_rgba(255,107,53,0.4)] hover:scale-[1.02] transition-all text-base uppercase tracking-widest">
                                                                                                     <span id="fidOpenBtnText">OPEN ID</span>
                                                                                                 </button>
                                                                                                 <div id="fidActionButtons" style="${opened ? '' : 'display:none;'}" class="flex gap-2 justify-center">
@@ -10200,6 +11557,49 @@ async function initAudit() {
                                                                                         </div>
                                                                                     </div>
                                                                                 `;
+
+            try {
+                if (typeof window.__syncFennecIdButtonsUI === 'function') window.__syncFennecIdButtonsUI();
+            } catch (_) {}
+
+            if (opened && existingId) {
+                setTimeout(() => {
+                    try {
+                        if (document.getElementById('fennecIdIframe')) {
+                            if (typeof window.__syncFennecIdButtonsUI === 'function') window.__syncFennecIdButtonsUI();
+                            return;
+                        }
+                    } catch (_) {}
+
+                    try {
+                        window.__fennecAutoOpenInFlight = window.__fennecAutoOpenInFlight || {};
+                        const key = String(existingId);
+                        const last = Number(window.__fennecAutoOpenInFlight[key] || 0) || 0;
+                        const now = Date.now();
+                        if (now - last < 2500) return;
+                        window.__fennecAutoOpenInFlight[key] = now;
+                    } catch (_) {}
+
+                    Promise.resolve(loadExistingCardIntoIframe(existingId))
+                        .then(() => {
+                            try {
+                                if (typeof window.__syncFennecIdButtonsUI === 'function')
+                                    window.__syncFennecIdButtonsUI();
+                            } catch (_) {}
+                        })
+                        .catch(() => null);
+
+                    setTimeout(() => {
+                        try {
+                            if (document.getElementById('fennecIdIframe')) return;
+                            const openBtn = document.getElementById('fidOpenBtn');
+                            const wrap = document.getElementById('fidActionButtons');
+                            if (openBtn) openBtn.style.display = '';
+                            if (wrap) wrap.style.display = 'none';
+                        } catch (_) {}
+                    }, 2200);
+                }, 0);
+            }
         } else if (canRenderScanned) {
             container.innerHTML = `
                                                                                     <div class="w-full max-w-5xl">
@@ -10243,7 +11643,7 @@ async function initAudit() {
                                                                                 `;
 
             try {
-                await loadPreviewCardIntoIframe(auditIdentity);
+                await loadPreviewCardIntoIframe(window.auditIdentity);
             } catch (_) {}
         } else {
             container.innerHTML = `
@@ -10262,10 +11662,10 @@ async function initAudit() {
                                                                                                 </div>
                                                                                             </div>
                                                                                             <div class="flex flex-col gap-3 w-full max-w-md mx-auto" style="margin-top: 32px;">
-                                                                                                <button ${hasWallet ? '' : ''} onclick="runAudit();" id="getYourIdBtn"
+                                                                                                <button onclick="${hasWallet ? 'window.runAudit();' : 'window.connectWallet();'}" id="getYourIdBtn"
                                                                                                     class="px-6 py-4 bg-fennec/15 border border-fennec rounded-lg text-white font-bold shadow-[inset_0_0_15px_rgba(255,107,53,0.3)] hover:bg-fennec/25 hover:border-orange-300 hover:shadow-[inset_0_0_20px_rgba(255,107,53,0.4)] hover:scale-[1.02] transition-all text-base uppercase tracking-widest flex items-center justify-center"
                                                                                                     style="backdrop-filter: blur(10px);">
-                                                                                                    <span id="getYourIdBtnText">SCAN ID</span>
+                                                                                                    <span id="getYourIdBtnText">${hasWallet ? 'SCAN ID' : 'CONNECT WALLET'}</span>
                                                                                                 </button>
                                                                                             </div>
                                                                                         </div>
@@ -10273,17 +11673,21 @@ async function initAudit() {
                                                                                 `;
         }
 
-        if (currentAddr && typeof prefetchFennecAudit === 'function') {
+        if (currentAddr && typeof window.prefetchFennecAudit === 'function') {
             setTimeout(() => {
                 try {
-                    prefetchFennecAudit(false);
+                    window.prefetchFennecAudit(false);
                 } catch (_) {}
             }, 0);
         }
     } finally {
-        initAuditLoading = false;
+        window.initAuditLoading = false;
     }
 }
+
+try {
+    window.initAudit = window.initAudit || __legacy_initAudit;
+} catch (_) {}
 
 // Helper functions for child HTML processing - MUST be defined BEFORE usage
 const parseDnaFromChildHtml = html => {
@@ -10762,7 +12166,7 @@ async function loadExistingCardIntoIframe(inscriptionId, identityOverride = null
                 const addrNow = String(window.userAddress || userAddress || '').trim();
                 if (addrNow) identityToRender.metrics.address = addrNow;
             } catch (_) {}
-            auditIdentity = identityToRender;
+            window.auditIdentity = identityToRender;
         }
 
         const fromHtmlManifest = readMetaFromHtml(html, 'fennec-manifest');
@@ -10790,7 +12194,7 @@ async function loadExistingCardIntoIframe(inscriptionId, identityOverride = null
         const forceLocalEmbedLib = `${LOCAL_CHILD_LIB_URL}${embedCacheBust}`;
         const forceLocalEmbedConfig = `${LOCAL_CHILD_CONFIG_URL}${embedCacheBust}`;
 
-        let latestRefs = { libRef: '', configRef: '' };
+        const latestRefs = { libRef: '', configRef: '' };
         const fromHtmlLib = readMetaFromHtml(html, 'fennec-lib');
         const fromHtmlConfig = readMetaFromHtml(html, 'fennec-config');
 
@@ -10992,7 +12396,7 @@ async function loadPreviewCardIntoIframe(identity) {
         const forceLocalEmbedLib = `${LOCAL_CHILD_LIB_URL}${embedCacheBust}`;
         const forceLocalEmbedConfig = `${LOCAL_CHILD_CONFIG_URL}${embedCacheBust}`;
         const childOpts = { manifestRef };
-        let latestRefs = null;
+        const latestRefs = null;
         if (isLocalFirst) {
             childOpts.libRef = forceLocalEmbedLib;
             childOpts.configRef = forceLocalEmbedConfig;
@@ -11116,7 +12520,7 @@ function calculateFennecIdentityLegacy(data) {
     const isSandSweeper = !abandonedUtxoCountMissing && abandonedUtxoCountNum < 100;
     const isMempoolRider = (Number(txCount) || 0) >= 10000;
 
-    let badges = [];
+    const badges = [];
     if (isGenesis)
         badges.push({
             name: 'GENESIS',
@@ -11314,9 +12718,24 @@ window.openLastMintedCard = function () {
 };
 
 // Run the audit
-async function runAudit(forceRefresh = false) {
-    if (auditLoading) {
+async function __legacy_runAudit(forceRefresh = false) {
+    if (window.auditLoading) {
         console.log('Audit already running');
+        return;
+    }
+
+    const addrConnected = String(window.userAddress || userAddress || '').trim();
+    if (!addrConnected) {
+        try {
+            if (typeof showNotification === 'function') {
+                showNotification('Connect wallet first', 'warning', 2000);
+            } else {
+                alert('Connect wallet first');
+            }
+        } catch (_) {}
+        try {
+            if (typeof window.initAudit === 'function') __fennecInitAuditSafe();
+        } catch (_) {}
         return;
     }
 
@@ -11332,26 +12751,23 @@ async function runAudit(forceRefresh = false) {
             window.__fennecAuditUi && typeof window.__fennecAuditUi === 'object'
                 ? window.__fennecAuditUi
                 : { addr: '', mode: 'idle', openedAt: 0, scannedAt: 0 };
-        const a0 = String(window.userAddress || userAddress || '').trim();
-        if (a0) window.__fennecAuditUi.addr = a0;
+        window.__fennecAuditUi.addr = addrConnected;
         window.__fennecAuditUi.mode = 'scanning';
         window.__fennecAuditUi.openedAt = 0;
         window.__fennecAuditUi.scannedAt = 0;
     } catch (_) {}
     const container = document.getElementById('auditContainer');
 
-    if (!container) {
-        auditLoading = false;
-        return;
-    }
+    const hasContainer = !!container;
 
-    auditLoading = true;
-    const requestId = ++currentAuditRequestId;
-    if (currentAuditAbortController) currentAuditAbortController.abort();
-    currentAuditAbortController = new AbortController();
+    window.auditLoading = true;
+    const requestId = ++window.currentAuditRequestId;
+    if (window.currentAuditAbortController) window.currentAuditAbortController.abort();
+    window.currentAuditAbortController = new AbortController();
 
     // ПРИНУДИТЕЛЬНО показываем лоадер в контейнере СРАЗУ
     try {
+        if (!hasContainer) throw new Error('no_container');
         container.innerHTML = `
                                             <div class="w-full flex items-start justify-center" style="min-height: 560px;">
                                                 <div class="flex flex-col items-center justify-center" style="max-width: 360px; width: 100%; padding: 0px 20px; gap: 32px;">
@@ -11435,60 +12851,24 @@ async function runAudit(forceRefresh = false) {
         }
     } catch (_) {}
 
-    // Проверяем подключение кошелька
-    if (!userAddress && !window.userAddress) {
-        if (typeof window.connectWallet === 'function') {
-            try {
-                await window.connectWallet();
-            } catch (e) {
-                console.error('Failed to connect wallet:', e);
-                alert('Failed to connect wallet. Please try again.');
-                auditLoading = false;
-                try {
-                    if (window.__fennecAuditUi && typeof window.__fennecAuditUi === 'object') {
-                        window.__fennecAuditUi.mode = 'idle';
-                    }
-                } catch (_) {}
-                if (typeof initAudit === 'function') initAudit();
-                return;
-            }
-            // ВАЖНО: не запускаем скан автоматически после подключения кошелька.
-            // Возвращаем пользователя к UI и ждём явного клика SCAN/OPEN.
-            auditLoading = false;
-            try {
-                if (window.__fennecAuditUi && typeof window.__fennecAuditUi === 'object') {
-                    window.__fennecAuditUi.mode = 'idle';
-                }
-            } catch (_) {}
-            if (typeof initAudit === 'function') initAudit();
-            return;
-        } else {
-            alert('Please connect your wallet first');
-            auditLoading = false;
-            try {
-                if (window.__fennecAuditUi && typeof window.__fennecAuditUi === 'object') {
-                    window.__fennecAuditUi.mode = 'idle';
-                }
-            } catch (_) {}
-            return;
-        }
-    }
+    // Wallet is required (scan/open must not auto-start before connect)
+    // (handled above)
 
-    if (typeof generateRecursiveChildHTML !== 'function') {
+    if (typeof generateRecursiveChildHTML !== 'function' && hasContainer) {
         container.innerHTML = `
                                                                                                     <div class="w-full max-w-md bg-red-900/20 border border-red-500/50 p-4 rounded-xl text-red-200">
                                                                                                         <p class="font-bold mb-2">Fennec ID library missing</p>
                                                                                                         <p class="text-sm mb-4">generateRecursiveChildHTML() is not available.</p>
                                                                                                     </div>
                                                                                                 `;
-        auditLoading = false;
+        window.auditLoading = false;
         return;
     }
 
     try {
         const addr = (userAddress || window.userAddress || '').trim();
 
-        // ИСПРАВЛЕНИЕ: Сначала проверяем in-flight prefetch и prefetchedFennecAudit
+        // ИСПРАВЛЕНИЕ: Сначала проверяем in-flight prefetch и window.prefetchedFennecAudit
         if (!forceRefresh) {
             // 1. Проверяем in-flight prefetch promise
             try {
@@ -11500,16 +12880,16 @@ async function runAudit(forceRefresh = false) {
                         ? window.__fennecPrefetchAudit.promise
                         : null;
                 if (inFlight) {
-                    console.log('runAudit: Using in-flight prefetch promise');
+                    console.log('window.runAudit: Using in-flight prefetch promise');
                     const idFromPrefetch = await inFlight.catch(() => null);
                     if (idFromPrefetch && typeof idFromPrefetch === 'object') {
-                        auditIdentity = idFromPrefetch;
+                        window.auditIdentity = idFromPrefetch;
                         try {
-                            auditIdentity.metrics =
-                                auditIdentity.metrics && typeof auditIdentity.metrics === 'object'
-                                    ? auditIdentity.metrics
+                            window.auditIdentity.metrics =
+                                window.auditIdentity.metrics && typeof window.auditIdentity.metrics === 'object'
+                                    ? window.auditIdentity.metrics
                                     : {};
-                            auditIdentity.metrics.address = String(addr || '').trim();
+                            window.auditIdentity.metrics.address = String(addr || '').trim();
                         } catch (_) {}
                         if (window.__scanProgressInterval) {
                             clearInterval(window.__scanProgressInterval);
@@ -11521,7 +12901,7 @@ async function runAudit(forceRefresh = false) {
                             if (finalProgressBar) finalProgressBar.style.width = '100%';
                             if (finalProgressPercent) finalProgressPercent.textContent = '100%';
                         } catch (_) {}
-                        auditLoading = false;
+                        window.auditLoading = false;
                         try {
                             if (window.__fennecAuditUi && typeof window.__fennecAuditUi === 'object') {
                                 window.__fennecAuditUi.addr = addr;
@@ -11529,27 +12909,27 @@ async function runAudit(forceRefresh = false) {
                                 window.__fennecAuditUi.scannedAt = Date.now();
                             }
                         } catch (_) {}
-                        if (typeof initAudit === 'function') initAudit();
+                        if (typeof window.initAudit === 'function') __fennecInitAuditSafe();
                         return;
                     }
                 }
             } catch (_) {}
 
-            // 2. Проверяем уже завершенный prefetch (prefetchedFennecAudit)
+            // 2. Проверяем уже завершенный prefetch (window.prefetchedFennecAudit)
             try {
                 if (
-                    prefetchedFennecAudit &&
-                    prefetchedFennecAuditAddr === addr &&
-                    Date.now() - prefetchedFennecAuditTs < 300000
+                    window.prefetchedFennecAudit &&
+                    window.prefetchedFennecAuditAddr === addr &&
+                    Date.now() - window.prefetchedFennecAuditTs < 300000
                 ) {
-                    console.log('runAudit: Using prefetched audit data');
-                    auditIdentity = prefetchedFennecAudit;
+                    console.log('window.runAudit: Using prefetched audit data');
+                    window.auditIdentity = window.prefetchedFennecAudit;
                     try {
-                        auditIdentity.metrics =
-                            auditIdentity.metrics && typeof auditIdentity.metrics === 'object'
-                                ? auditIdentity.metrics
+                        window.auditIdentity.metrics =
+                            window.auditIdentity.metrics && typeof window.auditIdentity.metrics === 'object'
+                                ? window.auditIdentity.metrics
                                 : {};
-                        auditIdentity.metrics.address = String(addr || '').trim();
+                        window.auditIdentity.metrics.address = String(addr || '').trim();
                     } catch (_) {}
                     if (window.__scanProgressInterval) {
                         clearInterval(window.__scanProgressInterval);
@@ -11561,7 +12941,7 @@ async function runAudit(forceRefresh = false) {
                         if (finalProgressBar) finalProgressBar.style.width = '100%';
                         if (finalProgressPercent) finalProgressPercent.textContent = '100%';
                     } catch (_) {}
-                    auditLoading = false;
+                    window.auditLoading = false;
                     try {
                         if (window.__fennecAuditUi && typeof window.__fennecAuditUi === 'object') {
                             window.__fennecAuditUi.addr = addr;
@@ -11569,7 +12949,7 @@ async function runAudit(forceRefresh = false) {
                             window.__fennecAuditUi.scannedAt = Date.now();
                         }
                     } catch (_) {}
-                    if (typeof initAudit === 'function') initAudit();
+                    if (typeof window.initAudit === 'function') __fennecInitAuditSafe();
                     return;
                 }
             } catch (_) {}
@@ -11582,14 +12962,16 @@ async function runAudit(forceRefresh = false) {
                     const cachedData = JSON.parse(cached);
                     if (Date.now() - cachedData.timestamp < 5 * 60 * 1000) {
                         console.log('Using cached audit data');
-                        auditIdentity = cachedData.identity;
+                        window.auditIdentity = cachedData.identity;
                         try {
-                            if (auditIdentity && typeof auditIdentity === 'object') {
-                                auditIdentity.metrics =
-                                    auditIdentity.metrics && typeof auditIdentity.metrics === 'object'
-                                        ? auditIdentity.metrics
+                            if (window.auditIdentity && typeof window.auditIdentity === 'object') {
+                                window.auditIdentity.metrics =
+                                    window.auditIdentity.metrics && typeof window.auditIdentity.metrics === 'object'
+                                        ? window.auditIdentity.metrics
                                         : {};
-                                auditIdentity.metrics.address = String(auditIdentity.metrics.address || addr).trim();
+                                window.auditIdentity.metrics.address = String(
+                                    window.auditIdentity.metrics.address || addr
+                                ).trim();
                             }
                         } catch (_) {}
                         if (window.__scanProgressInterval) {
@@ -11602,7 +12984,7 @@ async function runAudit(forceRefresh = false) {
                             if (finalProgressBar) finalProgressBar.style.width = '100%';
                             if (finalProgressPercent) finalProgressPercent.textContent = '100%';
                         } catch (_) {}
-                        auditLoading = false;
+                        window.auditLoading = false;
                         try {
                             if (window.__fennecAuditUi && typeof window.__fennecAuditUi === 'object') {
                                 window.__fennecAuditUi.addr = addr;
@@ -11610,7 +12992,7 @@ async function runAudit(forceRefresh = false) {
                                 window.__fennecAuditUi.scannedAt = Date.now();
                             }
                         } catch (_) {}
-                        if (typeof initAudit === 'function') initAudit();
+                        if (typeof window.initAudit === 'function') __fennecInitAuditSafe();
                         return;
                     }
                 } catch (e) {}
@@ -11620,21 +13002,21 @@ async function runAudit(forceRefresh = false) {
         console.log(`Starting audit scan #${requestId}...`);
         const startTime = Date.now();
         const data = await Promise.race([
-            fetchAuditData(currentAuditAbortController.signal),
+            fetchAuditData(window.currentAuditAbortController.signal),
             new Promise((_, reject) => {
                 const tid = setTimeout(() => reject(new Error('Timeout')), 90000);
-                currentAuditAbortController.signal.addEventListener('abort', () => clearTimeout(tid));
+                window.currentAuditAbortController.signal.addEventListener('abort', () => clearTimeout(tid));
             })
         ]);
 
-        if (requestId !== currentAuditRequestId) {
+        if (requestId !== window.currentAuditRequestId) {
             try {
                 if (window.__scanProgressInterval) {
                     clearInterval(window.__scanProgressInterval);
                     window.__scanProgressInterval = null;
                 }
             } catch (_) {}
-            auditLoading = false;
+            window.auditLoading = false;
             return;
         }
 
@@ -11672,7 +13054,7 @@ async function runAudit(forceRefresh = false) {
                 identity.metrics.address = String(identity.metrics.address || addr).trim();
             }
         } catch (_) {}
-        auditIdentity = identity;
+        window.auditIdentity = identity;
 
         localStorage.setItem(
             `audit_v3_${addr}`,
@@ -11682,7 +13064,7 @@ async function runAudit(forceRefresh = false) {
             })
         );
 
-        auditLoading = false;
+        window.auditLoading = false;
         try {
             if (window.__fennecAuditUi && typeof window.__fennecAuditUi === 'object') {
                 window.__fennecAuditUi.addr = addr;
@@ -11691,7 +13073,7 @@ async function runAudit(forceRefresh = false) {
             }
         } catch (_) {}
 
-        if (typeof initAudit === 'function') initAudit();
+        if (typeof window.initAudit === 'function') __fennecInitAuditSafe();
 
         // Auto-open existing ID after a successful scan
         try {
@@ -11702,12 +13084,8 @@ async function runAudit(forceRefresh = false) {
             const st =
                 window.__fennecIdStatus && typeof window.__fennecIdStatus === 'object' ? window.__fennecIdStatus : null;
             const hasId = !!(st && st.hasId && String(st.inscriptionId || '').trim());
-            if (hasId) {
-                try {
-                    if (window.__fennecAuditUi && typeof window.__fennecAuditUi === 'object') {
-                        window.__fennecAuditUi.mode = 'opening';
-                    }
-                } catch (_) {}
+            const suppressAutoOpen = !!(window && window.__fennecSuppressAutoOpenAfterScan);
+            if (hasId && !suppressAutoOpen) {
                 setTimeout(() => {
                     try {
                         if (typeof window.openFennecIdInternal === 'function') {
@@ -11736,8 +13114,17 @@ async function runAudit(forceRefresh = false) {
                 }
             } catch (_) {}
             try {
-                auditLoading = false;
-                if (typeof initAudit === 'function') initAudit();
+                window.auditLoading = false;
+                if (typeof window.initAudit === 'function') __fennecInitAuditSafe();
+            } catch (_) {}
+            return;
+        }
+
+        if (e && e.name === 'AbortError') {
+            try {
+                if (window.__fennecAuditUi && typeof window.__fennecAuditUi === 'object') {
+                    if (String(window.__fennecAuditUi.mode || '') === 'scanning') window.__fennecAuditUi.mode = 'idle';
+                }
             } catch (_) {}
             return;
         }
@@ -11748,15 +13135,19 @@ async function runAudit(forceRefresh = false) {
                 window.__fennecAuditUi.mode = 'idle';
             }
         } catch (_) {}
-        container.innerHTML = `
+        try {
+            if (hasContainer) {
+                container.innerHTML = `
                                                                                                     <div class="w-full max-w-md bg-red-900/20 border border-red-500/50 p-4 rounded-xl text-red-200">
                                                                                                         <p class="font-bold mb-2">Loading Error</p>
                                                                                                         <p class="text-sm mb-4">${e.message || 'Failed to load data.'}</p>
-                                                                                                        <button onclick="runAudit(true)" class="w-full px-4 py-3 bg-fennec text-black font-bold rounded hover:bg-orange-600 transition">
+                                                                                                        <button onclick="window.runAudit(true)" class="w-full px-4 py-3 bg-fennec text-black font-bold rounded hover:bg-orange-600 transition">
                                                                                                             Try Again
                                                                                                         </button>
                                                                                                     </div>
                                                                                                 `;
+            }
+        } catch (_) {}
     } finally {
         try {
             if (window.__scanProgressInterval) {
@@ -11764,11 +13155,15 @@ async function runAudit(forceRefresh = false) {
                 window.__scanProgressInterval = null;
             }
         } catch (_) {}
-        if (requestId === currentAuditRequestId) {
-            auditLoading = false;
+        if (requestId === window.currentAuditRequestId) {
+            window.auditLoading = false;
         }
     }
 }
+
+try {
+    window.runAudit = window.runAudit || __legacy_runAudit;
+} catch (_) {}
 
 // Helper: Get progressive animation class
 function getAnimationClass(baseKey, tier) {
@@ -11834,8 +13229,8 @@ function applyParentOverridesToIdentity(identity) {
 
 // Share Audit
 function shareAudit() {
-    if (!auditIdentity) return;
-    const text = `I am ${auditIdentity.archetype.title} (${auditIdentity.archetype.tier}) on Fennec Swap!\n\nNet Worth: $${auditIdentity.metrics.wealth}\nAge: ${auditIdentity.metrics.daysAlive} Days\nActivity: ${auditIdentity.metrics.txCount} Transactions\n\n${auditIdentity.archetype.desc}`;
+    if (!window.auditIdentity) return;
+    const text = `I am ${window.auditIdentity.archetype.title} (${window.auditIdentity.archetype.tier}) on Fennec Swap!\n\nNet Worth: $${window.auditIdentity.metrics.wealth}\nAge: ${window.auditIdentity.metrics.daysAlive} Days\nActivity: ${window.auditIdentity.metrics.txCount} Transactions\n\n${window.auditIdentity.archetype.desc}`;
 
     if (navigator.share) {
         navigator.share({ text, title: 'Fennec Grand Audit' });
@@ -11847,75 +13242,77 @@ function shareAudit() {
 }
 
 // ИСПРАВЛЕНИЕ: Отдельное обновление аудита (не сбрасывает карточку без желания пользователя)
-let lastAuditRefreshTime = 0;
-const MIN_AUDIT_REFRESH_INTERVAL = 60000; // 60 секунд между обновлениями аудита
-let auditRefreshTimerInterval = null;
+if (typeof window.lastAuditRefreshTime === 'undefined') window.lastAuditRefreshTime = 0;
+if (typeof window.MIN_AUDIT_REFRESH_INTERVAL === 'undefined') window.MIN_AUDIT_REFRESH_INTERVAL = 60000; // 60 секунд между обновлениями аудита
+if (typeof window.auditRefreshTimerInterval === 'undefined') window.auditRefreshTimerInterval = null;
 
-window.refreshAudit = async function () {
-    const now = Date.now();
-    const timeSinceLastRefresh = now - lastAuditRefreshTime;
+window.refreshAudit =
+    window.refreshAudit ||
+    async function () {
+        const now = Date.now();
+        const timeSinceLastRefresh = now - window.lastAuditRefreshTime;
 
-    // Проверяем, прошло ли достаточно времени
-    if (timeSinceLastRefresh < MIN_AUDIT_REFRESH_INTERVAL) {
-        const remainingSeconds = Math.ceil((MIN_AUDIT_REFRESH_INTERVAL - timeSinceLastRefresh) / 1000);
-        showNotification(`Please wait ${remainingSeconds}s before refreshing ID again`, 'warning', 2000);
-        return;
-    }
+        // Проверяем, прошло ли достаточно времени
+        if (timeSinceLastRefresh < window.MIN_AUDIT_REFRESH_INTERVAL) {
+            const remainingSeconds = Math.ceil((window.MIN_AUDIT_REFRESH_INTERVAL - timeSinceLastRefresh) / 1000);
+            showNotification(`Please wait ${remainingSeconds}s before refreshing ID again`, 'warning', 2000);
+            return;
+        }
 
-    if (!userAddress && !window.userAddress) {
-        showNotification('Connect wallet first', 'warning', 2000);
-        return;
-    }
+        if (!userAddress && !window.userAddress) {
+            showNotification('Connect wallet first', 'warning', 2000);
+            return;
+        }
 
-    if (auditLoading) {
-        showNotification('Audit is already loading, please wait', 'warning', 2000);
-        return;
-    }
+        if (window.auditLoading) {
+            showNotification('Audit is already loading, please wait', 'warning', 2000);
+            return;
+        }
 
-    // Обновляем время последнего обновления
-    lastAuditRefreshTime = now;
+        // Обновляем время последнего обновления
+        window.lastAuditRefreshTime = now;
 
-    // Обновляем UI кнопки
-    const refreshAuditBtn = document.getElementById('refreshAuditBtn');
-    const refreshAuditIcon = document.getElementById('refreshAuditIcon');
-    const refreshAuditText = document.getElementById('refreshAuditText');
+        // Обновляем UI кнопки
+        const refreshAuditBtn = document.getElementById('refreshAuditBtn');
+        const refreshAuditIcon = document.getElementById('refreshAuditIcon');
+        const refreshAuditText = document.getElementById('refreshAuditText');
 
-    if (refreshAuditBtn) {
-        refreshAuditBtn.disabled = true;
-    }
-    if (refreshAuditIcon) {
-        refreshAuditIcon.classList.add('fa-spin');
-    }
-    if (refreshAuditText) {
-        refreshAuditText.textContent = 'UPDATING...';
-    }
-
-    try {
-        console.log('Manual audit refresh started...');
-        await runAudit(true);
-        showNotification('Audit refreshed successfully', 'success', 2000);
-        console.log('Manual audit refresh completed');
-
-        // Запускаем таймер обратного отсчета
-        startAuditRefreshTimer();
-    } catch (e) {
-        console.error('Manual audit refresh error:', e);
-        showNotification('Audit refresh failed: ' + (e.message || 'Unknown error'), 'error', 3000);
-    } finally {
-        // Восстанавливаем UI кнопки (но оставляем disabled до окончания таймера)
+        if (refreshAuditBtn) {
+            refreshAuditBtn.disabled = true;
+        }
         if (refreshAuditIcon) {
-            refreshAuditIcon.classList.remove('fa-spin');
+            refreshAuditIcon.classList.add('fa-spin');
         }
         if (refreshAuditText) {
-            refreshAuditText.textContent = 'Refresh Metadata';
+            refreshAuditText.textContent = 'UPDATING...';
         }
-    }
-};
+
+        try {
+            console.log('Manual audit refresh started...');
+            await window.runAudit(true);
+            showNotification('Audit refreshed successfully', 'success', 2000);
+            console.log('Manual audit refresh completed');
+
+            // Запускаем таймер обратного отсчета
+            window.startAuditRefreshTimer();
+        } catch (e) {
+            console.error('Manual audit refresh error:', e);
+            showNotification('Audit refresh failed: ' + (e.message || 'Unknown error'), 'error', 3000);
+        } finally {
+            // Восстанавливаем UI кнопки (но оставляем disabled до окончания таймера)
+            if (refreshAuditIcon) {
+                refreshAuditIcon.classList.remove('fa-spin');
+            }
+            if (refreshAuditText) {
+                refreshAuditText.textContent = 'Refresh Metadata';
+            }
+        }
+    };
 
 // Таймер обратного отсчета для кнопки обновления аудита
-function startAuditRefreshTimer() {
-    if (auditRefreshTimerInterval) {
-        clearInterval(auditRefreshTimerInterval);
+function __legacy_startAuditRefreshTimer() {
+    if (window.auditRefreshTimerInterval) {
+        clearInterval(window.auditRefreshTimerInterval);
     }
 
     const refreshAuditTimer = document.getElementById('refreshAuditTimer');
@@ -11923,24 +13320,24 @@ function startAuditRefreshTimer() {
 
     if (!refreshAuditBtn) return;
 
-    let remainingSeconds = MIN_AUDIT_REFRESH_INTERVAL / 1000;
+    let remainingSeconds = window.MIN_AUDIT_REFRESH_INTERVAL / 1000;
     refreshAuditBtn.disabled = true;
 
     if (!refreshAuditTimer) {
         setTimeout(() => {
             refreshAuditBtn.disabled = false;
-        }, MIN_AUDIT_REFRESH_INTERVAL);
+        }, window.MIN_AUDIT_REFRESH_INTERVAL);
         return;
     }
 
     refreshAuditTimer.classList.remove('hidden');
     refreshAuditTimer.textContent = `(${remainingSeconds}s)`;
 
-    auditRefreshTimerInterval = setInterval(() => {
+    window.auditRefreshTimerInterval = setInterval(() => {
         remainingSeconds--;
         if (remainingSeconds <= 0) {
-            clearInterval(auditRefreshTimerInterval);
-            auditRefreshTimerInterval = null;
+            clearInterval(window.auditRefreshTimerInterval);
+            window.auditRefreshTimerInterval = null;
             refreshAuditTimer.classList.add('hidden');
             refreshAuditBtn.disabled = false;
         } else {
@@ -11949,13 +13346,17 @@ function startAuditRefreshTimer() {
     }, 1000);
 }
 
+try {
+    window.startAuditRefreshTimer = window.startAuditRefreshTimer || __legacy_startAuditRefreshTimer;
+} catch (_) {}
+
 async function mintAuditCard(event) {
-    if (!auditIdentity) {
+    if (!window.auditIdentity) {
         alert('Please load your Fennec ID first!');
         return;
     }
 
-    auditIdentity = applyParentOverridesToIdentity(auditIdentity);
+    window.auditIdentity = applyParentOverridesToIdentity(window.auditIdentity);
 
     const btn = document.getElementById('mintBtn') || document.getElementById('fidUpdateBtn');
     if (!btn) {
@@ -11998,20 +13399,23 @@ async function mintAuditCard(event) {
         // 2. Генерируем HTML код карточки
         const discountWhyEl = document.getElementById('discountWhy');
         const fennecWalletOnly =
-            Number(auditIdentity?.metrics?.fennecWalletBalance ?? auditIdentity?.metrics?.fennec_wallet_balance ?? 0) ||
-            0;
+            Number(
+                window.auditIdentity?.metrics?.fennecWalletBalance ??
+                    window.auditIdentity?.metrics?.fennec_wallet_balance ??
+                    0
+            ) || 0;
         const fennecLpValueUSD =
             Number(
-                auditIdentity?.metrics?.fennecLpValueUSD ??
-                    auditIdentity?.metrics?.fennec_lp_value_usd ??
-                    auditIdentity?.metrics?.fennecLpValueUsd ??
+                window.auditIdentity?.metrics?.fennecLpValueUSD ??
+                    window.auditIdentity?.metrics?.fennec_lp_value_usd ??
+                    window.auditIdentity?.metrics?.fennecLpValueUsd ??
                     0
             ) || 0;
         const hasBoxes = !!(
-            auditIdentity?.metrics?.hasFennecBoxes ||
-            auditIdentity?.metrics?.has_fennec_boxes ||
-            auditIdentity?.metrics?.fennecBoxesCount > 0 ||
-            auditIdentity?.metrics?.fennec_boxes_count > 0
+            window.auditIdentity?.metrics?.hasFennecBoxes ||
+            window.auditIdentity?.metrics?.has_fennec_boxes ||
+            window.auditIdentity?.metrics?.fennecBoxesCount > 0 ||
+            window.auditIdentity?.metrics?.fennec_boxes_count > 0
         );
         const eligibleNow = hasBoxes || fennecWalletOnly >= 1000 || fennecLpValueUSD >= 1;
         if (discountWhyEl && window.__discountCheckPassed !== true && eligibleNow) {
@@ -12066,7 +13470,7 @@ async function mintAuditCard(event) {
         ).trim();
 
         showNotification('🎨 Generating your Fennec ID...', 'info', 2000);
-        let htmlCode = generateRecursiveChildHTML(auditIdentity, {
+        const htmlCode = generateRecursiveChildHTML(window.auditIdentity, {
             libRef: resolvedLibRef,
             configRef: resolvedConfigRef,
             manifestRef: mintChildManifestRef,
@@ -12146,12 +13550,20 @@ async function mintAuditCard(event) {
         const provSig = provData?.signature || null;
         if (provAlg === 'NONE' || !provSig) {
             try {
-                if (typeof showNotification === 'function') {
-                    showNotification(
-                        '⚠️ Provenance signer not configured (alg NONE). Continuing without signature.',
-                        'warning',
-                        2600
-                    );
+                const k = 'fennec_provenance_alg_none_warned';
+                if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(k) === '1') {
+                    // already warned
+                } else {
+                    try {
+                        if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(k, '1');
+                    } catch (_) {}
+                    if (typeof showNotification === 'function') {
+                        showNotification(
+                            '⚠️ Provenance signer not configured (alg NONE). Continuing without signature.',
+                            'warning',
+                            2600
+                        );
+                    }
                 }
             } catch (_) {}
         } else {
@@ -12565,7 +13977,7 @@ window.burnAndRemintAuditCard = async function (event) {
                 if (!inscriptionId) {
                     const scanMore =
                         localStorage.getItem('fennec_scan_more') === '1' ||
-                        confirm(`Could not auto-detect your Fennec ID yet. Scan more inscriptions? (may use more API)`);
+                        confirm('Could not auto-detect your Fennec ID yet. Scan more inscriptions? (may use more API)');
                     if (scanMore) {
                         for (const it of htmlCards.slice(defaultScan, 30)) {
                             const id = String(it.inscriptionId || '').trim();
@@ -12710,12 +14122,12 @@ window.burnAndRemintAuditCard = async function (event) {
             }
         };
 
-        if (!auditIdentity) {
+        if (!window.auditIdentity) {
             try {
-                await runAudit(true);
+                await window.runAudit(true);
             } catch (_) {}
 
-            if (!auditIdentity && (pickedHtml || inscriptionId)) {
+            if (!window.auditIdentity && (pickedHtml || inscriptionId)) {
                 try {
                     const tryParse = html => {
                         try {
@@ -12741,17 +14153,17 @@ window.burnAndRemintAuditCard = async function (event) {
                         }
                     }
                     if (idObj && typeof idObj === 'object') {
-                        auditIdentity = idObj;
+                        window.auditIdentity = idObj;
                     }
                 } catch (_) {}
             }
 
-            if (!auditIdentity) {
+            if (!window.auditIdentity) {
                 throw new Error('Unable to load your Fennec ID. Please click GET YOUR ID first.');
             }
         }
 
-        auditIdentity = applyParentOverridesToIdentity(auditIdentity);
+        window.auditIdentity = applyParentOverridesToIdentity(window.auditIdentity);
 
         if (!userPubkey) userPubkey = await window.unisat.getPublicKey();
         const currentUserAddress = currentAddr;
@@ -12803,7 +14215,7 @@ window.burnAndRemintAuditCard = async function (event) {
                 ''
         ).trim();
 
-        let htmlCode = generateRecursiveChildHTML(auditIdentity, {
+        const htmlCode = generateRecursiveChildHTML(window.auditIdentity, {
             libRef: resolvedLibRef,
             configRef: resolvedConfigRef,
             manifestRef: mintChildManifestRef,
@@ -12871,12 +14283,20 @@ window.burnAndRemintAuditCard = async function (event) {
         const provSig = provData?.signature || null;
         if (provAlg === 'NONE' || !provSig) {
             try {
-                if (typeof showNotification === 'function') {
-                    showNotification(
-                        '⚠️ Provenance signer not configured (alg NONE). Continuing without signature.',
-                        'warning',
-                        2600
-                    );
+                const k = 'fennec_provenance_alg_none_warned';
+                if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(k) === '1') {
+                    // already warned
+                } else {
+                    try {
+                        if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(k, '1');
+                    } catch (_) {}
+                    if (typeof showNotification === 'function') {
+                        showNotification(
+                            '⚠️ Provenance signer not configured (alg NONE). Continuing without signature.',
+                            'warning',
+                            2600
+                        );
+                    }
                 }
             } catch (_) {}
         } else {
@@ -13277,7 +14697,7 @@ window.inscribeFennecCorePack = async function () {
     try {
         if (!userAddress && !window.userAddress) {
             setStatus('Connect wallet first.');
-            if (typeof connectWallet === 'function') connectWallet();
+            if (typeof window.connectWallet === 'function') window.connectWallet();
             return;
         }
 
@@ -13447,7 +14867,7 @@ window.inscribeFennecManifestOnly = async function () {
     try {
         if (!userAddress && !window.userAddress) {
             setStatus('Connect wallet first.');
-            if (typeof connectWallet === 'function') connectWallet();
+            if (typeof window.connectWallet === 'function') window.connectWallet();
             return;
         }
 
@@ -13584,7 +15004,7 @@ window.inscribeFennecAssetsAndConfig = async function () {
 
         if (!userAddress && !window.userAddress) {
             setStatus('Connect wallet first.');
-            if (typeof connectWallet === 'function') connectWallet();
+            if (typeof window.connectWallet === 'function') window.connectWallet();
             return;
         }
 
@@ -13960,10 +15380,10 @@ window.inscribeFennecAssetsAndConfig = async function () {
 
 window.checkDiscountEligibility = function () {
     try {
-        if (!auditIdentity || !auditIdentity.metrics) {
+        if (!window.auditIdentity || !window.auditIdentity.metrics) {
             return;
         }
-        const metrics = auditIdentity.metrics;
+        const metrics = window.auditIdentity.metrics;
         const fennecWalletOnly = Number(metrics.fennecWalletBalance ?? metrics.fennec_wallet_balance ?? 0) || 0;
         const fennecLpValueUSD =
             Number(metrics.fennecLpValueUSD ?? metrics.fennec_lp_value_usd ?? metrics.fennecLpValueUsd ?? 0) || 0;
@@ -14002,13 +15422,29 @@ window.checkDiscountEligibility = function () {
 };
 
 // Force Scroll to Top (Final)
-window.onbeforeunload = function () {
-    window.scrollTo(0, 0);
-};
-window.onload = function () {
-    setTimeout(() => window.scrollTo(0, 0), 10);
-    setTimeout(() => window.scrollTo(0, 0), 100);
-};
+if (!window.__fennecScrollTopFinalSetup) {
+    window.__fennecScrollTopFinalSetup = true;
+    try {
+        window.addEventListener('beforeunload', () => {
+            try {
+                window.scrollTo(0, 0);
+            } catch (_) {}
+        });
+    } catch (_) {}
+    try {
+        window.addEventListener(
+            'load',
+            () => {
+                try {
+                    window.scrollTo(0, 0);
+                    setTimeout(() => window.scrollTo(0, 0), 10);
+                    setTimeout(() => window.scrollTo(0, 0), 100);
+                } catch (_) {}
+            },
+            { once: true }
+        );
+    } catch (_) {}
+}
 
 // Chat Widget Functions
 function toggleChatLegacy() {
@@ -14049,7 +15485,8 @@ function sendMessageLegacy() {
     setTimeout(() => {
         const botMsg = document.createElement('div');
         botMsg.className = 'flex gap-2 items-start';
-        botMsg.innerHTML = `<div class="w-6 h-6 flex-shrink-0"><img src="img/FENNECAI.png" class="w-full h-full object-contain ai-avatar"></div><div class="bg-white/5 p-3 rounded-lg rounded-tl-none flex-1">I'm here to help! Visit our docs or ask the community.</div>`;
+        botMsg.innerHTML =
+            '<div class="w-6 h-6 flex-shrink-0"><img src="img/FENNECAI.png" class="w-full h-full object-contain ai-avatar"></div><div class="bg-white/5 p-3 rounded-lg rounded-tl-none flex-1">I\'m here to help! Visit our docs or ask the community.</div>';
         messages.appendChild(botMsg);
         messages.scrollTop = messages.scrollHeight;
     }, 500);

@@ -1,0 +1,60 @@
+# PROJECT IDENTITY
+Project: Fennec Swap (Fractal Bitcoin)
+Stack: Vanilla JavaScript (ES6 Modules), HTML5, CSS3
+Backend: Cloudflare Workers
+Network: Fractal Bitcoin Mainnet
+
+# ARCHITECTURE RULES
+1. **MPA Structure**: 
+   - DO NOT use client-side routing. 
+   - Keep `index.html`, `terminal.html`, `id.html` as separate entry points.
+   - Use `localStorage` to persist wallet state across pages.
+
+2. **API Strategy ("Hybrid Parallel")**:
+   - **Mempool First**: For all "blockchain physics" (Native Balance, UTXOs, Fees, Broadcast, Block Height, TX History).
+     - URL: `https://mempool.fractalbitcoin.io/api`
+   - **UniSat Secondary**: ONLY for Assets (BRC-20, Runes) and Images.
+     - URL: `https://open-api-fractal.unisat.io`
+   - **Worker Proxy**: For all Swap logic/quotes (`fennec-api`). DO NOT implement swap logic on client.
+
+3. **Coding Standards**:
+   - Use ES6 Modules (`import/export`).
+   - Use JSDoc for all functions to ensure type safety.
+   - Use `BigInt` for ALL satoshi calculations. Never use `Number` for financial math.
+   - Handle High-DPI screens in Canvas code (`window.devicePixelRatio`).
+
+# WORKFLOW & VALIDATION (CRITICAL)
+1. **Post-Edit Check**: 
+   - AFTER every significant code generation or edit, you MUST read the content of `@current_problems`.
+   - If that file contains errors, warnings, or user notes, your PRIORITY is to fix them before moving on.
+   - Do not claim a task is "Done" if `@current_problems` shows syntax errors.
+
+2. **Safety First**:
+   - Never expose private keys or secrets in client-side code.
+   - Always implement "Empty States" (skeletons) for UI loading.
+   - Always check for `window.unisat` existence before calling wallet methods.
+
+# API CONSTRAINTS (DO NOT HALLUCINATE)
+- Mempool API does NOT have `GET /summary` (use `/address/:addr`).
+- Mempool API does NOT return BRC-20 tokens.
+- UniSat v2 API has deprecated native history fields. Use Mempool for history.
+
+
+**SYSTEM INSTRUCTION: POWERSHELL NODE.JS SYNTAX**
+
+You are repeatedly generating broken `node -e` commands for Windows PowerShell.
+The issue: You are using double quotes `"` for the outer wrapper, which causes escaping issues with inner quotes.
+
+**THE RULE:**
+When generating one-liner scripts (`node -e`) for PowerShell:
+1. ALWAYS wrap the entire script in **SINGLE QUOTES** (`'`).
+2. Use **DOUBLE QUOTES** (`"`) inside the script for strings.
+3. Do NOT escape the inner double quotes with backslashes (no `\"`), just use `"`.
+
+**WRONG (Will freeze):**
+`node -e "console.log(\"Hello\")"`
+
+**CORRECT (Will work):**
+`node -e 'console.log("Hello")'`
+
+Please fix your internal pattern generation for this session.

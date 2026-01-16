@@ -208,6 +208,34 @@
         await __swapTo(u);
     }
 
+    function __bindPrefetchLinks() {
+        try {
+            document.querySelectorAll('a[data-link]').forEach(link => {
+                if (link && link.dataset && link.dataset.prefetchBound === '1') return;
+                if (link && link.dataset) link.dataset.prefetchBound = '1';
+
+                link.addEventListener(
+                    'mouseenter',
+                    () => {
+                        try {
+                            const href = link.getAttribute('href');
+                            if (!href || href.startsWith('#')) return;
+                            const u = __toUrl(href);
+                            if (!u || u.origin !== window.location.origin) return;
+                            const pathname = __resolvePathname(u.pathname);
+                            __fetchHtml(pathname, u.search).catch(() => void 0);
+                        } catch (_) {
+                            void _;
+                        }
+                    },
+                    { passive: true }
+                );
+            });
+        } catch (_) {
+            void _;
+        }
+    }
+
     window.__fennecNavigate = function (href, opts) {
         return __navigate(href, opts);
     };
@@ -235,6 +263,11 @@
         } catch (_) {}
     });
 
+    // Warm cache on hover for snappier SPA transitions
+    try {
+        __bindPrefetchLinks();
+    } catch (_) {}
+
     window.addEventListener('popstate', () => {
         try {
             __navigate(window.location.href, { noPush: true, replace: true });
@@ -244,5 +277,6 @@
     try {
         __setActiveNav(window.location.pathname);
         __runRouteInit(window.location.pathname);
+        __bindPrefetchLinks();
     } catch (_) {}
 })();

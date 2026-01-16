@@ -28,6 +28,7 @@ DEPLOY.txt
 # Directories
 backup/
 api/
+.pages_upload/
 .git/
 .wrangler/
 
