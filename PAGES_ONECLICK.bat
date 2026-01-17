@@ -69,19 +69,21 @@ echo Updated %MANIFEST_FILE%:
 type "%MANIFEST_FILE%"
 echo.
 echo ========================================
-echo   Deploying Cloudflare Pages...
+echo   Building and Deploying Cloudflare Pages...
 echo ========================================
 
-set "PAGES_DIR=."
-
-set "PAGES_EXTRA_FLAGS=--commit-hash=0000000000000000000000000000000000000000 --commit-message=local --commit-dirty=true"
-where git >nul 2>&1
-if !errorlevel! equ 0 (
-  git rev-parse --verify HEAD >nul 2>&1
-  if !errorlevel! equ 0 (
-    set "PAGES_EXTRA_FLAGS=--commit-dirty=true"
-  )
+echo [BUILD] Building pages_upload folder...
+call npm run build
+if %errorlevel% neq 0 (
+    echo [ERROR] Build failed!
+    pause
+    goto :fail
 )
+echo [OK] Build completed!
+echo.
+
+set "PAGES_DIR=pages_upload"
+set "PAGES_EXTRA_FLAGS=--commit-message=Auto-Deploy --commit-dirty=true"
 
 echo Command: %WRANGLER_CMD% pages deploy !PAGES_DIR! --project-name=fennec-swap %PAGES_EXTRA_FLAGS%
 echo.

@@ -50,7 +50,18 @@ if not exist node_modules\ (
 )
 
 echo.
-echo [BUILD] Skipping loading widget build (React widget deprecated).
+echo [BUILD] Building pages_upload folder...
+
+REM Build pages_upload folder
+echo [BUILD] Running npm run build...
+call npm run build
+if %errorlevel% neq 0 (
+    echo [ERROR] Build failed!
+    pause
+    goto :fail
+)
+echo [OK] Build completed successfully!
+echo.
 
 set "WRANGLER_LOCAL=node_modules\.bin\wrangler.cmd"
 set "WRANGLER_CMD="
@@ -101,13 +112,13 @@ echo.
 
 REM Deploy Pages
 echo [2/2] Deploying Pages (fennec-swap)...
-set "PAGES_DIR=."
-set "PAGES_EXTRA_FLAGS=--commit-hash=0000000000000000000000000000000000000000 --commit-message=local --commit-dirty=true"
+set "PAGES_DIR=pages_upload"
+set "PAGES_EXTRA_FLAGS=--commit-message=Auto-Deploy --commit-dirty=true"
 where git >nul 2>&1
 if errorlevel 1 goto :skip_git_meta
 git rev-parse --verify HEAD >nul 2>&1
 if errorlevel 1 goto :skip_git_meta
-set "PAGES_EXTRA_FLAGS=--commit-dirty=true"
+set "PAGES_EXTRA_FLAGS=--commit-message=Auto-Deploy --commit-dirty=true"
 :skip_git_meta
 
 >>"%LOG_FILE%" echo.
