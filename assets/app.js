@@ -33,6 +33,20 @@ import {
 
 import { doSwap, setSwapPair, switchDir, setMaxAmount } from '../js/app/swap_ui.js';
 
+// Import new UI modules
+import { showSection, setupSectionRouter, fennecInitAuditSafe } from '../js/ui/navigation.js';
+import { initializeApp } from '../js/ui/init.js';
+import {
+    showNotification,
+    showError,
+    showSuccess,
+    closeProgress,
+    toggleTheme,
+    toggleLanguage,
+    toggleChat,
+    installUtilsGlobals
+} from '../js/ui/utils.js';
+
 // Временные заглушки для функций из отсутствующих модулей
 const setDepositFeeCustom = window.setDepositFeeCustom || function () {};
 const setWithdrawFeeCustom = window.setWithdrawFeeCustom || function () {};
@@ -54,201 +68,11 @@ const oracleQuick = window.oracleQuick || function () {};
 const fetchAuditData = window.fetchAuditData || function () {};
 const updatePriceData = window.updatePriceData || function () {};
 
-// ИСПРАВЛЕНИЕ: Предварительно объявляем функции на window, чтобы они были доступны для inline onclick
-// Это предотвращает ошибки "function is not defined" при парсинге HTML
-// DO NOT REMOVE.
-window.showSection = window.showSection || function () {};
-window.showSection = function (id) {
-    const sections = document.querySelectorAll('.page-section');
-    if (sections.length === 0) {
-        console.warn('Sections not loaded yet');
-        return;
-    }
-    sections.forEach(sec => {
-        sec.classList.remove('active');
-        sec.style.display = 'none'; // Скрываем полностью
-    });
+// showSection, setupSectionRouter, and fennecInitAuditSafe are now imported from navigation.js
+window.showSection = showSection;
+window.__fennecInitAuditSafe = fennecInitAuditSafe;
 
-    // ИСПРАВЛЕНИЕ: Если переключились на аудит, восстанавливаем из кэша или показываем кнопку
-    if (id === 'audit') {
-        const currentAddr = window.userAddress || userAddress || null;
-        if (currentAddr && !window.auditLoading) {
-            const cacheKey = `audit_v3_${currentAddr}`;
-            const cached = localStorage.getItem(cacheKey);
-            if (cached && !window.auditIdentity) {
-                try {
-                    const cachedData = JSON.parse(cached);
-                    if (Date.now() - cachedData.timestamp < 7 * 24 * 60 * 60 * 1000) {
-                        console.log('Restoring audit from cache');
-                        window.auditIdentity = cachedData.identity;
-                        try {
-                            const a = String(currentAddr || '').trim();
-                            if (a && window.auditIdentity && typeof window.auditIdentity === 'object') {
-                                window.auditIdentity.metrics =
-                                    window.auditIdentity.metrics && typeof window.auditIdentity.metrics === 'object'
-                                        ? window.auditIdentity.metrics
-                                        : {};
-                                window.auditIdentity.metrics.address = String(
-                                    window.auditIdentity.metrics.address || a
-                                ).trim();
-                            }
-                        } catch (_) {}
-                        // Do not render legacy parent card UI. window.initAudit() will show v2 iframe preview.
-                    }
-                } catch (e) {
-                    console.warn('Failed to restore from cache:', e);
-                }
-            }
-        }
-        if (typeof window.initAudit === 'function' && !window.auditLoading) {
-            setTimeout(() => {
-                try {
-                    const p = window.initAudit();
-                    if (p && typeof p.then === 'function') p.catch(() => false);
-                } catch (_) {}
-            }, 50);
-        }
-    }
-
-    const target = document.getElementById(`sec-${id}`);
-    if (target) {
-        target.style.display = 'flex';
-        setTimeout(() => target.classList.add('active'), 10);
-        window.scrollTo(0, 0);
-    }
-
-    document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
-    const navLink = document.getElementById(`nav-${id}`);
-    if (navLink) navLink.classList.add('active');
-
-    try {
-        const desired = String(id || '').trim();
-        const curHash = String(window.location.hash || '')
-            .replace(/^#/, '')
-            .trim();
-        if (
-            desired &&
-            curHash !== desired &&
-            !window.__fennecSectionHashWrite &&
-            window.__fennecUseHashRouter !== false
-        ) {
-            window.__fennecSectionHashWrite = true;
-            window.location.hash = `#${desired}`;
-            setTimeout(() => {
-                window.__fennecSectionHashWrite = false;
-            }, 0);
-        }
-    } catch (_) {}
-
-    // Если пользователь уже запустил SCAN/OPEN, не сбрасываем UI только потому что адрес еще не появился.
-    try {
-        const addrNow = String(window.userAddress || userAddress || '').trim();
-        const activeMode = String((window.__fennecAuditUi && window.__fennecAuditUi.mode) || 'idle');
-        if (!addrNow && (activeMode === 'scanning' || activeMode === 'opening')) {
-            return;
-        }
-    } catch (_) {}
-
-    // ИСПРАВЛЕНИЕ: Скрываем кнопку REFRESH в header когда открыт Fennec ID
-    const refreshBtn = document.getElementById('refreshBtn');
-    if (refreshBtn) {
-        if (id === 'audit' || id === 'terminal' || id === 'home') {
-            refreshBtn.classList.add('hidden');
-        } else {
-            // Показываем только если кошелек подключен
-            if (userAddress) {
-                refreshBtn.classList.remove('hidden');
-            }
-        }
-    }
-
-    // ИСПРАВЛЕНИЕ: Если переключились на аудит, восстанавливаем из кэша
-    // Блок удален так как логика перенесена выше и консолидирована.
-};
-
-if (typeof window.initAuditLoading === 'undefined') window.initAuditLoading = false;
-
-function __legacy_fennecInitAuditSafe() {
-    try {
-        if (typeof window.initAudit !== 'function') return null;
-        const p = window.initAudit();
-        try {
-            if (p && typeof p.then === 'function') p.catch(() => false);
-        } catch (_) {}
-        return p;
-    } catch (_) {
-        return null;
-    }
-}
-
-const __fennecInitAuditSafe = window.__fennecInitAuditSafe || __legacy_fennecInitAuditSafe;
-window.__fennecInitAuditSafe = __fennecInitAuditSafe;
-
-try {
-    if (window.__fennecSpaRouter) {
-        if (window.__fennecUseHashRouter !== false) window.__fennecUseHashRouter = false;
-        window.__fennecSectionRouterSetup = true;
-    }
-} catch (_) {}
-
-if (!window.__fennecSectionRouterSetup && !window.__fennecSpaRouter) {
-    window.__fennecSectionRouterSetup = true;
-
-    try {
-        const secs = document.querySelectorAll('.page-section');
-        if (window.__fennecUseHashRouter !== false) {
-            window.__fennecUseHashRouter = !!(secs && secs.length > 1);
-        }
-    } catch (_) {
-        if (window.__fennecUseHashRouter !== false) {
-            window.__fennecUseHashRouter = true;
-        }
-    }
-
-    const readHashSection = () => {
-        const h = String(window.location.hash || '')
-            .replace(/^#/, '')
-            .trim();
-        return h ? h : '';
-    };
-
-    window.addEventListener('hashchange', () => {
-        if (window.__fennecSectionHashWrite) return;
-        if (window.__fennecUseHashRouter === false) return;
-        const id = readHashSection();
-        if (!id) return;
-        try {
-            const sec = document.getElementById('sec-' + id);
-            if (!sec) return;
-        } catch (_) {}
-        try {
-            window.showSection(id);
-        } catch (_) {}
-    });
-
-    setTimeout(() => {
-        if (window.__fennecUseHashRouter === false) return;
-        const id = readHashSection();
-        if (id) {
-            try {
-                const sec = document.getElementById('sec-' + id);
-                if (!sec) return;
-            } catch (_) {}
-            try {
-                window.showSection(id);
-            } catch (_) {}
-            return;
-        }
-
-        const activeId = String(document.querySelector('.page-section.active')?.id || '').trim();
-        const activeSection = activeId.startsWith('sec-') ? activeId.slice(4) : '';
-        if (!activeSection) {
-            try {
-                window.showSection('home');
-            } catch (_) {}
-        }
-    }, 0);
-}
+// Router setup moved to navigation.js - will be called from initializeApp()
 
 window.__isTerminalPage = function () {
     try {
@@ -15020,30 +14844,7 @@ window.checkDiscountEligibility = function () {
     }
 };
 
-// Force Scroll to Top (Final)
-if (!window.__fennecScrollTopFinalSetup) {
-    window.__fennecScrollTopFinalSetup = true;
-    try {
-        window.addEventListener('beforeunload', () => {
-            try {
-                window.scrollTo(0, 0);
-            } catch (_) {}
-        });
-    } catch (_) {}
-    try {
-        window.addEventListener(
-            'load',
-            () => {
-                try {
-                    window.scrollTo(0, 0);
-                    setTimeout(() => window.scrollTo(0, 0), 10);
-                    setTimeout(() => window.scrollTo(0, 0), 100);
-                } catch (_) {}
-            },
-            { once: true }
-        );
-    } catch (_) {}
-}
+// Scroll initialization moved to init.js - will be called from initializeApp()
 
 // Chat Widget Functions
 function toggleChatLegacy() {
@@ -15116,4 +14917,12 @@ function oracleQuickLegacy(action) {
         if (input) input.value = String(response || '');
         if (typeof sendMessage === 'function') return sendMessage();
     } catch (_) {}
+}
+
+// Initialize app modules
+try {
+    installUtilsGlobals();
+    initializeApp();
+} catch (e) {
+    console.error('Failed to initialize app modules:', e);
 }
