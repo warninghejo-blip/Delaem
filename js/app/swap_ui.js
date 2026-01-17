@@ -347,8 +347,6 @@ export async function doSwap() {
             try {
                 const txEl = document.getElementById('successTxId');
                 if (txEl) txEl.innerText = sub.data || sub.txid || 'Swap success!';
-                const sm = document.getElementById('successModal');
-                if (sm) sm.classList.remove('hidden');
             } catch (_) {}
             try {
                 if (typeof window.checkBalance === 'function') setTimeout(window.checkBalance, 2000);

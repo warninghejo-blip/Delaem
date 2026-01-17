@@ -8,9 +8,65 @@ try {
     window.__fennecChartModuleLoaded = true;
 } catch (_) {}
 
+const __FENNEC_PRICE_CACHE_VERSION = '2026-01-17-1';
+
+function resetChartData(force = false) {
+    try {
+        const verKey = 'fennec_prices_cache_ver';
+        const prev = String(localStorage.getItem(verKey) || '').trim();
+        if (force || prev !== __FENNEC_PRICE_CACHE_VERSION) {
+            try {
+                localStorage.removeItem('fennec_prices');
+            } catch (_) {}
+            try {
+                localStorage.setItem(verKey, __FENNEC_PRICE_CACHE_VERSION);
+            } catch (_) {}
+        }
+    } catch (_) {}
+}
+
+function __normalizePriceSeries(points, nowMs) {
+    try {
+        const now = Number(nowMs || Date.now()) || Date.now();
+        const ninetyMs = 90 * 24 * 60 * 60 * 1000;
+        const cutoff90 = now - ninetyMs;
+        const src = Array.isArray(points) ? points : [];
+        const filtered = src
+            .map(p => {
+                const ts = Number(p && p.timestamp ? p.timestamp : 0) || 0;
+                const price = Number(p && p.price !== undefined ? p.price : 0) || 0;
+                if (!ts || ts < cutoff90) return null;
+                if (!(price > 0) || !Number.isFinite(price)) return null;
+                return { price, timestamp: ts };
+            })
+            .filter(Boolean)
+            .sort((a, b) => a.timestamp - b.timestamp);
+
+        const buckets = new Map();
+        for (const p of filtered) {
+            const ts = p.timestamp;
+            let bucketMs = 6 * 60 * 60 * 1000;
+            if (ts >= now - 60 * 60 * 1000) bucketMs = 10 * 1000;
+            else if (ts >= now - 24 * 60 * 60 * 1000) bucketMs = 5 * 60 * 1000;
+            else if (ts >= now - 7 * 24 * 60 * 60 * 1000) bucketMs = 30 * 60 * 1000;
+            else if (ts >= now - 30 * 24 * 60 * 60 * 1000) bucketMs = 2 * 60 * 60 * 1000;
+            const key = `${bucketMs}_${Math.floor(ts / bucketMs)}`;
+            buckets.set(key, p);
+        }
+
+        return Array.from(buckets.values()).sort((a, b) => a.timestamp - b.timestamp);
+    } catch (_) {
+        return Array.isArray(points) ? points : [];
+    }
+}
+
 let chartTimeframe = '7d';
 let priceChart = null;
 const globalPrices = { btc: 0, fb: 0, fennec: 0 };
+
+try {
+    resetChartData(false);
+} catch (_) {}
 
 function __seedDashboardPricesFromCache() {
     try {
@@ -177,10 +233,13 @@ async function loadHistoricalPrices() {
                     : chartTimeframe === '24h'
                       ? '24h'
                       : '1h';
-        const json = await safeFetchJson(
-            `${BACKEND_URL}?action=price_line&tick0=sFB___000&tick1=FENNEC&timeRange=${timeRange}`,
-            { timeoutMs: 12000, retries: 2 }
-        );
+        const __url = `${BACKEND_URL}?action=price_line&tick0=sFB___000&tick1=FENNEC&timeRange=${timeRange}&_ts=${Date.now()}`;
+        const json = await safeFetchJson(__url, {
+            timeoutMs: 12000,
+            retries: 2,
+            cache: 'no-store',
+            headers: { Accept: 'application/json', 'Cache-Control': 'no-cache', Pragma: 'no-cache' }
+        });
         if (!json) throw new Error('Failed to load price history');
 
         if (__chartDebug) console.log('Price line API response:', json);
@@ -224,17 +283,10 @@ async function loadHistoricalPrices() {
                     if (!seen.has(key)) seen.set(key, p);
                 }
                 const deduplicated = Array.from(seen.values()).sort((a, b) => a.timestamp - b.timestamp);
-
-                // For 90d/all timeframe, limit to max 200 points to avoid overcrowding
-                // For shorter timeframes, use fewer points
-                if (deduplicated.length > 10000) {
-                    deduplicated.splice(0, deduplicated.length - 10000);
-                }
-
-                // Save all data (no limit - keep full 90+ day history)
-                localStorage.setItem('fennec_prices', JSON.stringify(deduplicated));
+                const normalized = __normalizePriceSeries(deduplicated, Date.now());
+                localStorage.setItem('fennec_prices', JSON.stringify(normalized));
                 if (__chartDebug)
-                    console.log(`Chart data saved: ${apiData.length} new points, ${deduplicated.length} total points`);
+                    console.log(`Chart data saved: ${apiData.length} new points, ${normalized.length} total points`);
                 if (__chartDebug) console.log(`Timeframe: ${chartTimeframe}, timeRange: ${timeRange}`);
             } else {
                 if (__chartDebug) console.warn(`No valid price data from API for ${timeRange}`);
@@ -305,9 +357,8 @@ async function updatePriceData(force = false) {
                     Math.abs(lastPoint.price - price) / lastPoint.price > 0.01
                 ) {
                     stored.push({ price, timestamp });
-                    // Храним максимум 500 точек для производительности
-                    if (stored.length > 10000) stored.shift();
-                    localStorage.setItem('fennec_prices', JSON.stringify(stored));
+                    const normalized = __normalizePriceSeries(stored, timestamp);
+                    localStorage.setItem('fennec_prices', JSON.stringify(normalized));
                     console.log(`New price: ${price.toFixed(6)} FB/FENNEC`);
                     updateChart();
                 }
@@ -869,7 +920,8 @@ Object.assign(window, {
     updateLiveTicker,
     startPublicTickerUpdates,
     stopPublicTickerUpdates,
-    seedChartPriceFromCache
+    seedChartPriceFromCache,
+    resetChartData
 });
 
 export {
@@ -881,5 +933,6 @@ export {
     updateLiveTicker,
     startPublicTickerUpdates,
     stopPublicTickerUpdates,
-    seedChartPriceFromCache
+    seedChartPriceFromCache,
+    resetChartData
 };

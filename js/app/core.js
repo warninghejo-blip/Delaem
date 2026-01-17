@@ -14,6 +14,7 @@ export async function safeFetchJson(url, options = {}) {
     const method = options.method || 'GET';
     const headers = options.headers;
     const body = options.body;
+    const cache = options.cache;
     const timeoutMs = typeof options.timeoutMs === 'number' ? options.timeoutMs : 12000;
     const retries = typeof options.retries === 'number' ? options.retries : 2;
     const retryDelayMs = typeof options.retryDelayMs === 'number' ? options.retryDelayMs : 700;
@@ -23,7 +24,13 @@ export async function safeFetchJson(url, options = {}) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
         try {
-            const res = await fetch(url, { method, headers, body, signal: controller.signal });
+            const res = await fetch(url, {
+                method,
+                headers,
+                body,
+                cache,
+                signal: controller.signal
+            });
             clearTimeout(timeoutId);
 
             if (!res.ok) {

@@ -1,10 +1,10 @@
-import { BACKEND_URL } from './core.js';
+import { BACKEND_URL, safeFetchJson } from './core.js';
 
 const userAddress = null;
 
 const AUDIT_TIMEOUT_MS = 5 * 60 * 1000;
 
-async function fetchAuditData(abortSignal = null, silent = false) {
+async function fetchAuditData(abortSignal = null, silent = false, options = null) {
     let addr = String(window.userAddress || userAddress || '').trim();
     if (!addr) {
         const shouldConnect = confirm('Please connect your wallet first. Would you like to connect now?');
@@ -32,9 +32,12 @@ async function fetchAuditData(abortSignal = null, silent = false) {
     } catch (_) {}
 
     const pubkey = String(window.userPubkey || '').trim();
+    const __opts = options && typeof options === 'object' ? options : null;
+    const __noCache = !!(__opts && (__opts.noCache || __opts.forceNoCache));
+    const __cacheBust = __noCache ? `&_ts=${Date.now()}` : '';
     const url = pubkey
-        ? `${BACKEND_URL}?action=fractal_audit&address=${encodeURIComponent(addr)}&pubkey=${encodeURIComponent(pubkey)}`
-        : `${BACKEND_URL}?action=fractal_audit&address=${encodeURIComponent(addr)}`;
+        ? `${BACKEND_URL}?action=fractal_audit&address=${encodeURIComponent(addr)}&pubkey=${encodeURIComponent(pubkey)}${__cacheBust}`
+        : `${BACKEND_URL}?action=fractal_audit&address=${encodeURIComponent(addr)}${__cacheBust}`;
 
     let lastErr = null;
     for (let attempt = 0; attempt <= 2; attempt++) {
@@ -50,10 +53,13 @@ async function fetchAuditData(abortSignal = null, silent = false) {
                 else abortSignal.addEventListener('abort', () => localController.abort(), { once: true });
             }
 
+            const headers = __noCache
+                ? { Accept: 'application/json', 'Cache-Control': 'no-cache', Pragma: 'no-cache' }
+                : { Accept: 'application/json' };
             const res = await fetch(url, {
                 signal: localController.signal,
-                cache: attempt > 0 ? 'no-cache' : 'default',
-                headers: { Accept: 'application/json' }
+                cache: __noCache ? 'no-store' : attempt > 0 ? 'no-cache' : 'default',
+                headers
             });
             if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
 
@@ -138,6 +144,33 @@ async function fetchAuditData(abortSignal = null, silent = false) {
             };
 
             try {
+                if (!auditInput.txCount || !auditInput.utxoCount || !auditInput.nativeBalance) {
+                    const client = await fetchClientSideStats(addr, { timeoutMs: 2500, maxAgeMs: 30000 }).catch(
+                        () => null
+                    );
+                    if (client && typeof client === 'object') {
+                        if (!auditInput.txCount) auditInput.txCount = Number(client.txCount || 0) || 0;
+                        if (!auditInput.utxoCount) auditInput.utxoCount = Number(client.utxoCount || 0) || 0;
+                        if (!auditInput.nativeBalance)
+                            auditInput.nativeBalance = Number(client.nativeBalance || 0) || 0;
+                    }
+                }
+            } catch (_) {}
+
+            try {
+                const tc = Number(auditInput?.stats?.totalCollections || 0) || 0;
+                if (!tc) {
+                    const client = await fetchClientSideCollections(addr, { timeoutMs: 3500, maxAgeMs: 60000 }).catch(
+                        () => null
+                    );
+                    const v = Number(client?.totalCollections || 0) || 0;
+                    if (auditInput.stats && typeof auditInput.stats === 'object' && v > 0) {
+                        auditInput.stats.totalCollections = v;
+                    }
+                }
+            } catch (_) {}
+
+            try {
                 window.lastAuditApiData = apiData;
             } catch (_) {}
 
@@ -164,6 +197,133 @@ async function fetchAuditData(abortSignal = null, silent = false) {
     }
 
     throw lastErr || new Error('Oracle error');
+}
+
+async function fetchClientSideStats(address, options = null) {
+    const addr = String(address || '').trim();
+    if (!addr) return null;
+
+    const __opts = options && typeof options === 'object' ? options : null;
+    const maxAgeMs = Math.max(0, Number(__opts && __opts.maxAgeMs) || 30000);
+    const timeoutMs = Math.max(1000, Number(__opts && __opts.timeoutMs) || 9000);
+
+    try {
+        window.__fennecClientAuditStats =
+            window.__fennecClientAuditStats && typeof window.__fennecClientAuditStats === 'object'
+                ? window.__fennecClientAuditStats
+                : { byAddr: {} };
+    } catch (_) {}
+
+    const root =
+        window.__fennecClientAuditStats && typeof window.__fennecClientAuditStats === 'object'
+            ? window.__fennecClientAuditStats
+            : null;
+    const byAddr = root && root.byAddr && typeof root.byAddr === 'object' ? root.byAddr : null;
+    if (!byAddr) return null;
+
+    const now = Date.now();
+    const cached = byAddr[addr];
+    if (cached && cached.ts && now - cached.ts < maxAgeMs && cached.data && typeof cached.data === 'object') {
+        return cached.data;
+    }
+
+    const url = `https://mempool.fractalbitcoin.io/api/address/${encodeURIComponent(addr)}`;
+    const j = await safeFetchJson(url, {
+        timeoutMs,
+        retries: 0,
+        cache: 'no-store',
+        headers: { Accept: 'application/json', 'Cache-Control': 'no-cache', Pragma: 'no-cache' }
+    });
+    if (!j || typeof j !== 'object') return null;
+
+    const cs = j.chain_stats && typeof j.chain_stats === 'object' ? j.chain_stats : {};
+    const ms = j.mempool_stats && typeof j.mempool_stats === 'object' ? j.mempool_stats : {};
+
+    const txCount = Number(cs.tx_count || 0) || 0;
+    const fundedCnt = (Number(cs.funded_txo_count || 0) || 0) + (Number(ms.funded_txo_count || 0) || 0);
+    const spentCnt = (Number(cs.spent_txo_count || 0) || 0) + (Number(ms.spent_txo_count || 0) || 0);
+    const utxoCount = Math.max(0, fundedCnt - spentCnt);
+
+    const fundedSum = (Number(cs.funded_txo_sum || 0) || 0) + (Number(ms.funded_txo_sum || 0) || 0);
+    const spentSum = (Number(cs.spent_txo_sum || 0) || 0) + (Number(ms.spent_txo_sum || 0) || 0);
+    const sat = Math.max(0, Math.floor(fundedSum - spentSum));
+    const nativeBalance = sat > 0 ? sat / 100000000 : 0;
+
+    const out = { txCount, utxoCount, nativeBalance };
+    byAddr[addr] = { ts: now, data: out };
+    return out;
+}
+
+async function fetchClientSideCollections(address, options = null) {
+    const addr = String(address || '').trim();
+    if (!addr) return null;
+
+    const __opts = options && typeof options === 'object' ? options : null;
+    const maxAgeMs = Math.max(0, Number(__opts && __opts.maxAgeMs) || 60000);
+    const timeoutMs = Math.max(1000, Number(__opts && __opts.timeoutMs) || 9000);
+
+    try {
+        window.__fennecClientAuditCollections =
+            window.__fennecClientAuditCollections && typeof window.__fennecClientAuditCollections === 'object'
+                ? window.__fennecClientAuditCollections
+                : { byAddr: {} };
+    } catch (_) {}
+
+    const root =
+        window.__fennecClientAuditCollections && typeof window.__fennecClientAuditCollections === 'object'
+            ? window.__fennecClientAuditCollections
+            : null;
+    const byAddr = root && root.byAddr && typeof root.byAddr === 'object' ? root.byAddr : null;
+    if (!byAddr) return null;
+
+    const now = Date.now();
+    const cached = byAddr[addr];
+    if (cached && cached.ts && now - cached.ts < maxAgeMs && cached.data && typeof cached.data === 'object') {
+        return cached.data;
+    }
+
+    const url = `https://open-api-fractal.unisat.io/v1/indexer/address/${encodeURIComponent(
+        addr
+    )}/inscription-data?cursor=0&size=200`;
+    const j = await safeFetchJson(url, {
+        timeoutMs,
+        retries: 0,
+        cache: 'no-store',
+        headers: { Accept: 'application/json', 'Cache-Control': 'no-cache', Pragma: 'no-cache' }
+    });
+    const list = Array.isArray(j?.data?.list)
+        ? j.data.list
+        : Array.isArray(j?.data?.inscriptionData)
+          ? j.data.inscriptionData
+          : Array.isArray(j?.list)
+            ? j.list
+            : [];
+    if (!Array.isArray(list) || list.length === 0) {
+        const out0 = { totalCollections: 0 };
+        byAddr[addr] = { ts: now, data: out0 };
+        return out0;
+    }
+
+    const ids = new Set();
+    for (const it of list) {
+        if (!it || typeof it !== 'object') continue;
+        const cid = String(
+            it.collectionId ||
+                it.collection_id ||
+                it.collection ||
+                it.collectionID ||
+                it.collectionIdStr ||
+                it?.collection?.collectionId ||
+                it?.collection?.id ||
+                it?.collection?.collection_id ||
+                ''
+        ).trim();
+        if (cid) ids.add(cid);
+    }
+
+    const out = { totalCollections: ids.size };
+    byAddr[addr] = { ts: now, data: out };
+    return out;
 }
 
 // fetchAuditData is now imported as module
@@ -360,36 +520,37 @@ window.__ensureAuditUi =
         }, 100);
     };
 
-// Prefetch Fennec Audit - background silent loading (dedup + returns identity)
 async function prefetchFennecAudit(silent = true) {
+    const addr = String(window.userAddress || userAddress || '').trim();
+    if (!addr) return null;
+
+    const now = Date.now();
+    const cacheKey = `audit_v3_${addr}`;
+
     try {
-        try {
-            if (localStorage.getItem('fennec_wallet_manual_disconnect') === '1') return null;
-        } catch (_) {}
-
-        const addr = String(window.userAddress || userAddress || '').trim();
-        if (!addr) return null;
-
-        const cacheKey = `audit_v3_${addr}`;
-        const now = Date.now();
-
-        if (prefetchedFennecAuditAddr === addr && prefetchedFennecAudit && now - prefetchedFennecAuditTs < 300000) {
+        if (
+            prefetchedFennecAudit &&
+            prefetchedFennecAuditAddr === addr &&
+            Date.now() - prefetchedFennecAuditTs < 300000
+        ) {
             return prefetchedFennecAudit;
         }
+    } catch (_) {}
 
-        try {
-            const cached = localStorage.getItem(cacheKey);
-            if (cached) {
-                const cachedData = JSON.parse(cached);
-                if (cachedData && cachedData.identity && now - Number(cachedData.timestamp || 0) < 5 * 60 * 1000) {
-                    prefetchedFennecAudit = cachedData.identity;
-                    prefetchedFennecAuditAddr = addr;
-                    prefetchedFennecAuditTs = now;
-                    return prefetchedFennecAudit;
-                }
+    try {
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+            const cachedData = JSON.parse(cached);
+            if (cachedData && cachedData.identity && now - Number(cachedData.timestamp || 0) < 5 * 60 * 1000) {
+                prefetchedFennecAudit = cachedData.identity;
+                prefetchedFennecAuditAddr = addr;
+                prefetchedFennecAuditTs = now;
+                return prefetchedFennecAudit;
             }
-        } catch (_) {}
+        }
+    } catch (_) {}
 
+    try {
         window.__fennecPrefetchAudit =
             window.__fennecPrefetchAudit && typeof window.__fennecPrefetchAudit === 'object'
                 ? window.__fennecPrefetchAudit
@@ -467,6 +628,39 @@ async function prefetchFennecAudit(silent = true) {
         return null;
     }
 }
+
+function __syncFennecIdButtonsUI() {
+    try {
+        const openBtn = document.getElementById('fidOpenBtn');
+        const wrap = document.getElementById('fidActionButtons');
+        if (!openBtn && !wrap) return;
+
+        const addr = String(window.userAddress || userAddress || '').trim();
+        const ui =
+            window.__fennecAuditUi && typeof window.__fennecAuditUi === 'object'
+                ? window.__fennecAuditUi
+                : { addr: '', mode: 'idle', openedAt: 0, scannedAt: 0 };
+        const uiMode = String(ui.mode || 'idle');
+        const st =
+            window.__fennecIdStatus && typeof window.__fennecIdStatus === 'object' ? window.__fennecIdStatus : null;
+        const existingId = String((st && st.inscriptionId) || '').trim();
+        const existingCard = !!(addr && st && st.hasId && existingId);
+        const iframeOpened = !!document.getElementById('fennecIdIframe');
+        const opened = iframeOpened || (uiMode === 'opened' && String(ui.addr || '').trim() === addr);
+
+        if (existingCard && opened) {
+            if (openBtn) openBtn.style.display = 'none';
+            if (wrap) wrap.style.display = '';
+        } else {
+            if (openBtn) openBtn.style.display = '';
+            if (wrap) wrap.style.display = 'none';
+        }
+    } catch (_) {}
+}
+
+try {
+    window.__syncFennecIdButtonsUI = __syncFennecIdButtonsUI;
+} catch (_) {}
 
 // Initialize Audit UI
 initAuditLoading = false;
@@ -607,13 +801,12 @@ async function initAudit() {
             }
         } catch (_) {}
 
-        if (uiMode === 'opening' && !existingCard) {
+        if (uiMode === 'opening') {
             try {
-                if (
-                    existingCard &&
-                    (container.querySelector('#fennecIdIframeContainer') ||
-                        container.querySelector('#fennecIdLoadingRoot'))
-                ) {
+                if (container.querySelector('#fennecIdIframe')) {
+                    try {
+                        if (typeof window.__syncFennecIdButtonsUI === 'function') window.__syncFennecIdButtonsUI();
+                    } catch (_) {}
                     return;
                 }
             } catch (_) {}
@@ -946,6 +1139,13 @@ async function runAudit(forceRefresh = false) {
     if (currentAuditAbortController) currentAuditAbortController.abort();
     currentAuditAbortController = new AbortController();
 
+    try {
+        fetchClientSideStats(addrConnected).catch(() => null);
+    } catch (_) {}
+    try {
+        fetchClientSideCollections(addrConnected).catch(() => null);
+    } catch (_) {}
+
     // ПРИНУДИТЕЛЬНО показываем лоадер в контейнере СРАЗУ
     try {
         if (!hasContainer) throw new Error('no_container');
@@ -1177,7 +1377,11 @@ async function runAudit(forceRefresh = false) {
 
         console.log(`Starting audit scan #${requestId}...`);
         const startTime = Date.now();
-        const data = await window.fetchAuditData(currentAuditAbortController.signal);
+        const data = await window.fetchAuditData(
+            currentAuditAbortController.signal,
+            false,
+            forceRefresh ? { noCache: true } : null
+        );
 
         try {
             window.lastAuditApiData = data;
