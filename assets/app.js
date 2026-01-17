@@ -2799,48 +2799,7 @@ function validateAmount(amount, type, token) {
     return { valid: true };
 }
 
-// showError уже импортирована из ../js/ui/utils.js
-
-function showSuccess(message, isMintEvent = false) {
-    const modal = document.getElementById('successModal');
-    const msgEl = document.getElementById('successTxId');
-    msgEl.innerText = message;
-
-    const modalBox = modal.querySelector('.modal-box');
-    if (!modalBox) {
-        modal.classList.remove('hidden');
-        return;
-    }
-
-    const oldBtns = modalBox.querySelectorAll('button');
-    oldBtns.forEach(b => b.remove());
-
-    if (isMintEvent) {
-        const shareBtn = document.createElement('button');
-        shareBtn.className =
-            'share-x-btn w-full px-6 py-4 bg-fennec/15 border border-fennec/50 rounded-xl text-white font-black shadow-[inset_0_0_18px_rgba(255,107,53,0.22),0_0_28px_rgba(255,107,53,0.10)] hover:bg-fennec/20 hover:border-orange-300 hover:shadow-[inset_0_0_22px_rgba(255,107,53,0.30),0_0_36px_rgba(255,107,53,0.16)] hover:scale-[1.01] transition-all flex items-center justify-center gap-3 mb-3 text-sm tracking-widest';
-        shareBtn.innerHTML =
-            '<i class="fab fa-x-twitter text-xl" style="color:#ffffff;opacity:0.95"></i><span>SHARE REVEAL</span>';
-        shareBtn.onclick = () => {
-            if (typeof window.shareIdentityOnX === 'function') window.shareIdentityOnX();
-        };
-        modalBox.appendChild(shareBtn);
-
-        const closeBtn = document.createElement('button');
-        closeBtn.className = 'w-full text-xs text-gray-500 hover:text-white py-2 transition';
-        closeBtn.innerText = 'CLOSE';
-        closeBtn.onclick = () => modal.classList.add('hidden');
-        modalBox.appendChild(closeBtn);
-    } else {
-        const okBtn = document.createElement('button');
-        okBtn.className = 'w-full bg-green-600 text-black font-bold py-2 rounded-lg hover:bg-green-500 transition';
-        okBtn.innerText = 'OK';
-        okBtn.onclick = () => modal.classList.add('hidden');
-        modalBox.appendChild(okBtn);
-    }
-
-    modal.classList.remove('hidden');
-}
+// showError и showSuccess уже импортированы из ../js/ui/utils.js
 
 async function refreshBalancesInline() {
     try {
@@ -2851,61 +2810,7 @@ async function refreshBalancesInline() {
     } catch (_) {}
 }
 
-// Система уведомлений
-function showNotification(message, type = 'info', duration = 3000) {
-    const container = document.getElementById('notificationsContainer');
-    const notification = document.createElement('div');
-    notification.className = 'notification';
-
-    const icons = {
-        success: '',
-        error: '',
-        info: '',
-        warning: '',
-        swap: '',
-        deposit: '',
-        withdraw: ''
-    };
-
-    const colors = {
-        success: '#10b981',
-        error: '#ef4444',
-        info: '#3b82f6',
-        warning: '#f59e0b',
-        swap: '#FF6B35',
-        deposit: '#10b981',
-        withdraw: '#f59e0b'
-    };
-
-    const wrap = document.createElement('div');
-    wrap.style.display = 'flex';
-    wrap.style.flexDirection = 'column';
-    wrap.style.alignItems = 'center';
-    wrap.style.justifyContent = 'center';
-    wrap.style.gap = '2px';
-    wrap.style.width = '100%';
-
-    const title = document.createElement('div');
-    title.className = 'notification-title';
-    title.style.color = colors[type] || colors.info;
-    title.textContent = String(message || '');
-
-    const timeEl = document.createElement('div');
-    timeEl.className = 'notification-time';
-    timeEl.textContent = new Date().toLocaleTimeString();
-
-    wrap.appendChild(title);
-    wrap.appendChild(timeEl);
-    notification.appendChild(wrap);
-
-    container.appendChild(notification);
-
-    // Auto-remove
-    setTimeout(() => {
-        notification.classList.add('exit');
-        setTimeout(() => notification.remove(), 300);
-    }, duration);
-}
+// showNotification уже импортирована из ../js/ui/utils.js
 
 const __terminalTabRefreshState = { last: { swap: 0, deposit: 0, withdraw: 0 } };
 async function __refreshTerminalTab(tab, force = false) {

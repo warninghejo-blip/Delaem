@@ -1,4 +1,4 @@
-import { BACKEND_URL, safeFetchJson } from './core.js';
+import { BACKEND_URL } from './core.js';
 
 const userAddress = null;
 
@@ -1525,6 +1525,11 @@ try {
             setTimeout(__kick, 0);
         }
     }
+} catch (_) {}
+
+// Экспорт в window для использования в других модулях
+try {
+    window.fetchAuditData = fetchAuditData;
 } catch (_) {}
 
 export { prefetchFennecAudit, initAudit, runAudit, refreshAudit, startAuditRefreshTimer };
