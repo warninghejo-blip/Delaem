@@ -58,19 +58,40 @@ const setMaxDepositAmount = window.setMaxDepositAmount || function () {};
 const setMaxFennecAmount = window.setMaxFennecAmount || function () {};
 const setWithdrawToken = window.setWithdrawToken || function () {};
 const setMaxWithdrawAmount = window.setMaxWithdrawAmount || function () {};
-const doWithdraw = window.doWithdraw || function () {};
-const createFennecInscription = window.createFennecInscription || function () {};
-const manualRefresh = window.manualRefresh || function () {};
-const connectWallet = window.connectWallet || function () {};
-const disconnectWallet = window.disconnectWallet || function () {};
-const onVisionFennecIdClick = window.onVisionFennecIdClick || function () {};
-const oracleQuick = window.oracleQuick || function () {};
-const fetchAuditData = window.fetchAuditData || function () {};
-const updatePriceData = window.updatePriceData || function () {};
+// Функции определяются позже в этом файле и экспортируются в window
+// doWithdraw, createFennecInscription, manualRefresh, connectWallet, disconnectWallet, etc.
 
-// showSection, setupSectionRouter, and fennecInitAuditSafe are now imported from navigation.js
+// Экспортируем импортированные функции в window для работы onclick атрибутов
 window.showSection = showSection;
 window.__fennecInitAuditSafe = fennecInitAuditSafe;
+
+// Liquidity функции
+window.refreshMyLiquidityForSelectedPair = refreshMyLiquidityForSelectedPair;
+window.openAddLiquidityModal = openAddLiquidityModal;
+window.switchLiquidityTab = switchLiquidityTab;
+window.updateRemoveLiquidityEstimate = updateRemoveLiquidityEstimate;
+window.selectLiquidityPair = selectLiquidityPair;
+window.closeAddLiquidityModal = closeAddLiquidityModal;
+
+// Audit функции
+window.initAudit = initAudit;
+window.runAudit = runAudit;
+window.refreshAudit = refreshAudit;
+window.startAuditRefreshTimer = startAuditRefreshTimer;
+
+// Chart функции
+window.setChartTimeframe = setChartTimeframe;
+
+// Swap функции
+window.doSwap = doSwap;
+window.setSwapPair = setSwapPair;
+window.switchDir = switchDir;
+window.setMaxAmount = setMaxAmount;
+
+// UI утилиты
+window.toggleTheme = toggleTheme;
+window.toggleLanguage = toggleLanguage;
+window.toggleChat = toggleChat;
 
 // Router setup moved to navigation.js - will be called from initializeApp()
 
@@ -14892,6 +14913,23 @@ function oracleQuickLegacy(action) {
         if (input) input.value = String(response || '');
         if (typeof sendMessage === 'function') return sendMessage();
     } catch (_) {}
+}
+
+// Экспортируем Terminal функции в window для onclick атрибутов
+try {
+    window.depositSelectedInscriptions = depositSelectedInscriptions;
+    window.createFennecInscription = createFennecInscription;
+    window.doWithdraw = doWithdraw;
+    window.setMaxFennecAmount = setMaxFennecAmount;
+    window.setWithdrawToken = setWithdrawToken;
+    window.setMaxWithdrawAmount = setMaxWithdrawAmount;
+    window.setDepositToken = setDepositToken;
+    window.setMaxDepositAmount = setMaxDepositAmount;
+    window.closeProgress = closeProgress;
+    window.oracleQuick = oracleQuick || oracleQuickLegacy;
+    window.sendMessage = sendMessage || sendMessageLegacy;
+} catch (e) {
+    console.error('Failed to export Terminal functions:', e);
 }
 
 // Initialize app modules
