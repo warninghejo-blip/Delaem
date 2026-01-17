@@ -75,7 +75,14 @@ function initChart() {
         }
     }
 
-    // Also check global instance
+    // Also check global instance(s)
+    if (window.myChart) {
+        try {
+            window.myChart.destroy();
+        } catch (e) {
+            console.warn('Error destroying window.myChart:', e);
+        }
+    }
     if (window.myChartInstance) {
         try {
             window.myChartInstance.destroy();
@@ -139,6 +146,7 @@ function initChart() {
 
     // Save to global instance for external control
     window.myChartInstance = priceChart;
+    window.myChart = priceChart;
 
     console.log('Chart initialized');
 

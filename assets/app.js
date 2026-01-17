@@ -1,11 +1,3 @@
-// Защита от двойной инициализации
-if (window.FENNEC_APP_INITIALIZED) {
-    console.warn('⚠️ Fennec App already initialized, skipping...');
-    throw new Error('Double Init Prevention');
-}
-window.FENNEC_APP_INITIALIZED = true;
-console.log('🚀 Initializing Fennec App...');
-
 // Импорты функций из модулей
 import { initializeEventBindings } from '../js/app/event_bindings.js';
 
@@ -31,13 +23,7 @@ import {
     setMaxRemoveLp
 } from '../js/app/liquidity_ui.js';
 
-import {
-    initAudit,
-    runAudit,
-    refreshAudit,
-    startAuditRefreshTimer,
-    __fennecInitAuditSafe
-} from '../js/app/audit_ui.js';
+import { initAudit, runAudit, refreshAudit, startAuditRefreshTimer, fetchAuditData } from '../js/app/audit_ui.js';
 
 import {
     seedChartPriceFromCache,
@@ -48,6 +34,8 @@ import {
     updateLiveTicker,
     updatePriceData
 } from '../js/app/chart.js';
+
+import '../js/app/terminal_tabs.js';
 
 import { doSwap, setSwapPair, switchDir, setMaxAmount } from '../js/app/swap_ui.js';
 
@@ -64,2202 +52,522 @@ import {
     installUtilsGlobals
 } from '../js/ui/utils.js';
 
-// Заглушки для отсутствующих функций
-const setDepositToken =
-    window.setDepositToken ||
-    function (token) {
-        console.warn('setDepositToken not implemented:', token);
-    };
+import { BACKEND_URL, T_SFB, T_FENNEC, T_BTC, T_SBTC, safeFetchJson, __fennecDedupe } from '../js/app/core.js';
 
-const oracleQuick =
-    window.oracleQuick ||
-    function (action) {
-        console.warn('oracleQuick not implemented:', action);
-        return oracleQuickLegacy(action);
-    };
-
-// Все функции определяются позже в этом файле и экспортируются в window
-// connectWallet, disconnectWallet, manualRefresh, doWithdraw, createFennecInscription
-// setDepositFee, setWithdrawFee, setDepositToken, setWithdrawToken, etc.
-
-// Экспортируем импортированные функции в window для работы onclick атрибутов
-window.showSection = showSection;
-window.__fennecInitAuditSafe = __fennecInitAuditSafe;
-
-// Экспортируем заглушки
-window.setDepositToken = setDepositToken;
-window.oracleQuick = oracleQuick;
-
-// Liquidity функции
-window.refreshMyLiquidityForSelectedPair = refreshMyLiquidityForSelectedPair;
-window.openAddLiquidityModal = openAddLiquidityModal;
-window.switchLiquidityTab = switchLiquidityTab;
-window.updateRemoveLiquidityEstimate = updateRemoveLiquidityEstimate;
-window.selectLiquidityPair = selectLiquidityPair;
-window.closeAddLiquidityModal = closeAddLiquidityModal;
-window.doAddLiquidity = doAddLiquidity;
-window.doRemoveLiquidity = doRemoveLiquidity;
-window.setMaxLiqAmount = setMaxLiqAmount;
-window.openRemoveLiquidityModal = openRemoveLiquidityModal;
-window.setMaxRemoveLp = setMaxRemoveLp;
-
-// Audit функции
-window.initAudit = initAudit;
-window.runAudit = runAudit;
-window.refreshAudit = refreshAudit;
-window.startAuditRefreshTimer = startAuditRefreshTimer;
-
-// Chart функции
-window.setChartTimeframe = setChartTimeframe;
-
-// Swap функции
-window.doSwap = doSwap;
-window.setSwapPair = setSwapPair;
-window.switchDir = switchDir;
-window.setMaxAmount = setMaxAmount;
-
-// UI утилиты
-window.toggleTheme = toggleTheme;
-window.toggleLanguage = toggleLanguage;
-window.toggleChat = toggleChat;
-
-// Router setup moved to navigation.js - will be called from initializeApp()
-
-window.__isTerminalPage = function () {
+if (window.FENNEC_APP_INITIALIZED) {
     try {
-        const p = String(window.location && window.location.pathname ? window.location.pathname : '').toLowerCase();
-        return p.endsWith('/terminal.html') || p.endsWith('terminal.html');
-    } catch (_) {
-        return false;
-    }
-};
-
-window.__ensureAuditUi =
-    window.__ensureAuditUi ||
-    function () {
-        try {
-            if (!document.getElementById('auditContainer')) return;
-        } catch (_) {
-            return;
-        }
-
-        const attempt = () => {
-            try {
-                if (typeof window.initAudit === 'function') {
-                    try {
-                        const p = window.initAudit();
-                        if (p && typeof p.then === 'function') p.catch(() => false);
-                    } catch (_) {}
-                    return true;
-                }
-            } catch (_) {}
-            return false;
-        };
-
-        if (attempt()) return;
-        let tries = 0;
-        const t = setInterval(() => {
-            tries += 1;
-            if (attempt() || tries >= 30) {
-                try {
-                    clearInterval(t);
-                } catch (_) {}
-            }
-        }, 100);
-    };
-
-window.__syncFennecIdButtonsUI = function () {
-    try {
-        const openBtn = document.getElementById('fidOpenBtn');
-        const wrap = document.getElementById('fidActionButtons');
-        const updBtn = document.getElementById('fidUpdateBtn');
-        const refBtn = document.getElementById('fidRefreshBtn');
-        const openTxt = document.getElementById('fidOpenBtnText');
-        const addr = String(window.userAddress || userAddress || '').trim();
-        const ui = window.__fennecAuditUi && typeof window.__fennecAuditUi === 'object' ? window.__fennecAuditUi : null;
-        const mode = String((ui && ui.mode) || 'idle');
-        const uiAddr = String((ui && ui.addr) || '').trim();
-        const hasIframe = !!document.getElementById('fennecIdIframe');
-        const isOpened = !!(addr && uiAddr && addr === uiAddr && mode === 'opened' && hasIframe);
-
-        if (openBtn) {
-            openBtn.style.display = isOpened ? 'none' : '';
-            openBtn.disabled = false;
-            openBtn.style.pointerEvents = '';
-            openBtn.style.visibility = '';
-        }
-        if (openTxt && !isOpened) openTxt.textContent = 'OPEN ID';
-        if (wrap) wrap.style.display = isOpened ? '' : 'none';
-        if (updBtn) updBtn.style.display = isOpened ? '' : 'none';
-        if (refBtn) refBtn.style.display = isOpened ? '' : 'none';
+        console.warn('FENNEC app already initialized (duplicate load), continuing.');
     } catch (_) {}
-};
-
-// ИСПРАВЛЕНИЕ: Определяем window.connectWallet сразу после showSection
-window.__dedupeWalletButtons = function () {
-    try {
-        const c = Array.from(document.querySelectorAll('#connectBtn'));
-        for (let i = 1; i < c.length; i++) {
-            try {
-                c[i].remove();
-            } catch (_) {}
-        }
-    } catch (_) {}
-    try {
-        const d = Array.from(document.querySelectorAll('#disconnectBtn'));
-        for (let i = 1; i < d.length; i++) {
-            try {
-                d[i].remove();
-            } catch (_) {}
-        }
-    } catch (_) {}
-};
-
-window.__getWalletButtonsHost = function () {
-    return (
-        document.getElementById('connectBtn')?.parentElement ||
-        document.getElementById('disconnectBtn')?.parentElement ||
-        document.querySelector('header .justify-self-end') ||
-        null
-    );
-};
-
-window.__resetConnectBtn = function (show = true) {
-    try {
-        if (typeof window.__dedupeWalletButtons === 'function') window.__dedupeWalletButtons();
-    } catch (_) {}
-    let old = document.getElementById('connectBtn');
-    if (!old) {
-        const host = (typeof window.__getWalletButtonsHost === 'function' && window.__getWalletButtonsHost()) || null;
-        if (!host) return null;
-        old = document.createElement('button');
-        old.id = 'connectBtn';
-        old.setAttribute('data-t', 'connect');
-        old.className =
-            'bg-gradient-to-r from-fennec to-orange-600 text-black px-4 py-2 rounded-lg font-bold hover:brightness-110 transition text-xs shadow-[0_0_20px_rgba(255,107,53,0.4)] flex items-center gap-2';
-        try {
-            host.appendChild(old);
-        } catch (_) {
-            return null;
-        }
-    }
-    const fresh = old.cloneNode(false);
-    try {
-        fresh.removeAttribute('onclick');
-        fresh.onclick = function () {
-            try {
-                return window.connectWallet();
-            } catch (_) {}
-        };
-    } catch (_) {}
-    fresh.innerHTML = '<i class="fas fa-wallet"></i> <span>CONNECT</span>';
-    try {
-        fresh.disabled = false;
-        fresh.removeAttribute('disabled');
-    } catch (_) {}
-    if (show) fresh.classList.remove('hidden');
-    else fresh.classList.add('hidden');
-    old.replaceWith(fresh);
-    return fresh;
-};
-
-window.__resetDisconnectBtn = function (show = true) {
-    try {
-        if (typeof window.__dedupeWalletButtons === 'function') window.__dedupeWalletButtons();
-    } catch (_) {}
-    let old = document.getElementById('disconnectBtn');
-    if (!old) {
-        const host = (typeof window.__getWalletButtonsHost === 'function' && window.__getWalletButtonsHost()) || null;
-        if (!host) return null;
-        old = document.createElement('button');
-        old.id = 'disconnectBtn';
-        old.setAttribute('data-t', 'disconnect');
-        old.className =
-            'bg-red-600/20 text-red-400 px-4 py-2 rounded-lg font-bold hover:bg-red-600/30 transition text-xs border border-red-500/50 flex items-center gap-2';
-        try {
-            host.appendChild(old);
-        } catch (_) {
-            return null;
-        }
-    }
-
-    const fresh = old.cloneNode(false);
-    try {
-        fresh.removeAttribute('onclick');
-        fresh.onclick = function () {
-            try {
-                return window.disconnectWallet();
-            } catch (_) {}
-        };
-    } catch (_) {}
-    fresh.innerHTML = '<i class="fas fa-sign-out-alt"></i> <span id="disconnectBtnText">DISCONNECT</span>';
-    if (show) fresh.classList.remove('hidden');
-    else fresh.classList.add('hidden');
-    old.replaceWith(fresh);
-    return fresh;
-};
-
-window.__syncWalletButtonsUI = function () {
-    try {
-        if (typeof window.__dedupeWalletButtons === 'function') window.__dedupeWalletButtons();
-    } catch (_) {}
-    const addr = String(window.userAddress || '').trim();
-    if (!addr) {
-        try {
-            document.getElementById('disconnectBtn')?.remove();
-        } catch (_) {}
-        const connectBtn = window.__resetConnectBtn(true) || document.getElementById('connectBtn');
-        if (connectBtn) connectBtn.classList.remove('hidden');
-    } else {
-        try {
-            document.getElementById('connectBtn')?.remove();
-        } catch (_) {}
-        const disconnectBtn = window.__resetDisconnectBtn(true) || document.getElementById('disconnectBtn');
-        const disconnectBtnText = document.getElementById('disconnectBtnText');
-        if (disconnectBtn) disconnectBtn.classList.remove('hidden');
-        if (disconnectBtnText) disconnectBtnText.textContent = `...${addr.slice(-4)}`;
-    }
-};
-
-window.__restoreAuditFromCache = function (addr) {
-    try {
-        const a = String(addr || '').trim();
-        if (!a) return false;
-        const cacheKey = `audit_v3_${a}`;
-        const cached = localStorage.getItem(cacheKey);
-        if (!cached) return false;
-        try {
-            const cachedData = JSON.parse(cached);
-            const ts = Number(cachedData?.timestamp || 0) || 0;
-            const ttlMs = 7 * 24 * 60 * 60 * 1000;
-            if (ts > 0 && Date.now() - ts > ttlMs) return false;
-            if (cachedData && cachedData.identity && !window.auditIdentity) {
-                window.auditIdentity = cachedData.identity;
-                try {
-                    window.auditIdentity.metrics =
-                        window.auditIdentity.metrics && typeof window.auditIdentity.metrics === 'object'
-                            ? window.auditIdentity.metrics
-                            : {};
-                    window.auditIdentity.metrics.address = String(window.auditIdentity.metrics.address || a).trim();
-                } catch (_) {}
-                return true;
-            }
-        } catch (_) {}
-        return false;
-    } catch (_) {
-        return false;
-    }
-};
-
-window.tryRestoreWalletSession = async function () {
-    try {
-        if (localStorage.getItem('fennec_wallet_manual_disconnect') === '1') return false;
-    } catch (_) {}
-    try {
-        if (window.__walletConnecting) return false;
-    } catch (_) {}
-    if (typeof window.unisat === 'undefined') return false;
-
-    try {
-        await window.unisat.switchChain('FRACTAL_BITCOIN_MAINNET');
-    } catch (_) {}
-
-    let acc = null;
-    try {
-        if (typeof window.unisat.getAccounts === 'function') {
-            acc = await window.unisat.getAccounts();
-        }
-    } catch (_) {
-        acc = null;
-    }
-
-    if (!acc || !Array.isArray(acc) || acc.length === 0) return false;
-    const addr = String(acc[0] || '').trim();
-    if (!addr) return false;
-
-    userAddress = addr;
-    window.userAddress = addr;
-
-    try {
-        localStorage.setItem('fennec_last_wallet', addr);
-        localStorage.removeItem('fennec_wallet_manual_disconnect');
-    } catch (_) {}
-
-    try {
-        if (!userPubkey && typeof window.unisat.getPublicKey === 'function') {
-            userPubkey = await window.unisat.getPublicKey();
-            window.userPubkey = userPubkey;
-        }
-    } catch (_) {}
-
-    try {
-        if (typeof window.__syncWalletButtonsUI === 'function') window.__syncWalletButtonsUI();
-    } catch (_) {}
-
-    try {
-        if (typeof window.updateVisionFennecIdCta === 'function') window.updateVisionFennecIdCta();
-    } catch (_) {}
-
-    try {
-        if (typeof window.__restoreAuditFromCache === 'function') window.__restoreAuditFromCache(addr);
-    } catch (_) {}
-
-    try {
-        if (document.getElementById('auditContainer')) __fennecInitAuditSafe();
-    } catch (_) {}
-
-    try {
-        if (typeof window.prefetchFennecAudit === 'function') window.prefetchFennecAudit(true);
-    } catch (_) {}
-
-    try {
-        if (typeof window.refreshFennecIdStatus === 'function') window.refreshFennecIdStatus(false);
-    } catch (_) {}
-
-    return true;
-};
-
-try {
-    if (!window.__fennecWalletRestoreBoot) {
-        window.__fennecWalletRestoreBoot = true;
-
-        const __attemptRestore = async () => {
-            try {
-                if (localStorage.getItem('fennec_wallet_manual_disconnect') === '1') return true;
-            } catch (_) {}
-
-            try {
-                const addrNow = String(window.userAddress || userAddress || '').trim();
-                if (addrNow) return true;
-            } catch (_) {}
-
-            try {
-                if (typeof window.unisat === 'undefined') return false;
-            } catch (_) {}
-
-            try {
-                if (typeof window.tryRestoreWalletSession !== 'function') return false;
-                const ok = await window.tryRestoreWalletSession();
-                return !!ok;
-            } catch (_) {}
-            return false;
-        };
-
-        const __startRestoreLoop = () => {
-            let tries = 0;
-            const t = setInterval(() => {
-                tries += 1;
-                if (tries > 80) {
-                    try {
-                        clearInterval(t);
-                    } catch (_) {}
-                    return;
-                }
-                __attemptRestore().then(didAttempt => {
-                    if (didAttempt) {
-                        try {
-                            clearInterval(t);
-                        } catch (_) {}
-                    }
-                });
-            }, 250);
-
-            __attemptRestore().then(didAttempt => {
-                if (didAttempt) {
-                    try {
-                        clearInterval(t);
-                    } catch (_) {}
-                }
-            });
-        };
-
-        try {
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', () => setTimeout(__startRestoreLoop, 0));
-            } else {
-                setTimeout(__startRestoreLoop, 0);
-            }
-        } catch (_) {
-            setTimeout(__startRestoreLoop, 0);
-        }
-    }
-} catch (_) {}
-
-window.connectWallet = async function () {
-    if (typeof window.unisat === 'undefined') {
-        window.open('https://unisat.io/download', '_blank');
-        return;
-    }
-    try {
-        if (window.__walletConnecting) return;
-        window.__walletConnecting = true;
-        try {
-            const connectBtn = window.__resetConnectBtn(true) || document.getElementById('connectBtn');
-            const disconnectBtn = document.getElementById('disconnectBtn');
-            if (connectBtn) {
-                connectBtn.disabled = true;
-                connectBtn.classList.remove('hidden');
-                connectBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span>CONNECTING</span>';
-            }
-            if (disconnectBtn) disconnectBtn.classList.add('hidden');
-        } catch (_) {}
-
-        console.log('=== CONNECTING WALLET ===');
-        try {
-            await window.unisat.switchChain('FRACTAL_BITCOIN_MAINNET');
-            console.log('Switched to Fractal Bitcoin Mainnet');
-        } catch (e) {
-            console.warn('Switch chain warning:', e);
-        }
-        console.log('Requesting accounts...');
-        const acc =
-            typeof window.unisat.requestAccounts === 'function'
-                ? await window.unisat.requestAccounts()
-                : typeof window.unisat.getAccounts === 'function'
-                  ? await window.unisat.getAccounts()
-                  : null;
-        if (!acc || acc.length === 0) {
-            throw new Error('No accounts returned from wallet');
-        }
-
-        // ИСПРАВЛЕНИЕ: Проверяем, не переключается ли кошелек
-        const newAddr = acc[0];
-        if (userAddress && userAddress !== newAddr && !switchWalletConfirmed) {
-            // Показываем модалку подтверждения
-            const currentAddrEl = document.getElementById('currentWalletAddress');
-            if (currentAddrEl) {
-                currentAddrEl.textContent = userAddress;
-            }
-            document.getElementById('switchWalletModal').classList.remove('hidden');
-            try {
-                window.__walletConnecting = false;
-                if (typeof window.__syncWalletButtonsUI === 'function') window.__syncWalletButtonsUI();
-            } catch (_) {}
-            return; // Ждем подтверждения
-        }
-
-        // Set userAddress - use window for global access
-        const addr = newAddr;
-        userAddress = addr;
-        window.userAddress = addr;
-
-        try {
-            localStorage.setItem('fennec_last_wallet', addr);
-            localStorage.removeItem('fennec_wallet_manual_disconnect');
-        } catch (_) {}
-
-        try {
-            if (typeof window.__syncWalletButtonsUI === 'function') window.__syncWalletButtonsUI();
-        } catch (_) {}
-        // ВСЕГДА скрываем кнопку REFRESH в секции Fennec ID
-        const refreshBtn = document.getElementById('refreshBtn');
-        if (refreshBtn) {
-            refreshBtn.classList.add('hidden'); // Всегда скрываем в Fennec ID секции
-        }
-
-        console.log('Wallet connected');
-
-        try {
-            if (typeof window.prefetchFennecAudit === 'function') window.prefetchFennecAudit(true);
-        } catch (_) {}
-
-        try {
-            if (typeof window.refreshFennecIdStatus === 'function') window.refreshFennecIdStatus(false);
-        } catch (_) {}
-
-        try {
-            if (typeof prewarmBackendCaches === 'function') prewarmBackendCaches();
-        } catch (_) {}
-
-        // ИСПРАВЛЕНИЕ: Всегда обновляем UI FENNEC ID после подключения кошелька.
-        // Раньше проверялся tab-audit, которого может не быть/не быть active.
-        if (typeof window.initAudit === 'function') {
-            setTimeout(() => window.initAudit(), 100);
-        }
-        try {
-            if (typeof window.updateVisionFennecIdCta === 'function') window.updateVisionFennecIdCta();
-        } catch (e) {}
-
-        // ИСПРАВЛЕНИЕ: Сбрасываем флаг подтверждения
-        switchWalletConfirmed = false;
-
-        // ИСПРАВЛЕНИЕ: Запускаем автообновление данных каждую минуту
-        // ИСПРАВЛЕНИЕ: Автообновление отключено - пользователь обновляет вручную
-        // startAutoUpdate();
-
-        if (typeof checkBalance === 'function') checkBalance();
-        if (typeof refreshTransactionHistory === 'function') {
-            setTimeout(refreshTransactionHistory, 2000);
-        }
-
-        // Подгрузить LP позицию если модалка Add Liquidity открыта
-        try {
-            const modal = document.getElementById('addLiquidityModal');
-            if (modal && !modal.classList.contains('hidden')) {
-                console.log('Reloading LP position after wallet connection...');
-                setTimeout(() => refreshMyLiquidityForSelectedPair(false), 500);
-            }
-        } catch (e) {
-            console.error('Failed to reload LP position:', e);
-        }
-
-        // Setup account change listener
-        if (!window.__unisatAccountListenerSetup && window.unisat) {
-            window.__unisatAccountListenerSetup = true;
-            try {
-                window.unisat.on('accountsChanged', accounts => {
-                    console.log('Unisat account changed:', accounts);
-
-                    try {
-                        if (localStorage.getItem('fennec_wallet_manual_disconnect') === '1') return;
-                    } catch (_) {}
-
-                    const cur = String(userAddress || window.userAddress || '').trim();
-                    if (!accounts || accounts.length === 0) {
-                        console.log('Account event: empty accounts, re-checking...');
-                        setTimeout(async () => {
-                            try {
-                                if (localStorage.getItem('fennec_wallet_manual_disconnect') === '1') return;
-                            } catch (_) {}
-
-                            try {
-                                if (typeof window.unisat === 'undefined') {
-                                    window.disconnectWallet({
-                                        manual: false,
-                                        clearCache: false,
-                                        reason: 'accounts_empty'
-                                    });
-                                    return;
-                                }
-                            } catch (_) {
-                                window.disconnectWallet({ manual: false, clearCache: false, reason: 'accounts_empty' });
-                                return;
-                            }
-
-                            let acc2 = null;
-                            try {
-                                if (typeof window.unisat.getAccounts === 'function') {
-                                    acc2 = await window.unisat.getAccounts();
-                                }
-                            } catch (_) {
-                                acc2 = null;
-                            }
-
-                            const nextAddr2 =
-                                acc2 && Array.isArray(acc2) && acc2.length > 0 ? String(acc2[0] || '').trim() : '';
-                            const cur2 = String(userAddress || window.userAddress || '').trim();
-                            if (nextAddr2) {
-                                if (!cur2 || cur2 !== nextAddr2) {
-                                    userAddress = nextAddr2;
-                                    window.userAddress = nextAddr2;
-                                    try {
-                                        if (typeof window.__syncWalletButtonsUI === 'function')
-                                            window.__syncWalletButtonsUI();
-                                    } catch (_) {}
-                                    try {
-                                        if (typeof window.updateVisionFennecIdCta === 'function')
-                                            window.updateVisionFennecIdCta();
-                                    } catch (_) {}
-                                    try {
-                                        if (document.getElementById('auditContainer')) __fennecInitAuditSafe();
-                                    } catch (_) {}
-                                    try {
-                                        if (typeof window.prefetchFennecAudit === 'function')
-                                            window.prefetchFennecAudit(true);
-                                    } catch (_) {}
-                                    try {
-                                        if (typeof window.refreshFennecIdStatus === 'function')
-                                            window.refreshFennecIdStatus(false);
-                                    } catch (_) {}
-                                }
-                                return;
-                            }
-
-                            window.disconnectWallet({ manual: false, clearCache: false, reason: 'accounts_empty' });
-                        }, 350);
-                        return;
-                    }
-
-                    const nextAddr = String(accounts[0] || '').trim();
-                    if (!cur) {
-                        if (nextAddr) {
-                            userAddress = nextAddr;
-                            window.userAddress = nextAddr;
-                            try {
-                                if (typeof window.__syncWalletButtonsUI === 'function') window.__syncWalletButtonsUI();
-                            } catch (_) {}
-                            try {
-                                if (typeof window.updateVisionFennecIdCta === 'function')
-                                    window.updateVisionFennecIdCta();
-                            } catch (_) {}
-                            try {
-                                if (document.getElementById('auditContainer')) __fennecInitAuditSafe();
-                            } catch (_) {}
-
-                            try {
-                                if (typeof window.prefetchFennecAudit === 'function') window.prefetchFennecAudit(true);
-                            } catch (_) {}
-
-                            try {
-                                if (typeof window.refreshFennecIdStatus === 'function')
-                                    window.refreshFennecIdStatus(false);
-                            } catch (_) {}
-                        }
-                        return;
-                    }
-
-                    if (nextAddr && nextAddr !== cur) {
-                        console.log('Account switch detected, resetting data...');
-                        window.disconnectWallet({ manual: false, clearCache: true, reason: 'account_switch' });
-                    }
-                });
-            } catch (e) {
-                console.warn('Could not setup account listener:', e);
-            }
-        }
-    } catch (e) {
-        console.error('Wallet connection error:', e);
-        alert(e.message || 'Failed to connect wallet');
-    } finally {
-        try {
-            window.__walletConnecting = false;
-        } catch (_) {}
-        try {
-            if (typeof window.__syncWalletButtonsUI === 'function') window.__syncWalletButtonsUI();
-        } catch (_) {}
-    }
-};
-
-// ИСПРАВЛЕНИЕ: Функция отключения кошелька
-window.disconnectWallet = function (opts) {
-    const manual = !(opts && typeof opts === 'object' && opts.manual === false);
-    const clearCache = !(opts && typeof opts === 'object' && opts.clearCache === false);
-    const currentAddr = String(userAddress || window.userAddress || '').trim();
-    const hadAddr = !!currentAddr;
-
-    try {
-        if (manual) localStorage.setItem('fennec_wallet_manual_disconnect', '1');
-    } catch (_) {}
-
-    if (hadAddr) console.log('Disconnecting wallet:', currentAddr);
-    else console.log('Disconnecting wallet: no active address');
-
-    // Останавливаем автообновление
-    stopAutoUpdate();
-
-    // Очищаем данные
-    userAddress = null;
-    window.userAddress = null;
-    userPubkey = null;
-    window.userPubkey = null;
-
-    try {
-        if (window.currentAuditAbortController) window.currentAuditAbortController.abort();
-    } catch (_) {}
-    try {
-        window.currentAuditRequestId++;
-    } catch (_) {}
-    try {
-        window.initAuditLoading = false;
-    } catch (_) {}
-
-    // Очищаем UI данные
-    userBalances = { sFB: 0, FENNEC: 0, BTC: 0 };
-    walletBalances = { sFB: 0, FENNEC: 0, BTC: 0 };
-    poolReserves = { sFB: 0, FENNEC: 0, BTC: 0, user_sBTC: 0 };
-    window.auditIdentity = null;
-    window.auditLoading = false;
-    window.prefetchedFennecAudit = null;
-    window.prefetchedFennecAuditAddr = null;
-    window.prefetchedFennecAuditTs = 0;
-
-    // ИСПРАВЛЕНИЕ: Очищаем кэш аудита при отключении кошелька
-    if (hadAddr && clearCache) {
-        const cacheKey = `audit_${currentAddr}`;
-        localStorage.removeItem(cacheKey);
-        const cacheKey2 = `audit_v3_${currentAddr}`;
-        localStorage.removeItem(cacheKey2);
-        try {
-            localStorage.removeItem(`fennec_id_child_v2_${currentAddr}`);
-            localStorage.removeItem(`fennec_id_child_v3_${currentAddr}`);
-        } catch (_) {}
-    }
-
-    // ИСПРАВЛЕНИЕ: Сбрасываем состояние Fennec ID
-    if (window.__fennecIdStatus && typeof window.__fennecIdStatus === 'object') {
-        window.__fennecIdStatus.loading = false;
-        window.__fennecIdStatus.hasId = false;
-        window.__fennecIdStatus.inscriptionId = '';
-        window.__fennecIdStatus.source = '';
-        window.__fennecIdStatus.addr = '';
-    }
-
-    // Обновляем кнопки
-    const refreshBtn = document.getElementById('refreshBtn');
-    try {
-        if (typeof window.__syncWalletButtonsUI === 'function') window.__syncWalletButtonsUI();
-    } catch (_) {}
-    if (refreshBtn) {
-        refreshBtn.classList.add('hidden');
-    }
-    // Останавливаем таймер обновления
-    if (refreshTimerInterval) {
-        clearInterval(refreshTimerInterval);
-        refreshTimerInterval = null;
-    }
-
-    // Обновляем UI балансов напрямую
-    const balInEl = document.getElementById('balIn');
-    if (balInEl) balInEl.innerText = 'Bal: 0.0000';
-
-    // Очищаем контейнер аудита
-    const auditContainer = document.getElementById('auditContainer');
-    if (auditContainer) {
-        auditContainer.innerHTML = '';
-    }
-
-    // ИСПРАВЛЕНИЕ: Восстанавливаем кнопку "CONNECT & SCAN ID" в секции аудита
-    if (typeof window.initAudit === 'function') {
-        __fennecInitAuditSafe();
-    }
-
-    // Очищаем историю транзакций
-    const historyList = document.getElementById('historyList');
-    if (historyList) {
-        historyList.innerHTML = '';
-    }
-
-    // Обновляем вкладки, если нужно
-    if (typeof checkBalance === 'function') {
-        checkBalance();
-    }
-
-    console.log('Wallet disconnected');
-    if (typeof showNotification === 'function') {
-        showNotification('Wallet disconnected', 'info');
-    } else {
-        alert('Wallet disconnected');
-    }
-
-    try {
-        if (window.__fennecIdStatus && typeof window.__fennecIdStatus === 'object') {
-            window.__fennecIdStatus.loading = false;
-            window.__fennecIdStatus.hasId = false;
-            window.__fennecIdStatus.inscriptionId = '';
-            window.__fennecIdStatus.source = '';
-        }
-    } catch (_) {}
-    try {
-        if (typeof window.updateVisionFennecIdCta === 'function') window.updateVisionFennecIdCta();
-    } catch (_) {}
-};
-
-setTimeout(() => {
-    try {
-        if (typeof window.__syncWalletButtonsUI === 'function') window.__syncWalletButtonsUI();
-    } catch (_) {}
-}, 0);
-
-window.__fennecIdStatus = window.__fennecIdStatus || {
-    loading: false,
-    hasId: false,
-    inscriptionId: '',
-    source: '',
-    addr: ''
-};
-
-window.__fennecAuditUi = window.__fennecAuditUi || {
-    addr: '',
-    mode: 'idle',
-    openedAt: 0,
-    scannedAt: 0
-};
-
-// FENNEC LORE DATABASE - Premium tweet content
-const FENNEC_LORE_DB = {
-    DRIFTER: {
-        0: {
-            title: 'Desert Runner',
-            text: 'Just a silhouette on the horizon. Searching for the first signal.'
-        },
-        1: {
-            title: 'Sand Wanderer',
-            text: 'The dunes are shifting. I have found my path through the static.'
-        },
-        2: { title: 'Dune Nomad', text: "Speed is survival. I don't just cross the desert; I conquer it." },
-        3: { title: 'Storm Surfer', text: 'I am the chaos. I ride the lightning of the Fractal storm.' }
-    },
-    MERCHANT: {
-        0: { title: 'Caravan Merchant', text: 'Every great fortune starts with a single dust mote.' },
-        1: { title: 'Gold Trader', text: 'The deals are flowing. My ledger grows with every block.' },
-        2: { title: 'Oasis King', text: "I don't chase liquidity. Liquidity comes to me." },
-        3: { title: 'Desert Tycoon', text: 'I am the market. The golden city shines at my command.' }
-    },
-    ENGINEER: {
-        0: {
-            title: 'The Tinkerer',
-            text: "Fixing what's broken. The code is raw, but potential is infinite."
-        },
-        1: {
-            title: 'System Architect',
-            text: 'Systems online. Building the infrastructure for the new world.'
-        },
-        2: { title: 'The Cyber-Forge', text: 'Merging with the machine. I forge the tools of tomorrow.' },
-        3: { title: 'Reality Builder', text: 'Reality is just software. And I have admin access.' }
-    },
-    SHAMAN: {
-        0: {
-            title: 'Rune Shaman',
-            text: 'The spirits are quiet. I paint the first rune on the cave wall.'
-        },
-        1: { title: 'Rune Seer', text: 'The inscriptions glow. I see the patterns in the mempool.' },
-        2: { title: 'Rune Prophet', text: 'The chain whispers to me. I channel the energy of genesis.' },
-        3: { title: 'Rune Deity', text: 'I am the starlight. The ancient runes obey my will.' }
-    },
-    KEEPER: {
-        0: { title: 'Keeper of Lore', text: 'Dusting off old blocks. History begins here.' },
-        1: { title: 'Chronicler', text: 'Recording the truth. Every transaction is a story told.' },
-        2: {
-            title: 'Grand Archivist',
-            text: 'Guardian of the Library. Knowledge is the ultimate currency.'
-        },
-        3: { title: 'Omniscient', text: 'I am the data. Past, present, and future are one.' }
-    },
-    WALKER: {
-        0: { title: 'First Walker', text: 'First footprints in the sand. I was there when it started.' },
-        1: { title: 'Ancient Witness', text: 'Watching the ecosystem grow. I stand while others fall.' },
-        2: { title: 'Primordial', text: 'Time means nothing. I am a pillar of the community.' },
-        3: { title: 'Timeless Entity', text: 'I am the timeline. The Alpha and the Omega.' }
-    },
-    LORD: {
-        0: { title: 'The Steward', text: 'A single drop of water in an endless desert. Hope remains.' },
-        1: { title: 'The Gardener', text: 'Life returns. I nurture the flow of the first oasis.' },
-        2: { title: 'Oasis King', text: 'The rivers obey. I bring abundance to the wasteland.' },
-        3: {
-            title: 'Eternal Sovereign',
-            text: 'I am the source. Where I step, the desert turns to paradise.'
-        }
-    },
-    PRIME: {
-        0: { title: 'Solar Sovereign', text: 'Absolute perfection. The convergence of light and order.' },
-        1: { title: 'Solar Sovereign', text: 'Absolute perfection. The convergence of light and order.' },
-        2: { title: 'Solar Sovereign', text: 'Absolute perfection. The convergence of light and order.' },
-        3: { title: 'Solar Sovereign', text: 'Absolute perfection. The convergence of light and order.' }
-    },
-    SINGULARITY: {
-        0: { title: 'Event Horizon', text: 'The code ends with me. I am the void.' },
-        1: { title: 'Event Horizon', text: 'The code ends with me. I am the void.' },
-        2: { title: 'Event Horizon', text: 'The code ends with me. I am the void.' },
-        3: { title: 'Event Horizon', text: 'The code ends with me. I am the void.' }
-    }
-};
-
-const __loadScriptOnce = async (src, globalKey) => {
-    try {
-        if (globalKey && window[globalKey]) return window[globalKey];
-    } catch (_) {}
-
-    window.__fennecScriptOnce =
-        window.__fennecScriptOnce && typeof window.__fennecScriptOnce === 'object' ? window.__fennecScriptOnce : {};
-
-    const key = String(src || '').trim();
-    if (!key) return null;
-    if (window.__fennecScriptOnce[key]) return await window.__fennecScriptOnce[key];
-
-    window.__fennecScriptOnce[key] = new Promise((resolve, reject) => {
-        try {
-            const existing = document.querySelector(`script[src="${key}"]`);
-            if (existing) {
-                const done = () => {
-                    try {
-                        if (globalKey && window[globalKey]) resolve(window[globalKey]);
-                        else resolve(true);
-                    } catch (_) {
-                        resolve(true);
-                    }
-                };
-                if (existing.dataset.loaded === '1') return done();
-                existing.addEventListener('load', () => {
-                    existing.dataset.loaded = '1';
-                    done();
-                });
-                existing.addEventListener('error', () => reject(new Error('script load failed')));
-                return;
-            }
-
-            const s = document.createElement('script');
-            s.src = key;
-            s.async = true;
-            s.crossOrigin = 'anonymous';
-            s.onload = () => {
-                s.dataset.loaded = '1';
-                try {
-                    if (globalKey && window[globalKey]) resolve(window[globalKey]);
-                    else resolve(true);
-                } catch (_) {
-                    resolve(true);
-                }
-            };
-            s.onerror = () => reject(new Error('script load failed'));
-            document.head.appendChild(s);
-        } catch (e) {
-            reject(e);
-        }
-    });
-
-    return await window.__fennecScriptOnce[key];
-};
-
-const __captureFennecIdPng = async () => {
-    try {
-        const html2canvas = await __loadScriptOnce(
-            'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js',
-            'html2canvas'
-        );
-        if (typeof html2canvas !== 'function') return null;
-
-        const iframe = document.getElementById('fennecIdIframe');
-        if (!iframe || !iframe.contentWindow || !iframe.contentDocument) return null;
-
-        try {
-            if (iframe.contentWindow.__fennecTiltGlobalResetAll) iframe.contentWindow.__fennecTiltGlobalResetAll();
-        } catch (_) {}
-
-        await new Promise(r => setTimeout(r, 60));
-
-        const doc = iframe.contentDocument;
-        const root = doc.querySelector('.card-object') || doc.querySelector('.card-scene') || doc.body;
-        if (!root) return null;
-
-        const prev = {
-            transform: root.style.transform,
-            transition: root.style.transition,
-            willChange: root.style.willChange
-        };
-        try {
-            root.style.transform = 'none';
-            root.style.transition = 'none';
-            root.style.willChange = 'auto';
-        } catch (_) {}
-
-        const scale = Math.min(2, window.devicePixelRatio || 1);
-        const canvas = await html2canvas(root, {
-            backgroundColor: null,
-            scale,
-            useCORS: true,
-            allowTaint: false,
-            logging: false
-        });
-
-        try {
-            root.style.transform = prev.transform;
-            root.style.transition = prev.transition;
-            root.style.willChange = prev.willChange;
-        } catch (_) {}
-
-        const rounded = document.createElement('canvas');
-        rounded.width = canvas.width;
-        rounded.height = canvas.height;
-        const ctx = rounded.getContext('2d');
-        if (!ctx) return null;
-
-        const radius = Math.max(8, Math.round(32 * scale));
-        ctx.clearRect(0, 0, rounded.width, rounded.height);
-        ctx.save();
-        ctx.beginPath();
-        ctx.moveTo(radius, 0);
-        ctx.lineTo(rounded.width - radius, 0);
-        ctx.quadraticCurveTo(rounded.width, 0, rounded.width, radius);
-        ctx.lineTo(rounded.width, rounded.height - radius);
-        ctx.quadraticCurveTo(rounded.width, rounded.height, rounded.width - radius, rounded.height);
-        ctx.lineTo(radius, rounded.height);
-        ctx.quadraticCurveTo(0, rounded.height, 0, rounded.height - radius);
-        ctx.lineTo(0, radius);
-        ctx.quadraticCurveTo(0, 0, radius, 0);
-        ctx.closePath();
-        ctx.clip();
-        ctx.drawImage(canvas, 0, 0);
-        ctx.restore();
-
-        const blob = await new Promise(resolve => {
-            try {
-                rounded.toBlob(resolve, 'image/png');
-            } catch (_) {
-                resolve(null);
-            }
-        });
-        if (!blob) return null;
-        return blob;
-    } catch (e) {
-        return null;
-    }
-};
-
-// Premium Twitter Share Function (with image on mobile via Web Share API)
-async function shareIdentityOnX() {
-    if (!window.auditIdentity || !window.auditIdentity.archetype) {
-        try {
-            if (typeof showNotification === 'function') showNotification('Please load your ID first!', 'warning');
-            else alert('Please load your ID first!');
-        } catch (_) {}
-        return;
-    }
-
-    const btns = document.querySelectorAll('.share-x-btn');
-    btns.forEach(b => {
-        try {
-            if (!b.dataset.original) b.dataset.original = b.innerHTML;
-            b.disabled = true;
-            b.innerHTML =
-                '<i class="fas fa-spinner fa-spin"></i><span class="tracking-widest text-xs">PREPARING SHARE</span>';
-        } catch (_) {}
-    });
-
-    try {
-        const arch = window.auditIdentity.archetype;
-        const metrics = window.auditIdentity.metrics || {};
-        const baseKey = String(arch.baseKey || 'DRIFTER').toUpperCase();
-        const tier = Math.min(Math.max(Number(arch.tierLevel || 0) || 0, 0), 3);
-
-        const classData = FENNEC_LORE_DB[baseKey] || FENNEC_LORE_DB.DRIFTER;
-        const tierTitle = classData && classData[tier] ? classData[tier].title : String(arch.title || baseKey);
-        const tierText = classData && classData[tier] ? classData[tier].text : 'Legacy verified.';
-
-        const rarityName = String(metrics.rarityName || 'CUB').toUpperCase();
-        const score = Number(metrics.activityScore || 0) || 0;
-
-        const rarityMap = {
-            CUB: { icon: '⚪' },
-            SCOUT: { icon: '🟢' },
-            HUNTER: { icon: '🔵' },
-            ALPHA: { icon: '🔴' },
-            ELDER: { icon: '🟡' },
-            SPIRIT: { icon: '🌈' }
-        };
-        const rInfo = rarityMap[rarityName] || { icon: '⚪' };
-
-        const classIcons = {
-            DRIFTER: '🌪️',
-            MERCHANT: '💰',
-            ENGINEER: '🛠️',
-            SHAMAN: '🔮',
-            KEEPER: '📚',
-            WALKER: '🚶',
-            LORD: '👑',
-            PRIME: '🌟',
-            SINGULARITY: '🌌'
-        };
-        const cIcon = classIcons[baseKey] || '🦊';
-
-        let text = 'FENNEC ID // IDENTITY CONFIRMED 🦊\n\n';
-        text += `🧬 Class: ${baseKey} ${cIcon}\n`;
-        text += `⚡ Title: ${String(tierTitle || '').toUpperCase()} (Tier ${tier})\n`;
-        text += `${rInfo.icon} Evolution: ${rarityName} (${score}/100)\n\n`;
-        text += `"${tierText}"\n\n`;
-        text += 'Verified by @FennecBTC on @fractal_bitcoin\n';
-        text += 'fennecbtc.xyz';
-
-        try {
-            const imageBlob = await __captureFennecIdPng();
-            if (imageBlob && navigator.clipboard && typeof navigator.clipboard.write === 'function') {
-                try {
-                    if (window.ClipboardItem) {
-                        await navigator.clipboard.write([
-                            new ClipboardItem({
-                                'image/png': imageBlob
-                            })
-                        ]);
-                        try {
-                            if (typeof showNotification === 'function')
-                                showNotification('Card screenshot copied to clipboard', 'success', 1800);
-                        } catch (_) {}
-                    }
-                } catch (_) {
-                    try {
-                        const url = URL.createObjectURL(imageBlob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = 'fennec-id.png';
-                        document.body.appendChild(a);
-                        a.click();
-                        setTimeout(() => {
-                            try {
-                                URL.revokeObjectURL(url);
-                            } catch (_) {}
-                            try {
-                                a.remove();
-                            } catch (_) {}
-                        }, 200);
-                        try {
-                            if (typeof showNotification === 'function')
-                                showNotification('Clipboard blocked — downloaded PNG instead', 'warning', 2200);
-                        } catch (_) {}
-                    } catch (_) {}
-                }
-            }
-        } catch (_) {}
-
-        const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
-        window.open(twitterUrl, '_blank', 'width=550,height=420');
-    } finally {
-        setTimeout(() => {
-            btns.forEach(b => {
-                try {
-                    b.disabled = false;
-                    b.innerHTML = b.dataset.original || '<i class="fab fa-x-twitter"></i> SHARE';
-                } catch (_) {}
-            });
-        }, 450);
-    }
+} else {
+    window.FENNEC_APP_INITIALIZED = true;
 }
-window.shareIdentityOnX = shareIdentityOnX;
+console.log('🚀 Initializing Fennec App...');
 
-// Prefetch Fennec Audit - background silent loading (dedup + returns identity)
-async function __legacy_prefetchFennecAudit(silent = true) {
-    try {
-        try {
-            if (localStorage.getItem('fennec_wallet_manual_disconnect') === '1') return null;
-        } catch (_) {}
-
-        const addr = String(window.userAddress || userAddress || '').trim();
-        if (!addr) return null;
-
-        const cacheKey = `audit_v3_${addr}`;
-        const now = Date.now();
-
-        if (
-            window.prefetchedFennecAuditAddr === addr &&
-            window.prefetchedFennecAudit &&
-            now - window.prefetchedFennecAuditTs < 300000
-        ) {
-            return window.prefetchedFennecAudit;
-        }
-
-        try {
-            const cached = localStorage.getItem(cacheKey);
-            if (cached) {
-                const cachedData = JSON.parse(cached);
-                if (cachedData && cachedData.identity && now - Number(cachedData.timestamp || 0) < 5 * 60 * 1000) {
-                    window.prefetchedFennecAudit = cachedData.identity;
-                    window.prefetchedFennecAuditAddr = addr;
-                    window.prefetchedFennecAuditTs = now;
-                    return window.prefetchedFennecAudit;
-                }
-            }
-        } catch (_) {}
-
-        window.__fennecPrefetchAudit =
-            window.__fennecPrefetchAudit && typeof window.__fennecPrefetchAudit === 'object'
-                ? window.__fennecPrefetchAudit
-                : { promise: null, addr: '', failTs: 0, failAddr: '' };
-
-        try {
-            const failAddr = String(window.__fennecPrefetchAudit.failAddr || '').trim();
-            const failTs = Number(window.__fennecPrefetchAudit.failTs || 0) || 0;
-            if (failAddr && failAddr === addr && failTs > 0 && now - failTs < 60000) {
-                return null;
-            }
-        } catch (_) {}
-
-        if (window.__fennecPrefetchAudit.promise && window.__fennecPrefetchAudit.addr === addr) {
-            return await window.__fennecPrefetchAudit.promise;
-        }
-
-        if (typeof fetchAuditData !== 'function' || typeof calculateFennecIdentity !== 'function') return null;
-
-        window.__fennecPrefetchAudit.addr = addr;
-        window.__fennecPrefetchAudit.promise = (async () => {
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 90000);
-            try {
-                const data = await fetchAuditData(controller.signal, true).catch(() => null);
-                if (!data) {
-                    try {
-                        if (window.__fennecPrefetchAudit && typeof window.__fennecPrefetchAudit === 'object') {
-                            window.__fennecPrefetchAudit.failTs = Date.now();
-                            window.__fennecPrefetchAudit.failAddr = addr;
-                        }
-                    } catch (_) {}
-                    return null;
-                }
-
-                const identity = calculateFennecIdentity(data);
-                if (!identity || typeof identity !== 'object') {
-                    try {
-                        if (window.__fennecPrefetchAudit && typeof window.__fennecPrefetchAudit === 'object') {
-                            window.__fennecPrefetchAudit.failTs = Date.now();
-                            window.__fennecPrefetchAudit.failAddr = addr;
-                        }
-                    } catch (_) {}
-                    return null;
-                }
-
-                identity.metrics = identity.metrics && typeof identity.metrics === 'object' ? identity.metrics : {};
-                identity.metrics.address = addr;
-
-                window.prefetchedFennecAudit = identity;
-                window.prefetchedFennecAuditAddr = addr;
-                window.prefetchedFennecAuditTs = Date.now();
-
-                try {
-                    localStorage.setItem(cacheKey, JSON.stringify({ identity, timestamp: Date.now() }));
-                } catch (_) {}
-
-                return identity;
-            } finally {
-                clearTimeout(timeout);
-            }
-        })().finally(() => {
-            try {
-                window.__fennecPrefetchAudit.promise = null;
-                window.__fennecPrefetchAudit.addr = '';
-            } catch (_) {}
-        });
-
-        return await window.__fennecPrefetchAudit.promise;
-    } catch (e) {
-        try {
-            if (!silent) console.log('Prefetch audit fail:', e?.message || String(e));
-        } catch (_) {}
-        return null;
-    }
-}
-window.prefetchFennecAudit = window.prefetchFennecAudit || __legacy_prefetchFennecAudit;
-
-window.__fidRateLimit = window.__fidRateLimit || {};
-window.__fidCanRun = function (action, addr, minMs) {
-    try {
-        const a = String(addr || '').trim();
-        if (!a) return { ok: true, waitMs: 0 };
-        const key = String(action || '').trim() || 'action';
-        const now = Date.now();
-        const ms = Number(minMs || 0) || 30000;
-        window.__fidRateLimit[a] =
-            window.__fidRateLimit[a] && typeof window.__fidRateLimit[a] === 'object' ? window.__fidRateLimit[a] : {};
-        const last = Number(window.__fidRateLimit[a][key] || 0) || 0;
-        const dt = now - last;
-        if (dt < ms) return { ok: false, waitMs: ms - dt };
-        window.__fidRateLimit[a][key] = now;
-        return { ok: true, waitMs: 0 };
-    } catch (_) {
-        return { ok: true, waitMs: 0 };
-    }
-};
-
-window.openFennecIdInternal = async function (event) {
-    try {
-        if (event && typeof event.preventDefault === 'function') event.preventDefault();
-    } catch (_) {}
-    const addr = String(window.userAddress || userAddress || '').trim();
-    if (!addr) {
-        try {
-            if (typeof showNotification === 'function') {
-                showNotification('Connect wallet first', 'warning', 2000);
-            }
-        } catch (_) {}
-        try {
-            if (typeof window.initAudit === 'function') await window.initAudit();
-        } catch (_) {}
-        return;
-    }
-
-    {
-        let shouldResetSuppress = false;
-        try {
-            const ui =
-                window.__fennecAuditUi && typeof window.__fennecAuditUi === 'object' ? window.__fennecAuditUi : null;
-            const uiAddr = String((ui && ui.addr) || '').trim();
-            const uiMode = String((ui && ui.mode) || 'idle');
-            const uiScannedAt = Number((ui && ui.scannedAt) || 0) || 0;
-            const scannedOk = !!(
-                uiAddr &&
-                uiAddr === addr &&
-                (uiMode === 'scanned' || uiMode === 'opening' || uiMode === 'opened') &&
-                uiScannedAt > 0 &&
-                !window.auditLoading
-            );
-            if (!scannedOk && typeof window.runAudit === 'function') {
-                try {
-                    window.__fennecSuppressAutoOpenAfterScan = true;
-                    shouldResetSuppress = true;
-                } catch (_) {}
-                await window.runAudit(true);
-            }
-            const start = Date.now();
-            while (window.auditLoading && Date.now() - start < 95000) {
-                await new Promise(resolve => setTimeout(resolve, 250));
-            }
-        } catch (_) {
-        } finally {
-            if (shouldResetSuppress) {
-                try {
-                    window.__fennecSuppressAutoOpenAfterScan = false;
-                } catch (_) {}
-            }
-        }
-    }
-
-    {
-        let shouldResetSuppress = false;
-        try {
-            const hasIdentityForAddr = () => {
-                try {
-                    const curAddr = String(addr || '').trim();
-                    const ai =
-                        window.auditIdentity && typeof window.auditIdentity === 'object' ? window.auditIdentity : null;
-                    const aiAddr = String(ai?.metrics?.address || ai?.address || '').trim();
-                    return !!(ai && curAddr && (!aiAddr || aiAddr === curAddr));
-                } catch (_) {
-                    return false;
-                }
-            };
-
-            if (!hasIdentityForAddr()) {
-                try {
-                    window.__fennecSuppressAutoOpenAfterScan = true;
-                    shouldResetSuppress = true;
-                } catch (_) {}
-
-                try {
-                    if (window.auditLoading) {
-                        const start = Date.now();
-                        while (window.auditLoading && Date.now() - start < 95000) {
-                            await new Promise(resolve => setTimeout(resolve, 250));
-                        }
-                    }
-                } catch (_) {}
-
-                if (!hasIdentityForAddr()) {
-                    try {
-                        if (typeof window.runAudit === 'function') {
-                            await window.runAudit(false);
-                        }
-                    } catch (_) {}
-
-                    try {
-                        if (window.auditLoading) {
-                            const start = Date.now();
-                            while (window.auditLoading && Date.now() - start < 95000) {
-                                await new Promise(resolve => setTimeout(resolve, 250));
-                            }
-                        }
-                    } catch (_) {}
-                }
-            }
-        } catch (_) {
-        } finally {
-            if (shouldResetSuppress) {
-                try {
-                    window.__fennecSuppressAutoOpenAfterScan = false;
-                } catch (_) {}
-            }
-        }
-    }
-
-    try {
-        const curAddr = String(addr || '').trim();
-        const ai = window.auditIdentity && typeof window.auditIdentity === 'object' ? window.auditIdentity : null;
-        const aiAddr = String(ai?.metrics?.address || ai?.address || '').trim();
-        const haveIdentity = !!(ai && curAddr && (!aiAddr || aiAddr === curAddr));
-        if (!haveIdentity) {
-            try {
-                if (typeof showNotification === 'function') {
-                    showNotification('Please scan your ID first', 'warning', 2200);
-                }
-            } catch (_) {}
-            return;
-        }
-    } catch (_) {}
-
-    // ВАЖНО: сначала рисуем opening UI, затем выполняем любые долгие await
-    try {
-        window.__fennecAuditUi =
-            window.__fennecAuditUi && typeof window.__fennecAuditUi === 'object' ? window.__fennecAuditUi : {};
-        window.__fennecAuditUi.addr = addr;
-        window.__fennecAuditUi.mode = 'opening';
-        window.__fennecAuditUi.openedAt = Date.now();
-    } catch (_) {}
-
-    try {
-        if (typeof window.initAudit === 'function') await window.initAudit();
-    } catch (_) {}
-
-    try {
-        await new Promise(resolve =>
-            window.requestAnimationFrame ? window.requestAnimationFrame(resolve) : setTimeout(resolve, 0)
-        );
-    } catch (_) {}
-
-    let id = String((window.__fennecIdStatus && window.__fennecIdStatus.inscriptionId) || '').trim();
-    if (!id) {
-        try {
-            if (typeof window.refreshFennecIdStatus === 'function') {
-                await window.refreshFennecIdStatus(false);
-                id = String((window.__fennecIdStatus && window.__fennecIdStatus.inscriptionId) || '').trim();
-            }
-        } catch (_) {}
-    }
-    if (!id) {
-        try {
-            if (typeof window.refreshFennecIdStatus === 'function') {
-                await window.refreshFennecIdStatus(true, true);
-                id = String((window.__fennecIdStatus && window.__fennecIdStatus.inscriptionId) || '').trim();
-            }
-        } catch (_) {}
-    }
-
-    if (!id) {
-        try {
-            if (typeof showNotification === 'function') {
-                showNotification('No Fennec ID found for this wallet', 'warning', 2500);
-            } else {
-                alert('No Fennec ID found for this wallet');
-            }
-        } catch (_) {}
-        return;
-    }
-
-    try {
-        const btn = document.getElementById('fidOpenBtn');
-        if (btn) {
-            btn.disabled = true;
-            btn.style.pointerEvents = 'none';
-            btn.style.visibility = 'hidden';
-        }
-    } catch (_) {}
-
-    let openedOk = false;
-    try {
-        let identityForOpen = null;
-        try {
-            const curAddr = String(addr || '').trim();
-            const ai = window.auditIdentity && typeof window.auditIdentity === 'object' ? window.auditIdentity : null;
-            const aiAddr = String(ai?.metrics?.address || ai?.address || '').trim();
-            if (ai && curAddr && (!aiAddr || aiAddr === curAddr)) {
-                try {
-                    ai.metrics = ai.metrics && typeof ai.metrics === 'object' ? ai.metrics : {};
-                    ai.metrics.address = curAddr;
-                } catch (_) {}
-                identityForOpen = ai;
-            }
-        } catch (_) {}
-        if (!identityForOpen && typeof window.prefetchFennecAudit === 'function') {
-            try {
-                identityForOpen = await Promise.race([
-                    window.prefetchFennecAudit(true),
-                    new Promise(resolve => setTimeout(() => resolve(null), 900))
-                ]);
-            } catch (_) {}
-        }
-
-        await loadExistingCardIntoIframe(id, identityForOpen);
-        openedOk = true;
-        window.__fennecAuditUi.mode = 'opened';
-    } catch (e) {
-        try {
-            showNotification('Failed to open ID', 'error', 2500);
-        } catch (_) {}
-        window.__fennecAuditUi.mode = 'idle';
-        throw e;
-    } finally {
-        try {
-            const openBtn = document.getElementById('fidOpenBtn');
-            if (openBtn) openBtn.style.display = openedOk ? 'none' : '';
-            if (openBtn) openBtn.disabled = openedOk ? true : false;
-            if (openBtn && !openedOk) {
-                openBtn.style.pointerEvents = '';
-                openBtn.style.visibility = '';
-            }
-            const openTxt = document.getElementById('fidOpenBtnText') || openBtn;
-            if (openTxt && !openedOk) openTxt.textContent = 'OPEN ID';
-
-            const wrap = document.getElementById('fidActionButtons');
-            if (wrap) wrap.style.display = openedOk ? '' : 'none';
-            const updBtn = document.getElementById('fidUpdateBtn');
-            const refBtn = document.getElementById('fidRefreshBtn');
-            if (updBtn) updBtn.style.display = openedOk ? '' : 'none';
-            if (refBtn) refBtn.style.display = openedOk ? '' : 'none';
-        } catch (_) {}
-    }
-};
-
-window.refreshScannedIdentity = async function (event) {
-    try {
-        if (event && typeof event.preventDefault === 'function') event.preventDefault();
-    } catch (_) {}
-    const addr = String(window.userAddress || userAddress || '').trim();
-    const rl = window.__fidCanRun('scan_refresh', addr, 30000);
-    if (!rl.ok) {
-        try {
-            showNotification(`Please wait ${Math.ceil(rl.waitMs / 1000)}s`, 'warning', 1800);
-        } catch (_) {}
-        return;
-    }
-    try {
-        if (typeof window.runAudit === 'function') await window.runAudit(true);
-    } catch (_) {}
-};
-
-window.getLastMintedCardForAddress = function (addr) {
-    try {
-        const a = String(addr || '').trim();
-        if (!a) return null;
-        const all = JSON.parse(localStorage.getItem(fennecMintedCardsKey()) || '[]');
-        if (!Array.isArray(all) || all.length === 0) return null;
-        const filtered = all
-            .filter(x => x && typeof x === 'object' && String(x.address || '').trim() === a)
-            .sort((x, y) => (Number(y.timestamp || 0) || 0) - (Number(x.timestamp || 0) || 0));
-        return filtered[0] || null;
-    } catch (_) {
-        return null;
-    }
-};
-
-window.updateVisionFennecIdCta = function () {
-    const btn = document.getElementById('visionFennecIdBtn');
-    const textEl = document.getElementById('visionFennecIdBtnText');
-    if (!btn || !textEl) return;
-
-    const addr = (userAddress || window.userAddress || '').trim();
-    const st = window.__fennecIdStatus && typeof window.__fennecIdStatus === 'object' ? window.__fennecIdStatus : null;
-
-    if (!addr) {
-        textEl.textContent = 'FENNEC ID';
-        btn.disabled = false;
-        return;
-    }
-
-    if (st && st.loading) {
-        textEl.textContent = 'SYNCING…';
-        btn.disabled = true;
-        return;
-    }
-
-    if (st && st.hasId) {
-        textEl.textContent = 'OPEN MY ID';
-        btn.disabled = false;
-        return;
-    }
-
-    textEl.textContent = 'SCAN MY IDENTITY';
-    btn.disabled = false;
-};
-
-window.refreshFennecIdStatus = async function (force = false, allowWalletScan = false) {
-    const addr = (userAddress || window.userAddress || '').trim();
-    if (!addr) {
-        if (window.__fennecIdStatus) {
-            window.__fennecIdStatus.loading = false;
-            window.__fennecIdStatus.hasId = false;
-            window.__fennecIdStatus.inscriptionId = '';
-            window.__fennecIdStatus.source = '';
-            window.__fennecIdStatus.addr = '';
-            try {
-                window.__fennecIdStatus.promise = null;
-            } catch (_) {}
-        }
-        if (typeof window.updateVisionFennecIdCta === 'function') window.updateVisionFennecIdCta();
-        return;
-    }
-
-    const st = window.__fennecIdStatus;
-    if (!st || typeof st !== 'object') return;
-    const walletScanAllowed = !!allowWalletScan;
-    if (st.addr && st.addr !== addr) {
-        st.loading = false;
-        st.hasId = false;
-        st.inscriptionId = '';
-        st.source = '';
-        try {
-            st.promise = null;
-        } catch (_) {}
-    }
-    if (st.loading) {
-        try {
-            if (st.promise) return await st.promise;
-        } catch (_) {}
-        return;
-    }
-    st.addr = addr;
-
-    st.loading = true;
-    if (typeof window.updateVisionFennecIdCta === 'function') window.updateVisionFennecIdCta();
-
-    st.promise = (async () => {
-        const lsKey = fennecIdKeyV2(addr);
-        const nfKey = `fennec_id_child_v3_nf_${FENNEC_ID_EPOCH}_${addr}`;
-
-        const sleep = ms => new Promise(r => setTimeout(r, ms));
-        const tryKvLookup = async cacheOpt => {
-            try {
-                const kvRes = await fetch(
-                    `${BACKEND_URL}?action=fennec_id_lookup&address=${encodeURIComponent(addr)}`,
-                    cacheOpt
-                )
-                    .then(r => (r.ok ? r.json().catch(() => null) : null))
-                    .catch(() => null);
-                const kvId = String(kvRes?.data?.inscriptionId || '').trim();
-                const kvUpdatedAt = Number(kvRes?.data?.updatedAt || 0) || 0;
-                const epochMs = Date.parse(`${FENNEC_ID_EPOCH}T00:00:00Z`) || 0;
-                const kvOk = kvUpdatedAt > 0 && epochMs > 0 ? kvUpdatedAt >= epochMs : true;
-                const kvNull = !!(kvRes && kvRes.code === 0 && !kvRes.data);
-                return { kvId, kvOk, kvNull };
-            } catch (_) {
-                return { kvId: '', kvOk: false, kvNull: false };
-            }
-        };
-
-        let kvId = '';
-        let kvOk = false;
-        let skipKvLookup = false;
-        try {
-            if (!force) {
-                const nfTs = Number(localStorage.getItem(nfKey) || 0) || 0;
-                if (nfTs > 0 && Date.now() - nfTs < 10 * 60 * 1000) {
-                    skipKvLookup = true;
-                }
-            }
-        } catch (_) {}
-
-        try {
-            const rl =
-                typeof window.__fidCanRun === 'function'
-                    ? window.__fidCanRun(force ? 'kv_lookup_force' : 'kv_lookup', addr, force ? 30000 : 600000)
-                    : { ok: true, waitMs: 0 };
-            if (!rl.ok) skipKvLookup = true;
-        } catch (_) {}
-
-        if (!skipKvLookup) {
-            for (let attempt = 0; attempt < 3; attempt++) {
-                const cacheOpt = force || attempt > 0 ? { cache: 'no-store' } : { cache: 'force-cache' };
-                const r = await tryKvLookup(cacheOpt);
-                kvId = String(r?.kvId || '').trim();
-                kvOk = !!r?.kvOk;
-                if (kvId) break;
-                if (r && r.kvNull) {
-                    try {
-                        localStorage.setItem(nfKey, String(Date.now()));
-                    } catch (_) {}
-                    break;
-                }
-                if (attempt < 2) await sleep(650);
-            }
-        }
-
-        if (kvId) {
-            st.hasId = true;
-            st.inscriptionId = kvId;
-            st.source = 'kv';
-            try {
-                localStorage.setItem(lsKey, kvId);
-            } catch (_) {}
-            try {
-                localStorage.removeItem(nfKey);
-            } catch (_) {}
-            return;
-        }
-
-        if (!force) {
-            const localKnown = String(localStorage.getItem(lsKey) || '').trim();
-            if (localKnown) {
-                st.hasId = true;
-                st.inscriptionId = localKnown;
-                st.source = 'localStorage_cache';
-                return;
-            }
-        }
-        const lastMint =
-            typeof window.getLastMintedCardForAddress === 'function' ? window.getLastMintedCardForAddress(addr) : null;
-        const lastMintId = String(lastMint?.inscriptionId || lastMint?.inscription_id || '').trim();
-
-        if (lastMintId) {
-            st.hasId = true;
-            st.inscriptionId = lastMintId;
-            st.source = 'minted_v2';
-            try {
-                localStorage.setItem(lsKey, lastMintId);
-            } catch (_) {}
-            return;
-        }
-
-        if (walletScanAllowed && window.unisat && typeof window.unisat.getInscriptions === 'function') {
-            try {
-                const inscriptions = await window.unisat.getInscriptions(0, 100);
-                const list = Array.isArray(inscriptions?.list) ? inscriptions.list : [];
-                const htmlCards = list.filter(
-                    i =>
-                        i &&
-                        String(i.contentType || '')
-                            .toLowerCase()
-                            .includes('text/html')
-                );
-                const isFennecChildHtml = html => {
-                    const s = String(html || '');
-                    if (!s) return false;
-                    const hasLib = /<meta\s+name=["']fennec-lib["']\s+content=/i.test(s);
-                    const hasCfg = /<meta\s+name=["']fennec-config["']\s+content=/i.test(s);
-                    if (hasLib && hasCfg) return true;
-                    if (/<title>\s*Fennec\s*ID\s*<\/title>/i.test(s) && /id=["']fennec-root["']/i.test(s)) return true;
-                    return false;
-                };
-                const fetchInscriptionHtml = async inscriptionId => {
-                    const id = String(inscriptionId || '').trim();
-                    if (!id) return '';
-                    const url = `${BACKEND_URL}?action=inscription_content&inscriptionId=${encodeURIComponent(id)}`;
-                    const res = await fetch(url, { cache: 'force-cache' });
-                    if (!res.ok) return '';
-                    const j = await res.json().catch(() => null);
-                    const data = j && typeof j === 'object' ? j.data || null : null;
-                    const html = String(data?.body || data?.contentBody || data?.content_body || '');
-                    return html;
-                };
-                for (const it of htmlCards.slice(0, 50)) {
-                    const id = String(it.inscriptionId || '').trim();
-                    if (!id) continue;
-                    const html = await fetchInscriptionHtml(id);
-                    if (isFennecChildHtml(html)) {
-                        st.hasId = true;
-                        st.inscriptionId = id;
-                        st.source = 'wallet_scan';
-                        try {
-                            localStorage.setItem(lsKey, id);
-                        } catch (_) {}
-                        return;
-                    }
-                }
-            } catch (_) {}
-        }
-
-        st.hasId = false;
-        st.inscriptionId = '';
-        st.source = '';
-    })().catch(e => {
-        st.hasId = false;
-        st.inscriptionId = '';
-        st.source = '';
-    });
-
-    try {
-        await st.promise;
-    } finally {
-        st.loading = false;
-        try {
-            st.promise = null;
-        } catch (_) {}
-        if (typeof window.updateVisionFennecIdCta === 'function') window.updateVisionFennecIdCta();
-    }
-};
-
-window.onVisionFennecIdClick = async function () {
-    try {
-        if (typeof window.__fennecNavigate === 'function') {
-            window.__fennecNavigate('id.html');
-            return;
-        }
-        window.location.href = 'id.html';
-    } catch (_) {}
-
-    return;
-
-    // ИСПРАВЛЕНИЕ: Проверяем подключение кошелька ПЕРЕД любыми действиями
-    let addr = (userAddress || window.userAddress || '').trim();
-    if (!addr) {
-        try {
-            if (typeof window.connectWallet === 'function') {
-                await window.connectWallet();
-            }
-        } catch (_) {}
-        addr = (userAddress || window.userAddress || '').trim();
-        if (!addr) {
-            // Кошелек не подключен - показываем UI с кнопками
-            try {
-                if (typeof window.initAudit === 'function') await window.initAudit();
-            } catch (_) {}
-            return;
-        }
-
-        // ВАЖНО: если кошелек был подключен ТОЛЬКО ЧТО, не запускаем ни OPEN, ни SCAN автоматически.
-        // Пользователь должен явно нажать Open ID / Scan ID.
-        try {
-            if (typeof window.initAudit === 'function') await window.initAudit();
-        } catch (_) {}
-        return;
-    }
-
-    try {
-        if (addr && typeof window.refreshFennecIdStatus === 'function') {
-            await window.refreshFennecIdStatus(false);
-        }
-    } catch (_) {}
-
-    try {
-        const st =
-            window.__fennecIdStatus && typeof window.__fennecIdStatus === 'object' ? window.__fennecIdStatus : null;
-        const hasId = !!(st && st.hasId && String(st.inscriptionId || '').trim());
-        if (hasId) {
-            try {
-                if (typeof window.initAudit === 'function') await window.initAudit();
-            } catch (_) {}
-            setTimeout(() => {
-                try {
-                    if (typeof window.openFennecIdInternal === 'function') window.openFennecIdInternal();
-                } catch (_) {}
-            }, 80);
-            return;
-        }
-    } catch (_) {}
-
-    setTimeout(() => {
-        try {
-            if (typeof window.runAudit === 'function') window.runAudit(false);
-        } catch (_) {}
-    }, 80);
-};
-
-try {
-    if (typeof window.updateVisionFennecIdCta === 'function') window.updateVisionFennecIdCta();
-} catch (_) {}
-
-// ИСПРАВЛЕНИЕ: Функция запуска автообновления данных каждую минуту
-function startAutoUpdate() {
-    // Останавливаем предыдущий интервал, если есть
-    stopAutoUpdate();
-
-    window.__autoUpdateWanted = true;
-    console.log('Starting auto-update (120s interval)');
-
-    autoUpdateInterval = setInterval(async () => {
-        if (!userAddress) {
-            stopAutoUpdate();
-            return;
-        }
-
-        console.log('Auto-updating data...');
-        try {
-            // ИСПРАВЛЕНИЕ: Блокируем загрузку терминала пока загружается аудит
-            if (window.auditLoading) {
-                console.log('Skipping terminal data load: audit is loading');
-                return;
-            }
-
-            // Обновляем все данные параллельно
-            await Promise.all([
-                typeof checkBalance === 'function' ? checkBalance() : Promise.resolve(),
-                typeof fetchReserves === 'function' ? fetchReserves() : Promise.resolve(),
-                typeof updatePriceData === 'function' ? updatePriceData() : Promise.resolve(),
-                typeof refreshTransactionHistory === 'function' ? refreshTransactionHistory() : Promise.resolve()
-            ]);
-
-            // ИСПРАВЛЕНИЕ: Если открыта вкладка аудита, НЕ обновляем аудит - только по кнопке пользователя
-            const auditTab = document.getElementById('tab-audit');
-            if (auditTab && auditTab.classList.contains('active')) {
-                console.log('Audit tab active but auto-update disabled');
-            }
-
-            console.log('Auto-update completed');
-        } catch (e) {
-            console.warn('Auto-update error:', e);
-        }
-    }, 120000); // 60 секунд = 1 минута
-}
-
-// ИСПРАВЛЕНИЕ: Функция остановки автообновления
-function stopAutoUpdate() {
-    if (autoUpdateInterval) {
-        clearInterval(autoUpdateInterval);
-        autoUpdateInterval = null;
-        console.log('Auto-update stopped');
-    }
-}
-
-// ИСПРАВЛЕНИЕ: Функция обновления аудита (принудительное)
-window.refreshAudit =
-    window.refreshAudit ||
-    function () {
-        if (!userAddress) {
-            if (typeof showNotification === 'function') {
-                showNotification('Connect wallet first', 'warning', 2000);
-            }
-            return;
-        }
-        if (window.auditLoading) {
-            if (typeof showNotification === 'function') {
-                showNotification('Audit is already loading', 'warning', 2000);
-            }
-            return;
-        }
-        // Очищаем кэш и запускаем загрузку
-        const cacheKey = `audit_${userAddress}`;
-        localStorage.removeItem(cacheKey);
-        window.runAudit(true); // forceRefresh = true
-    };
-
-// ИСПРАВЛЕНИЕ: Ручное обновление данных (с защитой от слишком частых обновлений)
-let lastRefreshTime = 0;
-const MIN_REFRESH_INTERVAL = 60000; // 60 секунд между обновлениями
-let refreshTimerInterval = null;
-
-window.manualRefresh = async function () {
-    const now = Date.now();
-    const timeSinceLastRefresh = now - lastRefreshTime;
-
-    // Проверяем, прошло ли достаточно времени
-    if (timeSinceLastRefresh < MIN_REFRESH_INTERVAL) {
-        const remainingSeconds = Math.ceil((MIN_REFRESH_INTERVAL - timeSinceLastRefresh) / 1000);
-        showNotification(`Please wait ${remainingSeconds}s before refreshing again`, 'warning', 2000);
-        return;
-    }
-
-    if (!userAddress && !window.userAddress) {
-        showNotification('Connect wallet first', 'warning', 2000);
-        return;
-    }
-
-    // Обновляем время последнего обновления
-    lastRefreshTime = now;
-
-    // Обновляем UI кнопки (header)
-    const refreshBtn = document.getElementById('refreshBtn');
-    const refreshIcon = document.getElementById('refreshIcon');
-    const refreshText = document.getElementById('refreshText');
-    const refreshTimer = document.getElementById('refreshTimer');
-
-    if (refreshBtn) {
-        refreshBtn.disabled = true;
-        refreshBtn.classList.add('opacity-50', 'cursor-not-allowed');
-    }
-    if (refreshIcon) {
-        refreshIcon.classList.add('fa-spin');
-    }
-    if (refreshText) {
-        refreshText.textContent = 'UPDATING...';
-    }
-
-    try {
-        console.log('Manual refresh started...');
-
-        // Обновляем все данные (БЕЗ аудита - аудит обновляется отдельно)
-        await Promise.all([
-            typeof checkBalance === 'function' ? checkBalance() : Promise.resolve(),
-            typeof fetchReserves === 'function' ? fetchReserves() : Promise.resolve(),
-            typeof updatePriceData === 'function' ? updatePriceData() : Promise.resolve(),
-            typeof refreshTransactionHistory === 'function' ? refreshTransactionHistory() : Promise.resolve()
-        ]);
-
-        // ИСПРАВЛЕНИЕ: Аудит НЕ обновляется автоматически - пользователь обновляет его отдельной кнопкой
-
-        showNotification('Data refreshed successfully', 'success', 2000);
-        console.log('Manual refresh completed');
-
-        // Запускаем таймер обратного отсчета
-        startRefreshTimer();
-    } catch (e) {
-        console.error('Manual refresh error:', e);
-        showNotification('Refresh failed: ' + (e.message || 'Unknown error'), 'error', 3000);
-    } finally {
-        // Восстанавливаем UI кнопки (но оставляем disabled до окончания таймера)
-        if (refreshIcon) {
-            refreshIcon.classList.remove('fa-spin');
-        }
-        if (refreshText) {
-            refreshText.textContent = 'REFRESH';
-        }
-    }
-};
-
-// Таймер обратного отсчета для кнопки обновления
-function startRefreshTimer() {
-    if (refreshTimerInterval) {
-        clearInterval(refreshTimerInterval);
-    }
-
-    const refreshTimer = document.getElementById('refreshTimer');
-    const refreshBtn = document.getElementById('refreshBtn');
-
-    if (!refreshTimer || !refreshBtn) return;
-
-    let remainingSeconds = MIN_REFRESH_INTERVAL / 1000;
-    refreshTimer.classList.remove('hidden');
-    refreshTimer.textContent = `(${remainingSeconds}s)`;
-    refreshBtn.disabled = true;
-    refreshBtn.classList.add('opacity-50', 'cursor-not-allowed');
-
-    refreshTimerInterval = setInterval(() => {
-        remainingSeconds--;
-        if (remainingSeconds <= 0) {
-            clearInterval(refreshTimerInterval);
-            refreshTimerInterval = null;
-            refreshTimer.classList.add('hidden');
-            refreshBtn.disabled = false;
-            refreshBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-        } else {
-            refreshTimer.textContent = `(${remainingSeconds}s)`;
-        }
-    }, 1000);
-}
-
-window.toggleChat = function () {
-    const win = document.getElementById('chatWindow');
-    if (!win) return;
-    win.classList.toggle('hidden');
-    if (!win.classList.contains('hidden')) {
-        win.classList.remove('scale-90', 'opacity-0');
-        if (typeof renderChatHistory === 'function') {
-            renderChatHistory();
-        }
-        const input = document.getElementById('chatInput');
-        if (input) input.focus();
-    } else {
-        win.classList.add('scale-90', 'opacity-0');
-    }
-};
-
-// Now define constants and variables
-const BACKEND_URL = window.location.hostname.includes('vercel.app')
-    ? '/api/proxy' // Vercel serverless function
-    : window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost'
-      ? 'http://127.0.0.1:8787' // Local wrangler dev
-      : 'https://fennec-api.warninghejo.workers.dev'; // Cloudflare Worker fallback
-const FENNEC_ID_VERSION = '6.0';
+const _FENNEC_ID_VERSION = '6.0';
 const PRIMARY_CHILD_LIB = '961a15289f9ec4fb594a7543a5bc4cd94ce6feed2c7df994e8bfa456ada28a5ai0';
 const PRIMARY_CHILD_CONFIG = 'ffc50199c26d7037f82ef6a3d8406e6eb483c8a24a3dc396a39768e171f58225i0';
 const PRIMARY_MANIFEST_REF = '9327b39aa5676ce0be200ce41e3eebe91569fddb0e6c92ec946f996618a54d45i0';
 const DEFAULT_MANIFEST_URL = '/recursive_inscriptions/fennec_manifest_live.json';
-const T_SFB = 'sFB___000';
-const T_FENNEC = 'FENNEC';
-const T_BTC = 'BTC';
-const T_SBTC = 'sBTC___000'; // ВАЖНО: Правильный тикер для пула sBTC/FB
+const REQUIRED_NETWORK = 'FRACTAL_BITCOIN_MAINNET';
+let userAddress = null;
+let userPubkey = null;
+let isBuying = true;
+const switchWalletConfirmed = false;
+const autoUpdateInterval = null;
+let depositToken = 'BTC';
+let withdrawToken = 'sFB';
+let poolReserves = { sFB: 0, FENNEC: 0, BTC: 0, user_sBTC: 0 };
+let currentSwapPair = 'FB_FENNEC';
+let userBalances = { sFB: 0, FENNEC: 0, BTC: 0 };
+let walletBalances = { sFB: 0, FENNEC: 0, BTC: 0 };
+const selectedInscriptions = [];
+let chartTimeframe = '7d';
+let priceChart = null;
+const _priceHistory = [];
+let fractalFees = { fastestFee: 1, halfHourFee: 1, hourFee: 1 };
+let depositFeeRate = 1;
+let withdrawFeeRate = 1;
+let lastRefreshTime = 0;
+const MIN_REFRESH_INTERVAL = 60000;
 
-async function safeFetchJson(url, options = {}) {
-    const method = options.method || 'GET';
-    const headers = options.headers;
-    const body = options.body;
-    const timeoutMs = typeof options.timeoutMs === 'number' ? options.timeoutMs : 12000;
-    const retries = typeof options.retries === 'number' ? options.retries : 2;
-    const retryDelayMs = typeof options.retryDelayMs === 'number' ? options.retryDelayMs : 700;
+const activeTickers = { tick0: '', tick1: '' };
+try {
+    window.activeTickers = activeTickers;
+} catch (_) {}
 
-    let lastErr;
-    for (let attempt = 0; attempt <= retries; attempt++) {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+try {
+    window.poolCache =
+        window.poolCache && typeof window.poolCache === 'object'
+            ? window.poolCache
+            : {
+                  data: null,
+                  timestamp: 0,
+                  ttl: 30000
+              };
+} catch (_) {}
+const poolCache = window.poolCache;
+
+const balanceCache = { data: null, timestamp: 0, ttl: 60000 };
+try {
+    window.balanceCache = balanceCache;
+} catch (_) {}
+
+function __escapeHtml(s) {
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+async function checkFractalNetwork() {
+    const currentChain = await window.unisat.getChain();
+    const chainName = typeof currentChain === 'string' ? currentChain : currentChain?.enum || currentChain;
+    if (chainName !== REQUIRED_NETWORK) {
+        throw new Error(`Please switch to Fractal Bitcoin Mainnet in your UniSat wallet.\nCurrent: ${chainName}`);
+    }
+    return true;
+}
+
+async function fetchReserves() {
+    const __pairKey = String(currentSwapPair || '').trim() || 'default';
+    return await __fennecDedupe(`fetchReserves:${__pairKey}`, async () => {
         try {
-            const res = await fetch(url, { method, headers, body, signal: controller.signal });
-            clearTimeout(timeoutId);
+            const now = Date.now();
+            if (poolCache && poolCache.data && now - poolCache.timestamp < poolCache.ttl) {
+                return poolCache.data;
+            }
 
-            if (!res.ok) {
-                lastErr = new Error(`HTTP ${res.status} ${res.statusText}`);
-                if (attempt < retries) {
-                    await new Promise(r => setTimeout(r, retryDelayMs * Math.pow(2, attempt)));
-                    continue;
+            let queryParams = '';
+            if (currentSwapPair === 'BTC_FB') queryParams = `tick0=${T_SBTC}&tick1=${T_SFB}`;
+            else queryParams = `tick0=${T_FENNEC}&tick1=${T_SFB}`;
+
+            let poolUrl = `${BACKEND_URL}?action=quote&${queryParams}`;
+            const json = await safeFetchJson(poolUrl, { timeoutMs: 12000, retries: 2 });
+            if (!json) throw new Error('Failed to fetch pool data');
+
+            let data = null;
+            if (json.data) {
+                if (json.data.tick0) data = json.data;
+                else if (Array.isArray(json.data.list) && json.data.list.length > 0) data = json.data.list[0];
+            } else if (json.pool) {
+                data = json.pool;
+            }
+
+            if (!data && currentSwapPair === 'BTC_FB') {
+                queryParams = `tick0=${T_SFB}&tick1=${T_SBTC}`;
+                poolUrl = `${BACKEND_URL}?action=quote&${queryParams}&t=${now}`;
+                const retryJson = await safeFetchJson(poolUrl, { timeoutMs: 12000, retries: 1 });
+                if (retryJson?.data?.tick0) data = retryJson.data;
+                else if (retryJson?.pool) data = retryJson.pool;
+            }
+
+            if (data) {
+                activeTickers.tick0 = String(data.tick0 || '').trim();
+                activeTickers.tick1 = String(data.tick1 || '').trim();
+
+                if (currentSwapPair === 'FB_FENNEC') {
+                    if (String(data.tick0 || '').includes('FENNEC')) {
+                        poolReserves.FENNEC = parseFloat(data.amount0);
+                        poolReserves.sFB = parseFloat(data.amount1);
+                    } else {
+                        poolReserves.sFB = parseFloat(data.amount0);
+                        poolReserves.FENNEC = parseFloat(data.amount1);
+                    }
+                } else {
+                    const isTick0BTC = data.tick0 === T_SBTC || String(data.tick0 || '').includes('sBTC');
+                    if (isTick0BTC) {
+                        poolReserves.BTC = parseFloat(data.amount0);
+                        poolReserves.sFB = parseFloat(data.amount1);
+                    } else {
+                        poolReserves.sFB = parseFloat(data.amount0);
+                        poolReserves.BTC = parseFloat(data.amount1);
+                    }
                 }
-                return null;
-            }
 
-            return await res.json();
-        } catch (e) {
-            clearTimeout(timeoutId);
-            lastErr = e;
-            if (attempt < retries) {
-                await new Promise(r => setTimeout(r, retryDelayMs * Math.pow(2, attempt)));
-                continue;
+                try {
+                    if (poolCache && typeof poolCache === 'object') {
+                        poolCache.data = data;
+                        poolCache.timestamp = now;
+                    }
+                } catch (_) {}
+
+                try {
+                    const swapInEl = document.getElementById('swapIn');
+                    if (swapInEl && swapInEl.value && typeof calc === 'function') calc();
+                } catch (_) {}
+
+                return data;
             }
-            console.warn('safeFetchJson failed:', url, lastErr);
+        } catch (_) {}
+        return null;
+    });
+}
+
+async function checkBalance(force = false) {
+    if (!userAddress) return;
+    const __addrKey = String(userAddress || '').trim();
+    return await __fennecDedupe(`checkBalance:${__addrKey}:${force ? 1 : 0}`, async () => {
+        const now = Date.now();
+        try {
+            if (!force && balanceCache.data && now - balanceCache.timestamp < balanceCache.ttl) {
+                const cached = balanceCache.data;
+                if (cached && typeof cached === 'object') {
+                    try {
+                        if (cached.userBalances && typeof cached.userBalances === 'object') {
+                            userBalances.sFB = Number(cached.userBalances.sFB || 0) || 0;
+                            userBalances.FENNEC = Number(cached.userBalances.FENNEC || 0) || 0;
+                            userBalances.BTC = Number(cached.userBalances.BTC || 0) || 0;
+                        }
+                    } catch (_) {}
+                    try {
+                        if (cached.walletBalances && typeof cached.walletBalances === 'object') {
+                            walletBalances.sFB = Number(cached.walletBalances.sFB || 0) || 0;
+                            walletBalances.FENNEC = Number(cached.walletBalances.FENNEC || 0) || 0;
+                            walletBalances.BTC = Number(cached.walletBalances.BTC || 0) || 0;
+                        }
+                    } catch (_) {}
+                    try {
+                        if (cached.poolReserves && typeof cached.poolReserves === 'object') {
+                            poolReserves.user_sBTC = Number(cached.poolReserves.user_sBTC || 0) || 0;
+                        }
+                    } catch (_) {}
+                    try {
+                        if (typeof updateLiquidityBalancesUI === 'function') updateLiquidityBalancesUI();
+                    } catch (_) {}
+                    try {
+                        if (typeof updateDepositUI === 'function') updateDepositUI();
+                    } catch (_) {}
+                    try {
+                        if (typeof updateWithdrawUI === 'function') updateWithdrawUI();
+                    } catch (_) {}
+                    return;
+                }
+            }
+        } catch (_) {}
+
+        try {
+            const ticks = [T_SFB, T_FENNEC, T_SBTC].join(',');
+            const batchRes = await fetch(
+                `${BACKEND_URL}?action=balance_batch&address=${encodeURIComponent(userAddress)}&ticks=${encodeURIComponent(
+                    ticks
+                )}`
+            )
+                .then(r => (r.ok ? r.json().catch(() => null) : null))
+                .catch(() => null);
+
+            const rFB = batchRes?.data?.[T_SFB] || {};
+            const rFennec = batchRes?.data?.[T_FENNEC] || {};
+            const rBTC = batchRes?.data?.[T_SBTC] || {};
+
+            userBalances.sFB = parseFloat(
+                rFB?.data?.balance?.swap ?? rFB?.data?.balance?.available ?? rFB?.data?.balance?.total ?? 0
+            );
+            userBalances.FENNEC = parseFloat(rFennec?.data?.balance?.swap || rFennec?.data?.balance?.available || 0);
+            poolReserves.user_sBTC = parseFloat(rBTC?.data?.balance?.swap || rBTC?.data?.balance?.available || 0);
+        } catch (_) {}
+
+        try {
+            const currentChain = await window.unisat.getChain();
+            const chainName = typeof currentChain === 'string' ? currentChain : currentChain?.enum || currentChain;
+            if (chainName === REQUIRED_NETWORK && typeof window.unisat.getBalance === 'function') {
+                const nativeBal = await window.unisat.getBalance();
+                walletBalances.sFB = Number(nativeBal?.total || 0) / 100000000;
+            }
+        } catch (_) {}
+
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => {
+                try {
+                    controller.abort();
+                } catch (_) {}
+            }, 6000);
+            const btcBalanceRes = await fetch(
+                `${BACKEND_URL}?action=btc_balance&address=${encodeURIComponent(userAddress)}`,
+                {
+                    signal: controller.signal,
+                    headers: { Accept: 'application/json' }
+                }
+            )
+                .then(r => (r.ok ? r.json().catch(() => null) : null))
+                .catch(() => null);
+            clearTimeout(timeoutId);
+            walletBalances.BTC = Number(btcBalanceRes?.data?.balance || 0) || 0;
+        } catch (_) {}
+
+        try {
+            const fennecBalanceUrl = `${BACKEND_URL}?action=balance&address=${encodeURIComponent(
+                userAddress
+            )}&tick=${encodeURIComponent(T_FENNEC)}&walletOnly=true`;
+            const fennecWalletRes = await fetch(fennecBalanceUrl)
+                .then(r => (r.ok ? r.json().catch(() => null) : null))
+                .catch(() => null);
+            const balance =
+                fennecWalletRes?.data?.availableBalance ||
+                fennecWalletRes?.data?.transferableBalance ||
+                fennecWalletRes?.data?.balance?.availableBalance ||
+                fennecWalletRes?.data?.balance?.transferableBalance ||
+                fennecWalletRes?.data?.balance?.available ||
+                fennecWalletRes?.data?.balance?.transferable ||
+                0;
+            walletBalances.FENNEC = parseFloat(balance) || 0;
+        } catch (_) {}
+
+        try {
+            if (typeof updateLiquidityBalancesUI === 'function') updateLiquidityBalancesUI();
+        } catch (_) {}
+        try {
+            if (typeof updateDepositUI === 'function') updateDepositUI();
+        } catch (_) {}
+        try {
+            if (typeof updateWithdrawUI === 'function') updateWithdrawUI();
+        } catch (_) {}
+
+        try {
+            balanceCache.data = {
+                userBalances: {
+                    sFB: Number(userBalances.sFB || 0) || 0,
+                    FENNEC: Number(userBalances.FENNEC || 0) || 0,
+                    BTC: Number(userBalances.BTC || 0) || 0
+                },
+                walletBalances: {
+                    sFB: Number(walletBalances.sFB || 0) || 0,
+                    FENNEC: Number(walletBalances.FENNEC || 0) || 0,
+                    BTC: Number(walletBalances.BTC || 0) || 0
+                },
+                poolReserves: {
+                    user_sBTC: Number(poolReserves.user_sBTC || 0) || 0
+                }
+            };
+            balanceCache.timestamp = now;
+        } catch (_) {}
+    });
+}
+
+const swapHistoryCache = { data: null, timestamp: 0, ttl: 45000 };
+async function loadSwapHistory(useCache = true) {
+    const now = Date.now();
+    const __lsKey = 'fennec_swap_history_cache_v2';
+    const __readLs = () => {
+        try {
+            const raw = localStorage.getItem(__lsKey);
+            if (!raw) return null;
+            const parsed = JSON.parse(raw);
+            if (!parsed || typeof parsed !== 'object') return null;
+            const ts = Number(parsed.ts || 0) || 0;
+            if (!ts || now - ts > swapHistoryCache.ttl) return null;
+            const data = parsed.data;
+            if (!data || typeof data !== 'object') return null;
+            return data;
+        } catch (_) {
             return null;
         }
+    };
+
+    return await __fennecDedupe(`loadSwapHistory:${useCache ? 1 : 0}`, async () => {
+        if (useCache && swapHistoryCache.data && now - swapHistoryCache.timestamp < swapHistoryCache.ttl) {
+            return swapHistoryCache.data;
+        }
+
+        if (useCache) {
+            const cached = __readLs();
+            if (cached) {
+                swapHistoryCache.data = cached;
+                swapHistoryCache.timestamp = now;
+                return cached;
+            }
+        }
+
+        try {
+            const limit = 50;
+            const [sResFB_FENNEC, sResBTC_FB] = await Promise.all([
+                safeFetchJson(`${BACKEND_URL}?action=swap_history&start=0&limit=${limit}&tick=sFB___000/FENNEC`, {
+                    timeoutMs: 12000,
+                    retries: 2
+                }).then(r => r || { code: -1 }),
+                safeFetchJson(`${BACKEND_URL}?action=swap_history&start=0&limit=${limit}&tick=sBTC___000/sFB___000`, {
+                    timeoutMs: 12000,
+                    retries: 2
+                }).then(r => r || { code: -1 })
+            ]);
+            const result = { fbFennec: sResFB_FENNEC, btcFb: sResBTC_FB, timestamp: now };
+            swapHistoryCache.data = result;
+            swapHistoryCache.timestamp = now;
+            try {
+                localStorage.setItem(__lsKey, JSON.stringify({ ts: now, data: result }));
+            } catch (_) {}
+            return result;
+        } catch (_) {
+            return swapHistoryCache.data || { fbFennec: { code: -1 }, btcFb: { code: -1 } };
+        }
+    });
+}
+
+const FENNEC_ID_EPOCH = '2026-01-02';
+const fennecIdKeyV2 = addr => `fennec_id_child_v3_${String(addr || '').trim()}`;
+const fennecMintedCardsKey = () => `fennec_minted_cards_v3_${FENNEC_ID_EPOCH}`;
+
+function addPendingOperation(operation) {
+    try {
+        const pendingOps = JSON.parse(localStorage.getItem('pending_operations') || '[]');
+        const opOrderId = String(operation?.orderId || '').trim();
+        const opTxid = String(operation?.txid || '').trim();
+        const opId = String(operation?.id || '').trim();
+        const opKey = opOrderId || opTxid || opId;
+        const exists = pendingOps.find(op => {
+            if (!op || typeof op !== 'object') return false;
+            if (String(op.type || '') !== String(operation?.type || '')) return false;
+            const existingOrderId = String(op.orderId || '').trim();
+            const existingTxid = String(op.txid || '').trim();
+            const existingId = String(op.id || '').trim();
+            const existingKey = existingOrderId || existingTxid || existingId;
+            if (!existingKey || !opKey) return false;
+            return existingKey === opKey;
+        });
+        if (!exists) {
+            pendingOps.push(operation);
+            localStorage.setItem('pending_operations', JSON.stringify(pendingOps));
+            try {
+                if (typeof window.refreshPendingOperations === 'function') window.refreshPendingOperations();
+            } catch (_) {}
+        }
+    } catch (e) {
+        console.error('Failed to add pending operation:', e);
     }
-    return null;
+}
+
+function queueFennecIdRegister(entry) {
+    try {
+        const address = String(entry?.address || '').trim();
+        const inscriptionId = String(entry?.inscriptionId || entry?.inscription_id || '').trim();
+        if (!address || !inscriptionId) return;
+        const key = 'fennec_id_register_queue_v2';
+        const q = JSON.parse(localStorage.getItem(key) || '[]');
+        const arr = Array.isArray(q) ? q : [];
+        const exists = arr.some(
+            x =>
+                x &&
+                String(x.address || '').trim() === address &&
+                String(x.inscriptionId || '').trim() === inscriptionId
+        );
+        if (exists) return;
+        arr.push({ address, inscriptionId, ts: Date.now(), attempts: 0 });
+        localStorage.setItem(key, JSON.stringify(arr));
+    } catch (_) {}
+}
+
+async function processFennecIdRegisterQueue() {
+    try {
+        const key = 'fennec_id_register_queue_v2';
+        const raw = localStorage.getItem(key) || '[]';
+        const q = JSON.parse(raw);
+        const arr = Array.isArray(q) ? q : [];
+        if (!arr.length) return;
+
+        const now = Date.now();
+        const keep = [];
+        for (const it of arr) {
+            const address = String(it?.address || '').trim();
+            const inscriptionId = String(it?.inscriptionId || '').trim();
+            const attempts = Number(it?.attempts || 0) || 0;
+            const ts = Number(it?.ts || 0) || now;
+            const ageMs = now - ts;
+            if (!address || !inscriptionId) continue;
+            if (attempts >= 10 || ageMs > 24 * 60 * 60 * 1000) continue;
+            try {
+                const res = await fetch(`${BACKEND_URL}?action=fennec_id_register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ address, inscriptionId })
+                }).catch(() => null);
+                const j = res ? await res.json().catch(() => null) : null;
+                if (j && j.code === 0) {
+                    try {
+                        localStorage.setItem(fennecIdKeyV2(address), inscriptionId);
+                    } catch (_) {}
+                    continue;
+                }
+                keep.push({ address, inscriptionId, ts, attempts: attempts + 1 });
+            } catch (_) {
+                keep.push({ address, inscriptionId, ts, attempts: attempts + 1 });
+            }
+        }
+        localStorage.setItem(key, JSON.stringify(keep));
+    } catch (_) {}
+}
+
+async function checkPendingMints() {
+    try {
+        try {
+            await processFennecIdRegisterQueue();
+        } catch (_) {}
+        const pendingOps = JSON.parse(localStorage.getItem('pending_operations') || '[]');
+        const mints = pendingOps.filter(
+            op => op.type === 'mint' && (op.status === 'pending' || op.status === 'inscribing')
+        );
+        if (mints.length === 0) return;
+
+        for (const mint of mints) {
+            try {
+                const res = await fetch(`${BACKEND_URL}?action=inscription_status&orderId=${mint.orderId}`);
+                if (!res.ok) continue;
+                const data = await res.json().catch(() => null);
+                if (!(data && data.code === 0 && data.data)) continue;
+                const status = data.data.status;
+                const files = data.data.files || [];
+                let inscriptionId = null;
+                if (files.length > 0 && files[0].inscriptionId) inscriptionId = files[0].inscriptionId;
+                else {
+                    inscriptionId =
+                        data.data.inscriptionId ||
+                        data.data.inscription?.inscriptionId ||
+                        data.data.inscriptionIdList?.[0];
+                }
+
+                if (status === 'minted' || (inscriptionId && String(inscriptionId).length > 10)) {
+                    const updated = pendingOps.filter(op => !(op.orderId === mint.orderId && op.type === 'mint'));
+                    localStorage.setItem('pending_operations', JSON.stringify(updated));
+                    try {
+                        const mintAddr = String(mint.address || '').trim();
+                        if (mintAddr && inscriptionId)
+                            localStorage.setItem(fennecIdKeyV2(mintAddr), String(inscriptionId));
+                    } catch (_) {}
+                    try {
+                        const mintAddr = String(mint.address || '').trim();
+                        if (mintAddr && inscriptionId) queueFennecIdRegister({ address: mintAddr, inscriptionId });
+                    } catch (_) {}
+                    try {
+                        if (typeof window.refreshFennecIdStatus === 'function')
+                            window.refreshFennecIdStatus(true, false);
+                    } catch (_) {}
+                    try {
+                        if (typeof window.refreshPendingOperations === 'function') window.refreshPendingOperations();
+                    } catch (_) {}
+                } else if (status === 'inscribing') {
+                    const idx = pendingOps.findIndex(op => op.orderId === mint.orderId && op.type === 'mint');
+                    if (idx >= 0) {
+                        pendingOps[idx].status = 'inscribing';
+                        if (inscriptionId && String(inscriptionId).length > 10)
+                            pendingOps[idx].inscriptionId = inscriptionId;
+                        localStorage.setItem('pending_operations', JSON.stringify(pendingOps));
+                    }
+                    try {
+                        if (typeof window.refreshPendingOperations === 'function') window.refreshPendingOperations();
+                    } catch (_) {}
+                }
+            } catch (_) {}
+        }
+    } catch (_) {}
 }
 
 try {
-    window.safeFetchJson = window.safeFetchJson || safeFetchJson;
+    window.fetchReserves = fetchReserves;
+    window.checkBalance = checkBalance;
+    window.refreshTransactionHistory = refreshTransactionHistory;
+    window.loadSwapHistory = loadSwapHistory;
 } catch (_) {}
-
-function __fennecDedupe(key, fn) {
-    try {
-        const k = String(key || '').trim();
-        const f = typeof fn === 'function' ? fn : null;
-        if (!k || !f) return Promise.resolve().then(() => (f ? f() : null));
-        window.__fennecInflight =
-            window.__fennecInflight && typeof window.__fennecInflight === 'object' ? window.__fennecInflight : {};
-        const inflight = window.__fennecInflight;
-        if (inflight[k]) return inflight[k];
-        const p = Promise.resolve()
-            .then(() => f())
-            .finally(() => {
-                try {
-                    delete inflight[k];
-                } catch (_) {}
-            });
-        inflight[k] = p;
-        return p;
-    } catch (_) {
-        try {
-            return Promise.resolve().then(() => (typeof fn === 'function' ? fn() : null));
-        } catch (e) {
-            return Promise.reject(e);
-        }
-    }
-}
-
-function __looksLikeTxid(v) {
-    const s = String(v || '').trim();
-    return /^[0-9a-fA-F]{64}$/.test(s);
-}
-
-function __pickTxid(candidate) {
-    if (!candidate) return '';
-    if (typeof candidate === 'string') {
-        const s = candidate.trim();
-        return __looksLikeTxid(s) ? s : '';
-    }
-    if (typeof candidate === 'object') {
-        const fields = [
-            candidate.txid,
-            candidate.txId,
-            candidate.hash,
-            candidate.tx_hash,
-            candidate.receiveTxid,
-            candidate.receiveTxId,
-            candidate.receive_txid,
-            candidate.approveTxid,
-            candidate.approveTxId,
-            candidate.approve_txid,
-            candidate.rollUpTxid,
-            candidate.rollUpTxId,
-            candidate.rollUp_txid,
-            candidate.paymentTxid,
-            candidate.paymentTxId,
-            candidate.inscribeTxid,
-            candidate.inscribeTxId
-        ];
-        for (const f of fields) {
-            const s = String(f || '').trim();
-            if (__looksLikeTxid(s)) return s;
-        }
-    }
-    return '';
-}
-
-let __prewarmCacheAt = 0;
-async function prewarmBackendCaches() {
-    const now = Date.now();
-    if (now - __prewarmCacheAt < 30000) return;
-    __prewarmCacheAt = now;
-    try {
-        const tasks = [];
-        tasks.push(safeFetchJson(`${BACKEND_URL}?action=get_prices`, { timeoutMs: 8000, retries: 0 }));
-        const addr = String(userAddress || window.userAddress || '').trim();
-        if (addr) {
-            tasks.push(
-                safeFetchJson(`${BACKEND_URL}?action=summary&address=${encodeURIComponent(addr)}`, {
-                    timeoutMs: 8000,
-                    retries: 0
-                })
-            );
-        }
-        await Promise.all(tasks);
-    } catch (_) {}
-}
 
 const FENNEC_REF_MODE_KEY = 'fennec_ref_mode_v1';
 const FENNEC_REF_MODE_LOCAL_FIRST = 'local-first';
@@ -2267,7 +575,7 @@ const FENNEC_REF_MODE_INSCRIPTION_FIRST = 'inscription-first';
 const LOCAL_RECURSIVE_BASE = '/recursive_inscriptions';
 const LOCAL_CHILD_LIB_URL = `${LOCAL_RECURSIVE_BASE}/fennec_lib_v2.js`;
 const LOCAL_CHILD_CONFIG_URL = `${LOCAL_RECURSIVE_BASE}/fennec_config_v1.json`;
-const LOCAL_MANIFEST_URL = `${LOCAL_RECURSIVE_BASE}/fennec_manifest_live.json`;
+const LOCAL_MANIFEST_URL = String(DEFAULT_MANIFEST_URL || `${LOCAL_RECURSIVE_BASE}/fennec_manifest_live.json`);
 const LOCAL_CHILD_TEMPLATE_URL = `${LOCAL_RECURSIVE_BASE}/fennec_child_template_v1.html`;
 
 function getFennecRefMode() {
@@ -2300,94 +608,38 @@ window.setFennecRefMode = function (mode) {
     } catch (_) {}
 };
 
-function parseMetaFromHtml(html, name) {
-    try {
-        const s = String(html || '');
-        const n = String(name || '').trim();
-        if (!s || !n) return '';
-        const re = new RegExp(
-            '<meta[^>]*\\bname=["\\\']' + n.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&') + '["\\\'][^>]*>',
-            'i'
-        );
-        const m = s.match(re);
-        const tag = m && m[0] ? String(m[0]) : '';
-        if (!tag) return '';
-        const cm = tag.match(/\\bcontent=["\\']([^"\\']*)["\\']/i);
-        return cm && cm[1] ? String(cm[1]).trim() : '';
-    } catch (_) {
-        return '';
-    }
-}
-
-async function safeFetchText(url, options = {}) {
-    const method = options.method || 'GET';
-    const timeoutMs = typeof options.timeoutMs === 'number' ? options.timeoutMs : 12000;
-    const retries = typeof options.retries === 'number' ? options.retries : 1;
-    const retryDelayMs = typeof options.retryDelayMs === 'number' ? options.retryDelayMs : 700;
-    for (let attempt = 0; attempt <= retries; attempt++) {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-        try {
-            const res = await fetch(url, { method, signal: controller.signal, cache: 'no-store' });
-            clearTimeout(timeoutId);
-            if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
-            return await res.text();
-        } catch (e) {
-            clearTimeout(timeoutId);
-            if (attempt < retries) {
-                await new Promise(r => setTimeout(r, retryDelayMs * Math.pow(2, attempt)));
-                continue;
-            }
-            return '';
-        }
-    }
-    return '';
-}
-
 window.refreshFennecCoreRefs = async function () {
     const mode = getFennecRefMode();
-    const cacheBust = `?t=${Date.now()}`;
-
     const local = {
         mode: FENNEC_REF_MODE_LOCAL_FIRST,
         manifestRef: LOCAL_MANIFEST_URL,
         libRef: LOCAL_CHILD_LIB_URL,
-        configRef: LOCAL_CHILD_CONFIG_URL
+        configRef: LOCAL_CHILD_CONFIG_URL,
+        templateRef: LOCAL_CHILD_TEMPLATE_URL
     };
-
-    let chainManifestRef = String(PRIMARY_MANIFEST_REF || '').trim();
-    try {
-        const html = await safeFetchText(`${LOCAL_CHILD_TEMPLATE_URL}${cacheBust}`, {
-            timeoutMs: 4500,
-            retries: 1
-        });
-        const m = parseMetaFromHtml(html, 'fennec-manifest');
-        if (m) chainManifestRef = String(m).trim();
-    } catch (_) {}
-    if (!chainManifestRef) chainManifestRef = String(PRIMARY_MANIFEST_REF || '').trim();
-
-    let chainLibRef = String(PRIMARY_CHILD_LIB || '').trim();
-    let chainConfigRef = String(PRIMARY_CHILD_CONFIG || '').trim();
-    try {
-        const mj = await safeFetchJson(`${LOCAL_MANIFEST_URL}${cacheBust}`, {
-            timeoutMs: 4500,
-            retries: 1
-        });
-        const latest = mj && typeof mj === 'object' && mj.latest && typeof mj.latest === 'object' ? mj.latest : mj;
-        const l = String(latest?.lib || latest?.libId || latest?.libraryId || '').trim();
-        const c = String(latest?.config || latest?.configId || latest?.configurationId || '').trim();
-        if (l) chainLibRef = l;
-        if (c) chainConfigRef = c;
-    } catch (_) {}
-
     const chain = {
         mode: FENNEC_REF_MODE_INSCRIPTION_FIRST,
-        manifestRef: chainManifestRef,
-        libRef: chainLibRef,
-        configRef: chainConfigRef
+        manifestRef: String(PRIMARY_MANIFEST_REF || '').trim(),
+        libRef: String(PRIMARY_CHILD_LIB || '').trim(),
+        configRef: String(PRIMARY_CHILD_CONFIG || '').trim(),
+        templateRef: ''
     };
 
     const effective = mode === FENNEC_REF_MODE_INSCRIPTION_FIRST ? chain : local;
+
+    try {
+        if (effective && effective.manifestRef && String(effective.manifestRef).startsWith('/')) {
+            const json = await safeFetchJson(String(effective.manifestRef), { timeoutMs: 4500, retries: 0 });
+            if (json && typeof json === 'object') {
+                const latest = json.latest && typeof json.latest === 'object' ? json.latest : json;
+                const lib = String(latest.lib || latest.libRef || '').trim();
+                const cfg = String(latest.config || latest.configRef || '').trim();
+                if (lib && cfg) {
+                    window.__fennecCoreRefsResolved = { lib, config: cfg, at: Date.now(), src: effective.manifestRef };
+                }
+            }
+        }
+    } catch (_) {}
 
     window.__fennecCoreRefs = {
         mode,
@@ -2407,13 +659,15 @@ window.getFennecCoreRefs = function (purpose) {
         mode: FENNEC_REF_MODE_INSCRIPTION_FIRST,
         manifestRef: String(PRIMARY_MANIFEST_REF || DEFAULT_MANIFEST_URL || '').trim(),
         libRef: String(PRIMARY_CHILD_LIB || '').trim(),
-        configRef: String(PRIMARY_CHILD_CONFIG || '').trim()
+        configRef: String(PRIMARY_CHILD_CONFIG || '').trim(),
+        templateRef: ''
     };
     const localFallback = {
         mode: FENNEC_REF_MODE_LOCAL_FIRST,
         manifestRef: LOCAL_MANIFEST_URL,
         libRef: LOCAL_CHILD_LIB_URL,
-        configRef: LOCAL_CHILD_CONFIG_URL
+        configRef: LOCAL_CHILD_CONFIG_URL,
+        templateRef: LOCAL_CHILD_TEMPLATE_URL
     };
     if (!st) return localFallback;
     if (p === 'mint') return st.local || localFallback;
@@ -2428,34 +682,19 @@ try {
     window.refreshFennecCoreRefs();
 } catch (_) {}
 
-const REQUIRED_NETWORK = 'FRACTAL_BITCOIN_MAINNET';
-let userAddress = null,
-    userPubkey = null,
-    isBuying = true;
-let switchWalletConfirmed = false; // Флаг подтверждения переключения кошелька
-let autoUpdateInterval = null; // Интервал автообновления данных
-let depositToken = 'BTC',
-    withdrawToken = 'sFB';
-let poolReserves = { sFB: 0, FENNEC: 0, BTC: 0, user_sBTC: 0 };
-let currentSwapPair = 'FB_FENNEC'; // 'FB_FENNEC' or 'BTC_FB'
-let userBalances = { sFB: 0, FENNEC: 0, BTC: 0 };
-let walletBalances = { sFB: 0, FENNEC: 0, BTC: 0 };
-const selectedInscriptions = [];
-let chartTimeframe = '7d';
-let priceChart = null;
-const priceHistory = [];
-const burrowLoop = null;
-if (typeof window.auditIdentity === 'undefined') window.auditIdentity = null;
-if (typeof window.auditLoading === 'undefined') window.auditLoading = false; // ИСПРАВЛЕНИЕ: Флаг активного аудита, чтобы не запускать повторно во время выполнения
-if (typeof window.currentAuditRequestId === 'undefined') window.currentAuditRequestId = 0; // ИСПРАВЛЕНИЕ: Отслеживание текущего запроса для предотвращения race condition
-if (typeof window.currentAuditAbortController === 'undefined') window.currentAuditAbortController = null; // ИСПРАВЛЕНИЕ: AbortController для отмены предыдущих запросов
-if (typeof window.prefetchedFennecAudit === 'undefined') window.prefetchedFennecAudit = null;
-if (typeof window.prefetchedFennecAuditAddr === 'undefined') window.prefetchedFennecAuditAddr = null;
-if (typeof window.prefetchedFennecAuditTs === 'undefined') window.prefetchedFennecAuditTs = 0;
-
 try {
-    if (typeof window.isBuying === 'boolean') isBuying = window.isBuying;
+    if (typeof window.userAddress === 'string' && window.userAddress) userAddress = String(window.userAddress).trim();
 } catch (_) {}
+try {
+    if (typeof window.userPubkey === 'string' && window.userPubkey) userPubkey = String(window.userPubkey).trim();
+} catch (_) {}
+try {
+    if (typeof window.isBuying === 'boolean') isBuying = !!window.isBuying;
+} catch (_) {}
+try {
+    if (typeof window.currentSwapPair === 'string' && window.currentSwapPair) currentSwapPair = window.currentSwapPair;
+} catch (_) {}
+
 try {
     Object.defineProperty(window, 'isBuying', {
         get: () => isBuying,
@@ -2469,10 +708,6 @@ try {
         window.isBuying = isBuying;
     } catch (_) {}
 }
-
-try {
-    if (typeof window.currentSwapPair === 'string' && window.currentSwapPair) currentSwapPair = window.currentSwapPair;
-} catch (_) {}
 try {
     Object.defineProperty(window, 'currentSwapPair', {
         get: () => currentSwapPair,
@@ -2573,3090 +808,335 @@ try {
 }
 
 try {
-    window.BACKEND_URL = BACKEND_URL;
-    window.T_SFB = T_SFB;
-    window.T_FENNEC = T_FENNEC;
-    window.T_BTC = T_BTC;
-    window.T_SBTC = T_SBTC;
+    window.BACKEND_URL = window.BACKEND_URL || BACKEND_URL;
+    window.T_SFB = window.T_SFB || T_SFB;
+    window.T_FENNEC = window.T_FENNEC || T_FENNEC;
+    window.T_BTC = window.T_BTC || T_BTC;
+    window.T_SBTC = window.T_SBTC || T_SBTC;
+    window.safeFetchJson = window.safeFetchJson || safeFetchJson;
+    window.__fennecDedupe = window.__fennecDedupe || __fennecDedupe;
 } catch (_) {}
 
-const FENNEC_ID_EPOCH = '2026-01-02';
-const fennecIdKeyV2 = addr => `fennec_id_child_v3_${String(addr || '').trim()}`;
-const fennecMintedCardsKey = () => `fennec_minted_cards_v3_${FENNEC_ID_EPOCH}`;
-
-function ensureMetaTag(name, value) {
-    if (!name) return;
-    const v = String(value || '').trim();
-    let el = document.querySelector(`meta[name="${name}"]`);
-    if (!el) {
-        el = document.createElement('meta');
-        el.setAttribute('name', name);
-        document.head.appendChild(el);
+function __looksLikeTxid(v) {
+    const s = String(v || '').trim();
+    return /^[0-9a-fA-F]{64}$/.test(s);
+}
+function __pickTxid(candidate) {
+    if (!candidate) return '';
+    if (typeof candidate === 'string') {
+        const s = candidate.trim();
+        return __looksLikeTxid(s) ? s : '';
     }
-    el.setAttribute('content', v);
+    if (typeof candidate === 'object') {
+        const fields = [
+            candidate.txid,
+            candidate.txId,
+            candidate.hash,
+            candidate.tx_hash,
+            candidate.receiveTxid,
+            candidate.receiveTxId,
+            candidate.receive_txid,
+            candidate.approveTxid,
+            candidate.approveTxId,
+            candidate.approve_txid,
+            candidate.rollUpTxid,
+            candidate.rollUpTxId,
+            candidate.rollUp_txid,
+            candidate.paymentTxid,
+            candidate.paymentTxId,
+            candidate.inscribeTxid,
+            candidate.inscribeTxId
+        ];
+        for (const f of fields) {
+            const s = String(f || '').trim();
+            if (__looksLikeTxid(s)) return s;
+        }
+    }
+    return '';
 }
 
-window.setDebugAuditIdentity = function (identity) {
+window.connectWallet = async function () {
+    if (typeof window.unisat === 'undefined') {
+        window.open('https://unisat.io/download', '_blank');
+        return;
+    }
     try {
-        window.auditIdentity = identity;
-        if (identity && identity.metrics) {
-            identity.metrics.address = identity.metrics.address || userAddress || window.userAddress || '';
-        }
-        if (typeof window.initAudit === 'function') {
-            __fennecInitAuditSafe();
-        }
-        if (typeof switchTab === 'function') {
-            switchTab('audit');
-        }
-    } catch (e) {
-        console.error('setDebugAuditIdentity error:', e);
-    }
-};
-let currentLang = 'en';
-let depositFeeRate = 2; // Default medium fee
-let withdrawFeeRate = 2; // Default medium fee
-let fractalFees = { fastestFee: 1, halfHourFee: 1, hourFee: 1 }; // Cached fees
+        if (window.__walletConnecting) return;
+        window.__walletConnecting = true;
 
-// Language translations
-const LANG = {
-    en: {
-        swap_action: 'GET FENNEC',
-        swap_sell: 'SELL FENNEC',
-        swap_bridge: 'BRIDGE BTC'
-    },
-    cn: {
-        swap_action: '获取 FENNEC',
-        swap_sell: '卖出 FENNEC',
-        swap_bridge: '桥接 BTC'
-    }
-};
+        try {
+            const connectBtn = document.getElementById('connectBtn');
+            const disconnectBtn = document.getElementById('disconnectBtn');
+            if (connectBtn) connectBtn.disabled = true;
+            if (disconnectBtn) disconnectBtn.classList.add('hidden');
+        } catch (_) {}
 
-// ===== NETWORK CHECK FUNCTION (NO AUTO-SWITCH) =====
-async function checkFractalNetwork() {
-    try {
-        const currentChain = await window.unisat.getChain();
-        console.log('Current network:', currentChain);
+        try {
+            if (typeof window.unisat.switchChain === 'function') {
+                await window.unisat.switchChain(REQUIRED_NETWORK);
+            }
+        } catch (_) {}
 
-        // UniSat returns string or object with enum property
-        const chainName = typeof currentChain === 'string' ? currentChain : currentChain?.enum || currentChain;
+        const acc =
+            typeof window.unisat.requestAccounts === 'function'
+                ? await window.unisat.requestAccounts()
+                : typeof window.unisat.getAccounts === 'function'
+                  ? await window.unisat.getAccounts()
+                  : null;
+        if (!acc || !Array.isArray(acc) || acc.length === 0) throw new Error('No accounts returned from wallet');
 
-        if (chainName !== REQUIRED_NETWORK) {
-            throw new Error(`Please switch to Fractal Bitcoin Mainnet in your UniSat wallet.\nCurrent: ${chainName}`);
-        }
+        const addr = String(acc[0] || '').trim();
+        if (!addr) throw new Error('Empty wallet address');
 
-        console.log('Network OK:', REQUIRED_NETWORK);
-        return true;
-    } catch (e) {
-        console.error('Network check failed:', e);
-        throw e;
-    }
-}
+        userAddress = addr;
+        window.userAddress = addr;
+        try {
+            localStorage.setItem('fennec_last_wallet', addr);
+            localStorage.removeItem('fennec_wallet_manual_disconnect');
+        } catch (_) {}
 
-// ===== FORCE SWITCH NETWORK =====
-async function switchToFractal() {
-    try {
-        console.log('Switching to Fractal mainnet...');
-        await window.unisat.switchChain(REQUIRED_NETWORK);
-        await new Promise(r => setTimeout(r, 2000)); // Wait 2 sec
+        try {
+            if (!userPubkey && typeof window.unisat.getPublicKey === 'function') {
+                userPubkey = await window.unisat.getPublicKey();
+                window.userPubkey = userPubkey;
+            }
+        } catch (_) {}
 
-        const verify = await window.unisat.getChain();
-        console.log('Network after switch:', verify);
-        return verify.enum === REQUIRED_NETWORK;
-    } catch (e) {
-        console.error('Switch failed:', e);
-        return false;
-    }
-}
-const activeTickers = { tick0: '', tick1: '' };
+        try {
+            const connectBtn = document.getElementById('connectBtn');
+            const disconnectBtn = document.getElementById('disconnectBtn');
+            const disconnectBtnText = document.getElementById('disconnectBtnText');
+            if (connectBtn) connectBtn.classList.add('hidden');
+            if (disconnectBtn) disconnectBtn.classList.remove('hidden');
+            if (disconnectBtnText) disconnectBtnText.textContent = `...${addr.slice(-4)}`;
+        } catch (_) {}
 
-try {
-    window.activeTickers = activeTickers;
-} catch (_) {}
-
-try {
-    window.poolCache = { data: null, timestamp: 0, ttl: 30000 }; // 30 сек
-} catch (_) {}
-
-const poolCache = window.poolCache;
-const balanceCache = { data: null, timestamp: 0, ttl: 60000 }; // 60 сек
-const currentTheme = localStorage.getItem('fennec_theme') || 'dark';
-
-// Переводы
-const translations = {
-    en: {
-        connect: 'Connect',
-        swap: 'Swap',
-        deposit: 'Deposit',
-        withdraw: 'Withdraw',
-        youPay: 'YOU PAY',
-        youReceive: 'YOU RECEIVE',
-        balance: 'Balance',
-        rate: 'Rate',
-        pool: 'Pool',
-        active: 'Active',
-        swapTokens: 'SWAP TOKENS',
-        depositBtn: 'DEPOSIT',
-        withdrawBtn: 'WITHDRAW',
-        recentActivity: 'Recent Activity',
-        roadmap: 'Roadmap',
-        priceChart: 'Price Chart'
-    },
-    cn: {
-        connect: '连接',
-        swap: '兑换',
-        deposit: '存入',
-        withdraw: '提取',
-        youPay: '支付',
-        youReceive: '接收',
-        balance: '余额',
-        rate: '汇率',
-        pool: '池',
-        active: '活跃',
-        swapTokens: '兑换代币',
-        depositBtn: '存入',
-        withdrawBtn: '提取',
-        recentActivity: '最近活动',
-        roadmap: '路线图',
-        priceChart: '价格图表'
+        try {
+            if (typeof window.initAudit === 'function') setTimeout(() => window.initAudit(), 100);
+        } catch (_) {}
+        try {
+            if (typeof window.prefetchFennecAudit === 'function') window.prefetchFennecAudit(true);
+        } catch (_) {}
+        try {
+            if (typeof window.refreshFennecIdStatus === 'function') window.refreshFennecIdStatus(false);
+        } catch (_) {}
+        try {
+            if (typeof checkBalance === 'function') checkBalance();
+        } catch (_) {}
+        try {
+            if (typeof refreshTransactionHistory === 'function') setTimeout(refreshTransactionHistory, 500);
+        } catch (_) {}
+    } finally {
+        try {
+            window.__walletConnecting = false;
+        } catch (_) {}
+        try {
+            const connectBtn = document.getElementById('connectBtn');
+            if (connectBtn) connectBtn.disabled = false;
+        } catch (_) {}
     }
 };
 
-// toggleTheme and toggleLanguage are now imported from utils.js
+window.disconnectWallet = function (opts) {
+    const manual = !(opts && typeof opts === 'object' && opts.manual === false);
+    try {
+        if (manual) localStorage.setItem('fennec_wallet_manual_disconnect', '1');
+    } catch (_) {}
 
-function updateLanguage() {
-    document.querySelectorAll('[data-lang-key]').forEach(el => {
-        const key = el.getAttribute('data-lang-key');
-        if (translations[currentLang][key]) {
-            el.innerText = translations[currentLang][key];
-        }
-    });
-}
+    userAddress = null;
+    window.userAddress = null;
+    userPubkey = null;
+    window.userPubkey = null;
 
-// Инициализация темы
-document.documentElement.setAttribute('data-theme', currentTheme);
-const themeIcon = document.getElementById('themeIcon');
-if (themeIcon) {
-    themeIcon.className = currentTheme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
-}
-const langBtn = document.getElementById('langBtn');
-if (langBtn) {
-    langBtn.innerText = currentLang.toUpperCase();
-}
+    try {
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const disconnectBtnText = document.getElementById('disconnectBtnText');
+        if (connectBtn) connectBtn.classList.remove('hidden');
+        if (disconnectBtn) disconnectBtn.classList.add('hidden');
+        if (disconnectBtnText) disconnectBtnText.textContent = '...';
+    } catch (_) {}
 
-// UI language is EN-only
-currentLang = 'en';
-localStorage.setItem('fennec_lang', 'en');
-updateLanguage();
-document.querySelectorAll('[data-t]').forEach(el => {
-    const key = el.getAttribute('data-t');
-    if (LANG && LANG.en && LANG.en[key]) el.innerText = LANG.en[key];
-});
+    try {
+        if (typeof window.initAudit === 'function') setTimeout(() => window.initAudit(), 0);
+    } catch (_) {}
+};
 
-// История транзакций
-function addToHistory(type, amount, token, txid) {
-    const history = JSON.parse(localStorage.getItem('fennec_history') || '[]');
-    history.unshift({
-        type,
-        amount,
-        token,
-        txid: txid || 'pending',
-        timestamp: Date.now()
-    });
-    // Храним только последние 5
-    if (history.length > 5) history.pop();
-    localStorage.setItem('fennec_history', JSON.stringify(history));
-}
-
-function showHistory() {
-    const history = JSON.parse(localStorage.getItem('fennec_history') || '[]');
-    if (history.length === 0) return '';
-    return history
-        .map(tx => {
-            const time = new Date(tx.timestamp).toLocaleTimeString('ru-RU', {
-                hour: '2-digit',
-                minute: '2-digit'
-            });
-            const typeLabel = __escapeHtml(String(tx.type || '').toUpperCase());
-            const amountLabel = __escapeHtml(String(tx.amount ?? ''));
-            const tokenLabel = __escapeHtml(String(tx.token ?? ''));
-            const timeLabel = __escapeHtml(String(time || ''));
-            return `<div class="flex justify-between items-center py-2 border-b border-white/5 text-xs">
-                                                                                                                        <span>${typeLabel}</span>
-                                                                                                                        <span class="text-fennec">${amountLabel} ${tokenLabel}</span>
-                                                                                                                        <span class="text-gray-500">${timeLabel}</span>
-                                                                                                                    </div>`;
-        })
-        .join('');
-}
-
-function updateHistoryUI() {
-    const html = showHistory();
-    const section = document.getElementById('historySection');
-    const list = document.getElementById('historyList');
-    if (html) {
-        list.innerHTML = html;
-        section.style.display = 'block';
-    } else {
-        section.style.display = 'none';
+window.manualRefresh = async function () {
+    const now = Date.now();
+    const timeSinceLastRefresh = now - lastRefreshTime;
+    if (timeSinceLastRefresh < MIN_REFRESH_INTERVAL) {
+        const remainingSeconds = Math.ceil((MIN_REFRESH_INTERVAL - timeSinceLastRefresh) / 1000);
+        try {
+            if (typeof showNotification === 'function') {
+                showNotification(`Please wait ${remainingSeconds}s before refreshing again`, 'warning', 2000);
+            }
+        } catch (_) {}
+        return;
     }
-}
+    lastRefreshTime = now;
 
-// Улучшенная валидация
-function validateAmount(amount, type, token) {
-    if (!amount || isNaN(amount) || amount <= 0) {
-        return { valid: false, error: 'Please enter a valid amount' };
-    }
-
-    // Минимальные суммы
-    const minAmounts = { swap: 0.00001, deposit: 1, withdraw: 1 };
-    if (amount < minAmounts[type]) {
-        return { valid: false, error: `Minimum ${type} amount: ${minAmounts[type]} ${token}` };
-    }
-
-    // Проверка баланса
-    if (type === 'swap') {
-        const bal = isBuying ? userBalances.sFB : userBalances.FENNEC;
-        if (amount > bal) {
-            return { valid: false, error: 'Insufficient balance. Go to Deposit tab.' };
-        }
-    } else if (type === 'withdraw') {
-        const bal = token === 'FB' ? userBalances.sFB : userBalances.FENNEC;
-        if (amount > bal) {
-            return { valid: false, error: 'Insufficient balance on InSwap' };
-        }
-    }
-
-    return { valid: true };
-}
-
-// showError и showSuccess уже импортированы из ../js/ui/utils.js
-
-async function refreshBalancesInline() {
     try {
         await Promise.all([
+            typeof checkBalance === 'function' ? checkBalance() : Promise.resolve(),
             typeof fetchReserves === 'function' ? fetchReserves() : Promise.resolve(),
-            userAddress && typeof checkBalance === 'function' ? checkBalance() : Promise.resolve()
+            typeof updatePriceData === 'function' ? updatePriceData() : Promise.resolve(),
+            typeof refreshTransactionHistory === 'function' ? refreshTransactionHistory() : Promise.resolve()
         ]);
     } catch (_) {}
-}
+};
 
-// showNotification уже импортирована из ../js/ui/utils.js
+// Все функции определяются позже в этом файле и экспортируются в window
+// connectWallet, disconnectWallet, manualRefresh, doWithdraw, createFennecInscription
+// setDepositFee, setWithdrawFee, setDepositToken, setWithdrawToken, etc.
 
-const __terminalTabRefreshState = { last: { swap: 0, deposit: 0, withdraw: 0 } };
-async function __refreshTerminalTab(tab, force = false) {
+// Экспортируем импортированные функции в window для работы onclick атрибутов
+window.showSection = showSection;
+window.fennecInitAuditSafe = fennecInitAuditSafe;
+window.fetchAuditData = fetchAuditData;
+window.updatePriceData = updatePriceData;
+window.toggleSkeleton = show => document.body.classList.toggle('loading-data', !!show);
+
+// Terminal/fees/glue exports (используются onclick и event_bindings)
+window.doDeposit = doDeposit;
+window.setDepositFee = setDepositFee;
+window.setDepositFeeCustom = setDepositFeeCustom;
+window.setWithdrawFee = setWithdrawFee;
+window.setWithdrawFeeCustom = setWithdrawFeeCustom;
+
+// Liquidity функции
+window.refreshMyLiquidityForSelectedPair = refreshMyLiquidityForSelectedPair;
+window.openAddLiquidityModal = openAddLiquidityModal;
+window.switchLiquidityTab = switchLiquidityTab;
+window.updateRemoveLiquidityEstimate = updateRemoveLiquidityEstimate;
+window.selectLiquidityPair = selectLiquidityPair;
+window.closeAddLiquidityModal = closeAddLiquidityModal;
+window.syncLiquidityAmounts = syncLiquidityAmounts;
+window.doAddLiquidity = doAddLiquidity;
+window.doRemoveLiquidity = doRemoveLiquidity;
+window.setMaxLiqAmount = setMaxLiqAmount;
+window.openRemoveLiquidityModal = openRemoveLiquidityModal;
+window.setMaxRemoveLp = setMaxRemoveLp;
+
+window.initAudit = initAudit;
+window.runAudit = runAudit;
+window.refreshAudit = refreshAudit;
+window.startAuditRefreshTimer = startAuditRefreshTimer;
+
+// Chart функции
+window.setChartTimeframe = setChartTimeframe;
+
+// Swap функции
+window.doSwap = doSwap;
+window.setSwapPair = __setSwapPairCompat;
+window.switchDir = __switchDirCompat;
+window.setMaxAmount = setMaxAmount;
+window.calc = calc;
+window.calcReverse = calcReverse;
+window.debounceQuote = debounceQuote;
+window.debounceReverse = debounceReverse;
+window.generateRecursiveChildHTML = generateRecursiveChildHTML;
+
+function __setSwapPairCompat(pair) {
     try {
-        if (document.hidden) return;
+        currentSwapPair = String(pair || 'FB_FENNEC');
+        window.currentSwapPair = currentSwapPair;
+        isBuying = true;
+        window.isBuying = true;
     } catch (_) {}
+    return setSwapPair(pair);
+}
 
+function __switchDirCompat() {
     try {
-        const active = document.querySelector('.tab-btn.active')?.id?.replace('tab-', '') || 'swap';
-        if (String(active || '') !== String(tab || '')) return;
+        isBuying = !isBuying;
+        window.isBuying = isBuying;
     } catch (_) {}
+    return switchDir();
+}
 
-    const now = Date.now();
-    const ttl = tab === 'swap' ? 30000 : 60000;
-    const last =
-        (__terminalTabRefreshState && __terminalTabRefreshState.last && __terminalTabRefreshState.last[tab]) || 0;
-    if (!force && last && now - last < ttl) {
-        return;
-    }
+// UI утилиты
+window.toggleTheme = toggleTheme;
+window.toggleLanguage = toggleLanguage;
+window.toggleChat = toggleChat;
+
+// Router setup moved to navigation.js - will be called from initializeApp()
+
+window.__isTerminalPage = function () {
     try {
-        __terminalTabRefreshState.last[tab] = now;
-    } catch (_) {}
-
-    if (tab === 'swap') {
-        try {
-            await Promise.all([
-                typeof fetchReserves === 'function' ? fetchReserves() : Promise.resolve(),
-                typeof refreshTransactionHistory === 'function' ? refreshTransactionHistory(false) : Promise.resolve(),
-                typeof checkWhales === 'function' ? checkWhales() : Promise.resolve(),
-                typeof checkBalance === 'function' ? checkBalance(false) : Promise.resolve()
-            ]);
-        } catch (_) {}
-        return;
-    }
-
-    if (tab === 'deposit') {
-        try {
-            if (typeof loadFees === 'function') await loadFees('deposit');
-        } catch (_) {}
-        try {
-            if (typeof checkBalance === 'function') await checkBalance(false);
-        } catch (_) {}
-        try {
-            if (typeof refreshTransactionHistory === 'function') await refreshTransactionHistory(false);
-        } catch (_) {}
-        return;
-    }
-
-    if (tab === 'withdraw') {
-        try {
-            if (typeof loadFees === 'function') await loadFees('withdraw');
-        } catch (_) {}
-        try {
-            if (typeof checkBalance === 'function') await checkBalance(false);
-        } catch (_) {}
-        try {
-            if (typeof refreshTransactionHistory === 'function') await refreshTransactionHistory(false);
-        } catch (_) {}
-        return;
-    }
-}
-
-function __legacy_switchTab(tab) {
-    document.querySelectorAll('.tab-content').forEach(el => {
-        el.classList.remove('active');
-        el.classList.add('hidden');
-    });
-    document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-    const targetView = document.getElementById(`view-${tab}`);
-    const targetTab = document.getElementById(`tab-${tab}`);
-    if (targetView) {
-        targetView.classList.remove('hidden');
-        targetView.classList.add('active');
-    }
-    if (targetTab) targetTab.classList.add('active');
-    if (tab === 'deposit') {
-        setDepositToken(depositToken, { skipFetch: true, skipFees: true });
-        __refreshTerminalTab('deposit', false);
-    }
-    if (tab === 'withdraw') {
-        updateWithdrawUI();
-        __refreshTerminalTab('withdraw', false);
-    }
-    if (tab === 'swap') {
-        __refreshTerminalTab('swap', false);
-    }
-    if (tab === 'pending') {
-        refreshPendingOperations();
-    }
-}
-
-var switchTab = window.switchTab || __legacy_switchTab;
-try {
-    window.switchTab = switchTab;
-} catch (_) {}
-
-// ИСПРАВЛЕНИЕ: Функция для добавления pending операции (минт, инскрипции и т.д.)
-function addPendingOperation(operation) {
-    try {
-        const pendingOps = JSON.parse(localStorage.getItem('pending_operations') || '[]');
-        // Проверяем, нет ли уже такой операции
-        const opOrderId = String(operation?.orderId || '').trim();
-        const opTxid = String(operation?.txid || '').trim();
-        const opId = String(operation?.id || '').trim();
-        const opKey = opOrderId || opTxid || opId;
-        const exists = pendingOps.find(op => {
-            if (!op || typeof op !== 'object') return false;
-            if (String(op.type || '') !== String(operation?.type || '')) return false;
-            const existingOrderId = String(op.orderId || '').trim();
-            const existingTxid = String(op.txid || '').trim();
-            const existingId = String(op.id || '').trim();
-            const existingKey = existingOrderId || existingTxid || existingId;
-            if (!existingKey || !opKey) return false;
-            return existingKey === opKey;
-        });
-        if (!exists) {
-            pendingOps.push(operation);
-            localStorage.setItem('pending_operations', JSON.stringify(pendingOps));
-            // Обновляем UI
-            if (typeof refreshPendingOperations === 'function') {
-                refreshPendingOperations();
-            }
-            try {
-                if (typeof checkPendingMints === 'function') {
-                    setTimeout(() => {
-                        try {
-                            checkPendingMints();
-                        } catch (_) {}
-                    }, 2500);
-                }
-            } catch (_) {}
-        }
-    } catch (e) {
-        console.error('Failed to add pending operation:', e);
-    }
-}
-
-function queueFennecIdRegister(entry) {
-    try {
-        const address = String(entry?.address || '').trim();
-        const inscriptionId = String(entry?.inscriptionId || entry?.inscription_id || '').trim();
-        if (!address || !inscriptionId) return;
-        const key = 'fennec_id_register_queue_v2';
-        const q = JSON.parse(localStorage.getItem(key) || '[]');
-        const arr = Array.isArray(q) ? q : [];
-        const exists = arr.some(
-            x =>
-                x &&
-                String(x.address || '').trim() === address &&
-                String(x.inscriptionId || '').trim() === inscriptionId
-        );
-        if (exists) return;
-        arr.push({ address, inscriptionId, ts: Date.now(), attempts: 0 });
-        localStorage.setItem(key, JSON.stringify(arr));
-
-        try {
-            if (typeof processFennecIdRegisterQueue === 'function') {
-                setTimeout(() => {
-                    try {
-                        processFennecIdRegisterQueue();
-                    } catch (_) {}
-                }, 1200);
-            }
-        } catch (_) {}
-    } catch (_) {}
-}
-
-async function processFennecIdRegisterQueue() {
-    try {
-        const key = 'fennec_id_register_queue_v2';
-        const raw = localStorage.getItem(key) || '[]';
-        const q = JSON.parse(raw);
-        const arr = Array.isArray(q) ? q : [];
-        if (!arr.length) return;
-
-        const now = Date.now();
-        const keep = [];
-        for (const it of arr) {
-            const address = String(it?.address || '').trim();
-            const inscriptionId = String(it?.inscriptionId || '').trim();
-            const attempts = Number(it?.attempts || 0) || 0;
-            const ts = Number(it?.ts || 0) || now;
-            const ageMs = now - ts;
-            if (!address || !inscriptionId) continue;
-            if (attempts >= 10 || ageMs > 24 * 60 * 60 * 1000) continue;
-
-            try {
-                const res = await fetch(`${BACKEND_URL}?action=fennec_id_register`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ address, inscriptionId })
-                }).catch(() => null);
-                const j = res ? await res.json().catch(() => null) : null;
-                if (j && j.code === 0) {
-                    try {
-                        const lsKey = fennecIdKeyV2(address);
-                        localStorage.setItem(lsKey, inscriptionId);
-                    } catch (_) {}
-                    continue;
-                }
-
-                try {
-                    const msg = String(j?.msg || j?.error || '').trim();
-                    if (msg) {
-                        console.warn('[fennec_id_register] failed:', {
-                            address,
-                            inscriptionId,
-                            attempts,
-                            msg,
-                            status: res?.status
-                        });
-                        if (!window.__fennecWarnedKvMissing && /FENNEC_DB\s+is\s+not\s+configured/i.test(msg)) {
-                            window.__fennecWarnedKvMissing = 1;
-                            if (typeof showNotification === 'function') {
-                                showNotification(
-                                    'Server KV (FENNEC_DB) is not configured — ID sync disabled.',
-                                    'error',
-                                    6500
-                                );
-                            }
-                        }
-
-                        if (
-                            !window.__fennecWarnedUniSatKeyMissing &&
-                            /UNISAT_API_KEY\s+is\s+not\s+configured/i.test(msg)
-                        ) {
-                            window.__fennecWarnedUniSatKeyMissing = 1;
-                            if (typeof showNotification === 'function') {
-                                showNotification('Server UNISAT_API_KEY is missing — ID sync disabled.', 'error', 6500);
-                            }
-                        }
-                    }
-                } catch (_) {}
-
-                keep.push({ address, inscriptionId, ts, attempts: attempts + 1 });
-            } catch (_) {}
-        }
-        localStorage.setItem(key, JSON.stringify(keep));
-    } catch (_) {}
-}
-
-// Проверка статуса минт-ордеров
-async function checkPendingMints() {
-    try {
-        try {
-            await processFennecIdRegisterQueue();
-        } catch (_) {}
-        const pendingOps = JSON.parse(localStorage.getItem('pending_operations') || '[]');
-        const mints = pendingOps.filter(
-            op => op.type === 'mint' && (op.status === 'pending' || op.status === 'inscribing')
-        );
-
-        if (mints.length === 0) return;
-
-        for (const mint of mints) {
-            try {
-                const res = await fetch(`${BACKEND_URL}?action=inscription_status&orderId=${mint.orderId}`);
-
-                // Проверяем статус ответа
-                if (!res.ok) {
-                    // 400/404 бывает временно сразу после создания ордера.
-                    // Не удаляем мгновенно, а ждём несколько попыток/таймаут.
-                    if (res.status === 400 || res.status === 404) {
-                        const idx = pendingOps.findIndex(
-                            op => op && op.type === 'mint' && String(op.orderId || '') === String(mint.orderId || '')
-                        );
-                        if (idx >= 0) {
-                            const now = Date.now();
-                            const ts = Number(pendingOps[idx].timestamp || 0) || now;
-                            const ageMs = now - ts;
-                            const prev = Number(pendingOps[idx].notFoundCount || 0) || 0;
-                            pendingOps[idx].notFoundCount = prev + 1;
-                            pendingOps[idx].lastNotFoundAt = now;
-                            localStorage.setItem('pending_operations', JSON.stringify(pendingOps));
-
-                            const MAX_NOT_FOUND = 6;
-                            const MIN_AGE_TO_DROP_MS = 10 * 60 * 1000;
-                            if (pendingOps[idx].notFoundCount >= MAX_NOT_FOUND && ageMs > MIN_AGE_TO_DROP_MS) {
-                                const updated = pendingOps.filter(
-                                    op => !(op.orderId === mint.orderId && op.type === 'mint')
-                                );
-                                localStorage.setItem('pending_operations', JSON.stringify(updated));
-                                console.log(
-                                    `Order ${mint.orderId} not found after ${pendingOps[idx].notFoundCount} attempts, removed from pending`
-                                );
-                            }
-                            if (typeof refreshPendingOperations === 'function') {
-                                refreshPendingOperations();
-                            }
-                        }
-                    }
-                    continue;
-                }
-
-                const data = await res.json();
-
-                if (data.code === 0 && data.data) {
-                    const status = data.data.status;
-                    const files = data.data.files || [];
-                    let inscriptionId = null;
-                    if (files.length > 0 && files[0].inscriptionId) {
-                        inscriptionId = files[0].inscriptionId;
-                    } else {
-                        inscriptionId =
-                            data.data.inscriptionId ||
-                            data.data.inscription?.inscriptionId ||
-                            data.data.inscriptionIdList?.[0];
-                    }
-
-                    if (status === 'minted' || (inscriptionId && inscriptionId.length > 10)) {
-                        // Минт завершен - удаляем из pending
-                        const updated = pendingOps.filter(op => !(op.orderId === mint.orderId && op.type === 'mint'));
-                        localStorage.setItem('pending_operations', JSON.stringify(updated));
-                        console.log(`Mint order ${mint.orderId} completed with inscription ${inscriptionId}`);
-
-                        try {
-                            const mintAddr = String(mint.address || '').trim();
-                            if (mintAddr && inscriptionId) {
-                                localStorage.setItem(fennecIdKeyV2(mintAddr), String(inscriptionId));
-                            }
-                        } catch (_) {}
-
-                        try {
-                            const mintAddr = String(mint.address || '').trim();
-                            if (mintAddr && inscriptionId) queueFennecIdRegister({ address: mintAddr, inscriptionId });
-                        } catch (_) {}
-
-                        try {
-                            if (typeof window.refreshFennecIdStatus === 'function') {
-                                window.refreshFennecIdStatus(true, false);
-                            }
-                        } catch (_) {}
-
-                        try {
-                            const allMints = JSON.parse(localStorage.getItem(fennecMintedCardsKey()) || '[]');
-                            if (Array.isArray(allMints) && allMints.length) {
-                                let changed = false;
-                                for (const m of allMints) {
-                                    if (!m || typeof m !== 'object') continue;
-                                    if (String(m.orderId || '') !== String(mint.orderId || '')) continue;
-                                    if (inscriptionId && inscriptionId.length > 10) {
-                                        m.inscriptionId = inscriptionId;
-                                    }
-                                    m.status = 'minted';
-                                    changed = true;
-                                }
-                                if (changed) {
-                                    localStorage.setItem(fennecMintedCardsKey(), JSON.stringify(allMints));
-                                }
-                            }
-                        } catch (e) {}
-
-                        // Обновляем UI
-                        if (typeof refreshPendingOperations === 'function') {
-                            refreshPendingOperations();
-                        }
-                        if (typeof window.initAudit === 'function') {
-                            __fennecInitAuditSafe();
-                        }
-                    } else if (status === 'inscribing') {
-                        // Обновляем статус
-                        const idx = pendingOps.findIndex(op => op.orderId === mint.orderId && op.type === 'mint');
-                        if (idx >= 0) {
-                            pendingOps[idx].status = 'inscribing';
-                            if (inscriptionId && inscriptionId.length > 10) {
-                                pendingOps[idx].inscriptionId = inscriptionId;
-                            }
-                            localStorage.setItem('pending_operations', JSON.stringify(pendingOps));
-                        }
-
-                        try {
-                            const allMints = JSON.parse(localStorage.getItem(fennecMintedCardsKey()) || '[]');
-                            if (Array.isArray(allMints) && allMints.length) {
-                                let changed = false;
-                                for (const m of allMints) {
-                                    if (!m || typeof m !== 'object') continue;
-                                    if (String(m.orderId || '') !== String(mint.orderId || '')) continue;
-                                    m.status = 'inscribing';
-                                    if (inscriptionId && inscriptionId.length > 10) {
-                                        m.inscriptionId = inscriptionId;
-                                    }
-                                    changed = true;
-                                }
-                                if (changed) {
-                                    localStorage.setItem(fennecMintedCardsKey(), JSON.stringify(allMints));
-                                }
-                            }
-                        } catch (e) {}
-                    } else if (status === 'closed' || status === 'refunded') {
-                        const updated = pendingOps.filter(op => !(op.orderId === mint.orderId && op.type === 'mint'));
-                        localStorage.setItem('pending_operations', JSON.stringify(updated));
-                        if (typeof refreshPendingOperations === 'function') {
-                            refreshPendingOperations();
-                        }
-
-                        try {
-                            const allMints = JSON.parse(localStorage.getItem(fennecMintedCardsKey()) || '[]');
-                            if (Array.isArray(allMints) && allMints.length) {
-                                let changed = false;
-                                for (const m of allMints) {
-                                    if (!m || typeof m !== 'object') continue;
-                                    if (String(m.orderId || '') !== String(mint.orderId || '')) continue;
-                                    m.status = status;
-                                    changed = true;
-                                }
-                                if (changed) {
-                                    localStorage.setItem(fennecMintedCardsKey(), JSON.stringify(allMints));
-                                }
-                            }
-                        } catch (e) {}
-                    }
-                }
-            } catch (err) {
-                // Тихо пропускаем ошибки сети
-            }
-        }
-    } catch (e) {
-        // Игнорируем ошибки парсинга localStorage
-    }
-}
-
-// Запускаем проверку каждые 2 минуты (экономим воркер)
-setInterval(checkPendingMints, 120000);
-// Проверяем сразу при загрузке
-setTimeout(checkPendingMints, 3000);
-
-// REFRESH PENDING OPERATIONS
-async function refreshPendingOperations() {
-    const pendingEl = document.getElementById('pendingOperations');
-    if (!pendingEl) return;
-
-    try {
-        // Get pending inscriptions from localStorage
-        const pendingInscriptions = JSON.parse(localStorage.getItem('pending_inscriptions') || '[]');
-        const activeInscriptions = pendingInscriptions.filter(p => p.status !== 'ready' && p.status !== 'failed');
-
-        // ИСПРАВЛЕНИЕ: Get pending operations (минты) from localStorage
-        let pendingOperations = JSON.parse(localStorage.getItem('pending_operations') || '[]');
-
-        try {
-            const ops = Array.isArray(pendingOperations) ? pendingOperations : [];
-            const txOps = ops.filter(
-                op =>
-                    op &&
-                    typeof op === 'object' &&
-                    (op.type === 'swap' || op.type === 'deposit' || op.type === 'withdraw') &&
-                    (op.status === 'pending' || op.status === 'broadcasted' || op.status === 'created')
-            );
-            const limited = txOps
-                .slice()
-                .sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0))
-                .slice(0, 5);
-
-            if (limited.length > 0) {
-                let changed = false;
-                const toRemove = new Set();
-                for (const op of limited) {
-                    const txid = String(op.txid || '').trim();
-                    if (!__looksLikeTxid(txid)) continue;
-                    const chain = String(op.chain || 'FRACTAL')
-                        .trim()
-                        .toUpperCase();
-                    const json = await safeFetchJson(
-                        `${BACKEND_URL}?action=tx_info&txid=${encodeURIComponent(txid)}&chain=${encodeURIComponent(chain)}`,
-                        {
-                            timeoutMs: 9000,
-                            retries: 0
-                        }
-                    );
-                    const detail = json?.data?.detail || json?.data?.data?.detail || json?.data?.tx || null;
-                    const confirmations = Number(detail?.confirmations || json?.data?.confirmations || 0) || 0;
-                    const height = Number(detail?.height || json?.data?.height || 0) || 0;
-                    if (confirmations >= 1 || height > 0) {
-                        const orderId = String(op.orderId || '').trim();
-                        const id = String(op.id || '').trim();
-                        const key = orderId || txid || id;
-                        if (key) {
-                            toRemove.add(`${String(op.type || '')}:${key}`);
-                        }
-                    }
-                }
-
-                if (toRemove.size > 0) {
-                    const updated = ops.filter(op => {
-                        if (!op || typeof op !== 'object') return false;
-                        const type = String(op.type || '');
-                        const orderId = String(op.orderId || '').trim();
-                        const txid = String(op.txid || '').trim();
-                        const id = String(op.id || '').trim();
-                        const key = orderId || txid || id;
-                        if (!type || !key) return true;
-                        return !toRemove.has(`${type}:${key}`);
-                    });
-                    pendingOperations = updated;
-                    localStorage.setItem('pending_operations', JSON.stringify(updated));
-                    changed = true;
-                }
-
-                if (changed) {
-                    try {
-                        setTimeout(() => {
-                            try {
-                                if (typeof checkBalance === 'function') checkBalance();
-                            } catch (_) {}
-                            try {
-                                if (typeof refreshTransactionHistory === 'function') refreshTransactionHistory();
-                            } catch (_) {}
-                        }, 1200);
-                    } catch (_) {}
-                }
-            }
-        } catch (_) {}
-
-        const activeMints = (Array.isArray(pendingOperations) ? pendingOperations : []).filter(
-            p =>
-                p && typeof p === 'object' && p.type === 'mint' && (p.status === 'pending' || p.status === 'inscribing')
-        );
-
-        const activeSwaps = (Array.isArray(pendingOperations) ? pendingOperations : []).filter(
-            p =>
-                p &&
-                typeof p === 'object' &&
-                p.type === 'swap' &&
-                (p.status === 'pending' || p.status === 'broadcasted')
-        );
-
-        const activeLocalDeposits = (Array.isArray(pendingOperations) ? pendingOperations : []).filter(
-            p =>
-                p &&
-                typeof p === 'object' &&
-                p.type === 'deposit' &&
-                (p.status === 'pending' || p.status === 'broadcasted')
-        );
-
-        const activeLocalWithdrawals = (Array.isArray(pendingOperations) ? pendingOperations : []).filter(
-            p =>
-                p &&
-                typeof p === 'object' &&
-                p.type === 'withdraw' &&
-                (p.status === 'pending' || p.status === 'broadcasted')
-        );
-
-        // Get pending deposits/withdrawals from API (if user is connected)
-        let pendingDeposits = [];
-        let pendingWithdrawals = [];
-
-        if (userAddress) {
-            try {
-                const depositRes = await fetch(
-                    `${BACKEND_URL}?action=deposit_list&address=${userAddress}&start=0&limit=10`
-                ).then(r => r.json());
-                if (depositRes.code === 0 && depositRes.data?.list) {
-                    pendingDeposits = depositRes.data.list.filter(d => {
-                        const cur = d.cur || 0;
-                        const sum = d.sum || 0;
-                        return cur < sum; // Not fully confirmed
-                    });
-                }
-            } catch (e) {
-                console.warn('Failed to fetch pending deposits:', e);
-            }
-
-            try {
-                const withdrawRes = await fetch(
-                    `${BACKEND_URL}?action=withdraw_history&address=${userAddress}&start=0&limit=10`
-                ).then(r => r.json());
-                if (withdrawRes.code === 0 && withdrawRes.data?.list) {
-                    pendingWithdrawals = withdrawRes.data.list.filter(w => {
-                        const cur = w.cur || 0;
-                        const sum = w.sum || 0;
-                        return cur < sum; // Not fully confirmed
-                    });
-                }
-            } catch (e) {
-                console.warn('Failed to fetch pending withdrawals:', e);
-            }
-        }
-
-        const apiDepositTxids = new Set((pendingDeposits || []).map(d => __pickTxid(d)).filter(Boolean));
-        const apiWithdrawTxids = new Set((pendingWithdrawals || []).map(w => __pickTxid(w)).filter(Boolean));
-
-        const localDeposits = (activeLocalDeposits || []).filter(op => {
-            const txid = String(op.txid || '').trim();
-            if (!txid) return true;
-            return !apiDepositTxids.has(txid);
-        });
-
-        const localWithdrawals = (activeLocalWithdrawals || []).filter(op => {
-            const txid = String(op.txid || '').trim();
-            if (!txid) return true;
-            return !apiWithdrawTxids.has(txid);
-        });
-
-        const allPending = [
-            ...activeInscriptions.map(p => ({ ...p, type: 'inscription', sortTime: p.createdAt || 0 })),
-            ...activeMints.map(m => ({ ...m, type: 'mint', sortTime: m.timestamp || 0 })),
-            ...activeSwaps.map(s => ({ ...s, type: 'swap', sortTime: s.timestamp || 0 })),
-            ...localDeposits.map(d => ({ ...d, type: 'local_deposit', sortTime: d.timestamp || 0 })),
-            ...localWithdrawals.map(w => ({ ...w, type: 'local_withdraw', sortTime: w.timestamp || 0 })),
-            ...pendingDeposits.map(d => ({ ...d, type: 'deposit', sortTime: (d.ts || 0) * 1000 })),
-            ...pendingWithdrawals.map(w => ({ ...w, type: 'withdraw', sortTime: (w.ts || 0) * 1000 }))
-        ].sort((a, b) => b.sortTime - a.sortTime); // Sort by time, newest first
-
-        if (allPending.length === 0) {
-            pendingEl.innerHTML = `
-                                                                                                                            <div class="text-center py-8 text-gray-500 text-xs">
-                                                                                                                                <i class="fas fa-check-circle text-3xl mb-3 opacity-50 text-green-500"></i>
-                                                                                                                                <p>No pending operations</p>
-                                                                                                                                <p class="text-[10px] mt-2 text-gray-600">All operations are completed</p>
-                                                                                                                            </div>
-                                                                                                                        `;
-            return;
-        }
-
-        // Group by type
-        const inscriptions = allPending.filter(o => o.type === 'inscription');
-        const mints = allPending.filter(o => o.type === 'mint');
-        const swaps = allPending.filter(o => o.type === 'swap');
-        const localDeposits2 = allPending.filter(o => o.type === 'local_deposit');
-        const localWithdrawals2 = allPending.filter(o => o.type === 'local_withdraw');
-        const deposits = allPending.filter(o => o.type === 'deposit');
-        const withdrawals = allPending.filter(o => o.type === 'withdraw');
-
-        let html = '';
-
-        // ИСПРАВЛЕНИЕ: Mints (минт карточек)
-        if (mints.length > 0) {
-            html += '<div class="text-xs text-gray-500 mb-2 font-bold uppercase">Minting ID Cards</div>';
-            html += mints
-                .map(op => {
-                    const statusIcon =
-                        op.status === 'pending'
-                            ? 'fa-clock'
-                            : op.status === 'inscribing'
-                              ? 'fa-spinner fa-spin'
-                              : 'fa-hourglass-half';
-                    const statusColor =
-                        op.status === 'pending'
-                            ? 'text-yellow-500'
-                            : op.status === 'inscribing'
-                              ? 'text-blue-500'
-                              : 'text-gray-500';
-                    let sizeKB = '';
-                    try {
-                        const base64Content = btoa(unescape(encodeURIComponent(op.htmlCode || '')));
-                        const base64SizeBytes = (base64Content.length * 3) / 4;
-                        sizeKB = (base64SizeBytes / 1024).toFixed(2);
-                    } catch (e) {}
-                    return `
-                                                                                                                                <div class="bg-black/30 border border-white/5 rounded-lg p-4 mb-2">
-                                                                                                                                    <div class="flex items-center justify-between">
-                                                                                                                                        <div class="flex items-center gap-3">
-                                                                                                                                            <i class="fas ${statusIcon} ${statusColor} text-xl"></i>
-                                                                                                                                            <div>
-                                                                                                                                                <div class="text-sm font-bold text-white">Minting Fennec ID Card</div>
-                                                                                                                                                <div class="text-xs text-gray-400">Order ID: ${__escapeHtml(String(op.orderId || '').slice(-8) || 'N/A')}</div>
-                                                                                                                                                <div class="text-[10px] text-gray-500 mt-1">Status: ${__escapeHtml(op.status || '')}${sizeKB ? ` • HTML: ${sizeKB} KB` : ''}</div>
-                                                                                                                                            </div>
-                                                                                                                                        </div>
-                                                                                                                                        <div class="text-right">
-                                                                                                                                            <div class="text-[10px] text-gray-500">Amount</div>
-                                                                                                                                            <div class="text-xs font-mono text-fennec">${(op.amount / 100000000).toFixed(8)} FB</div>
-                                                                                                                                            <button class="open-mint-html mt-2 text-[10px] font-black bg-fennec/15 text-fennec border border-fennec/30 px-3 py-1 rounded-lg hover:bg-fennec/25 transition" data-order-id="${__escapeHtml(op.orderId || '')}">OPEN CARD</button>
-                                                                                                                                        </div>
-                                                                                                                                    </div>
-                                                                                                                                </div>
-                                                                                                                            `;
-                })
-                .join('');
-        }
-
-        if (swaps.length > 0) {
-            html += '<div class="text-xs text-gray-500 mb-2 mt-4 font-bold uppercase">Swaps</div>';
-            html += swaps
-                .map(op => {
-                    const txid = String(op.txid || '').trim();
-                    const shortTx = __looksLikeTxid(txid) ? txid.slice(0, 8) : '';
-                    const inTick = op.tickIn || '';
-                    const outTick = op.tickOut || '';
-                    const amountIn = Number(op.amountIn || 0) || 0;
-                    const amountInStr = amountIn ? amountIn.toFixed(8).replace(/\.?0+$/, '') : '';
-                    const title =
-                        inTick && outTick && amountInStr
-                            ? `Swap ${__escapeHtml(amountInStr)} ${__escapeHtml(inTick)} → ${__escapeHtml(outTick)}`
-                            : 'Swap Pending';
-                    const txLine = shortTx ? `TXID: ${__escapeHtml(shortTx)}…` : 'TXID: N/A';
-                    return `
-                                                                                                                                <div class="bg-black/30 border border-white/5 rounded-lg p-4 mb-2">
-                                                                                                                                    <div class="flex items-center justify-between">
-                                                                                                                                        <div class="flex items-center gap-3">
-                                                                                                                                            <i class="fas fa-clock text-yellow-500 text-xl"></i>
-                                                                                                                                            <div>
-                                                                                                                                                <div class="text-sm font-bold text-white">${title}</div>
-                                                                                                                                                <div class="text-xs text-gray-400">${txLine}</div>
-                                                                                                                                            </div>
-                                                                                                                                        </div>
-                                                                                                                                    </div>
-                                                                                                                                </div>
-                                                                                                                            `;
-                })
-                .join('');
-        }
-
-        if (localDeposits2.length > 0) {
-            html += '<div class="text-xs text-gray-500 mb-2 mt-4 font-bold uppercase">Deposits (Pending)</div>';
-            html += localDeposits2
-                .map(op => {
-                    const txid = String(op.txid || '').trim();
-                    const shortTx = __looksLikeTxid(txid) ? txid.slice(0, 8) : '';
-                    const amount = Number(op.amount || 0) || 0;
-                    const amountStr = amount ? amount.toFixed(8).replace(/\.?0+$/, '') : '--';
-                    let displayTick = op.tick || 'FB';
-                    if (String(displayTick).includes('sFB') || displayTick === 'sFB___000') displayTick = 'FB';
-                    if (String(displayTick).includes('sBTC') || displayTick === 'sBTC___000') displayTick = 'BTC';
-                    if (String(displayTick).includes('FENNEC')) displayTick = 'FENNEC';
-                    return `
-                                                                                                                                <div class="bg-black/30 border border-white/5 rounded-lg p-4 mb-2">
-                                                                                                                                    <div class="flex items-center justify-between">
-                                                                                                                                        <div class="flex items-center gap-3">
-                                                                                                                                            <i class="fas fa-arrow-down text-green-500 text-xl"></i>
-                                                                                                                                           <div>
-                                                                                                                                                <div class="text-sm font-bold text-white">Deposit ${__escapeHtml(amountStr)} ${__escapeHtml(displayTick)}</div>
-                                                                                                                                                <div class="text-xs text-gray-400">${shortTx ? `TXID: ${__escapeHtml(shortTx)}…` : 'TXID: N/A'}</div>
-                                                                                                                                            </div>
-                                                                                                                                        </div>
-                                                                                                                                    </div>
-                                                                                                                                </div>
-                                                                                                                            `;
-                })
-                .join('');
-        }
-
-        if (localWithdrawals2.length > 0) {
-            html += '<div class="text-xs text-gray-500 mb-2 mt-4 font-bold uppercase">Withdrawals (Pending)</div>';
-            html += localWithdrawals2
-                .map(op => {
-                    const txid = String(op.txid || '').trim();
-                    const shortTx = __looksLikeTxid(txid) ? txid.slice(0, 8) : '';
-                    const amount = Number(op.amount || 0) || 0;
-                    const amountStr = amount ? amount.toFixed(8).replace(/\.?0+$/, '') : '--';
-                    let displayTick = op.tick || 'FB';
-                    if (String(displayTick).includes('sFB') || displayTick === 'sFB___000') displayTick = 'FB';
-                    if (String(displayTick).includes('sBTC') || displayTick === 'sBTC___000') displayTick = 'BTC';
-                    if (String(displayTick).includes('FENNEC')) displayTick = 'FENNEC';
-                    const id = String(op.id || '').trim();
-                    return `
-                                                                                                                                <div class="bg-black/30 border border-white/5 rounded-lg p-4 mb-2">
-                                                                                                                                    <div class="flex items-center justify-between">
-                                                                                                                                        <div class="flex items-center gap-3">
-                                                                                                                                            <i class="fas fa-arrow-up text-fennec text-xl"></i>
-                                                                                                                                           <div>
-                                                                                                                                                <div class="text-sm font-bold text-white">Withdraw ${__escapeHtml(amountStr)} ${__escapeHtml(displayTick)}</div>
-                                                                                                                                                <div class="text-xs text-gray-400">${shortTx ? `TXID: ${__escapeHtml(shortTx)}…` : id ? `ID: ${__escapeHtml(String(id).slice(-8))}` : 'TXID: N/A'}</div>
-                                                                                                                                            </div>
-                                                                                                                                        </div>
-                                                                                                                                    </div>
-                                                                                                                                </div>
-                                                                                                                            `;
-                })
-                .join('');
-        }
-
-        // Inscriptions
-        if (inscriptions.length > 0) {
-            html += '<div class="text-xs text-gray-500 mb-2 font-bold uppercase">Inscriptions</div>';
-            html += inscriptions
-                .map(op => {
-                    const statusIcon =
-                        op.status === 'pending'
-                            ? 'fa-clock'
-                            : op.status === 'inscribing'
-                              ? 'fa-spinner fa-spin'
-                              : 'fa-hourglass-half';
-                    const statusColor =
-                        op.status === 'pending'
-                            ? 'text-yellow-500'
-                            : op.status === 'inscribing'
-                              ? 'text-blue-500'
-                              : 'text-gray-500';
-                    // Нормализуем тикер: убираем префиксы sFB, sBTC и т.д.
-                    let displayTick = op.tick || 'FB';
-                    if (displayTick.includes('sFB') || displayTick === 'sFB___000') displayTick = 'FB';
-                    if (displayTick.includes('sBTC') || displayTick === 'sBTC___000') displayTick = 'BTC';
-                    if (displayTick.includes('FENNEC')) displayTick = 'FENNEC';
-                    return `
-                                                                                                                                <div class="bg-black/30 border border-white/5 rounded-lg p-4 mb-2">
-                                                                                                                                    <div class="flex items-center justify-between">
-                                                                                                                                        <div class="flex items-center gap-3">
-                                                                                                                                            <i class="fas ${statusIcon} ${statusColor} text-xl"></i>
-                                                                                                                                            <div>
-                                                                                                                                                <div class="text-sm font-bold text-white">Creating Transfer Inscription</div>
-                                                                                                                                                <div class="text-xs text-gray-400">${__escapeHtml(op.amount)} ${__escapeHtml(displayTick)}</div>
-                                                                                                                                                <div class="text-[10px] text-gray-500 mt-1">Status: ${__escapeHtml(op.status || '')}</div>
-                                                                                                                                            </div>
-                                                                                                                                        </div>
-                                                                                                                                        <div class="text-right">
-                                                                                                                                            <div class="text-[10px] text-gray-500">Order ID</div>
-                                                                                                                                            <div class="text-xs font-mono text-fennec">${__escapeHtml(String(op.orderId || '').slice(-8) || 'N/A')}</div>
-                                                                                                                                        </div>
-                                                                                                                                    </div>
-                                                                                                                                </div>
-                                                                                                                            `;
-                })
-                .join('');
-        }
-
-        // Deposits
-        if (deposits.length > 0) {
-            html += '<div class="text-xs text-gray-500 mb-2 mt-4 font-bold uppercase">Deposits</div>';
-            html += deposits
-                .map(op => {
-                    const cur = op.cur || 0;
-                    const sum = op.sum || 0;
-                    const percent = Math.round((cur / sum) * 100);
-                    const amount = parseFloat(op.amount || 0);
-                    const amountStr = amount % 1 === 0 ? amount.toString() : amount.toFixed(8).replace(/\.?0+$/, '');
-                    // Нормализуем тикер: убираем префиксы sFB, sBTC и т.д.
-                    let displayTick = op.tick || 'FB';
-                    if (displayTick.includes('sFB') || displayTick === 'sFB___000') displayTick = 'FB';
-                    if (displayTick.includes('sBTC') || displayTick === 'sBTC___000') displayTick = 'BTC';
-                    if (displayTick.includes('FENNEC')) displayTick = 'FENNEC';
-                    return `
-                                                                                                                                <div class="bg-black/30 border border-white/5 rounded-lg p-4 mb-2">
-                                                                                                                                    <div class="flex items-center justify-between">
-                                                                                                                                        <div class="flex items-center gap-3">
-                                                                                                                                            <i class="fas fa-arrow-down text-green-500 text-xl"></i>
-                                                                                                                                           <div>
-                                                                                                                                                <div class="text-sm font-bold text-white">Deposit ${__escapeHtml(amountStr)} ${__escapeHtml(displayTick)}</div>
-                                                                                                                                                <div class="text-xs text-gray-400">${cur}/${sum} confirmations</div>
-                                                                                                                                            </div>
-                                                                                                                                        </div>
-                                                                                                                                        <div class="text-right">
-                                                                                                                                            <div class="text-xs font-bold text-green-400">${percent}%</div>
-                                                                                                                                            <div class="w-20 bg-white/10 rounded-full h-2 mt-1">
-                                                                                                                                                <div class="bg-green-500 h-2 rounded-full" style="width: ${percent}%"></div>
-                                                                                                                                            </div>
-                                                                                                                                        </div>
-                                                                                                                                    </div>
-                                                                                                                                </div>
-                                                                                                                            `;
-                })
-                .join('');
-        }
-
-        // Withdrawals
-        if (withdrawals.length > 0) {
-            html += '<div class="text-xs text-gray-500 mb-2 mt-4 font-bold uppercase">Withdrawals</div>';
-            html += withdrawals
-                .map(op => {
-                    const cur = op.cur || 0;
-                    const sum = op.sum || 0;
-                    const percent = Math.round((cur / sum) * 100);
-                    const amount = parseFloat(op.amount || 0);
-                    const amountStr = amount % 1 === 0 ? amount.toString() : amount.toFixed(8).replace(/\.?0+$/, '');
-                    // Нормализуем тикер: убираем префиксы sFB, sBTC и т.д.
-                    let displayTick = op.tick || 'FB';
-                    if (displayTick.includes('sFB') || displayTick === 'sFB___000') displayTick = 'FB';
-                    if (displayTick.includes('sBTC') || displayTick === 'sBTC___000') displayTick = 'BTC';
-                    if (displayTick.includes('FENNEC')) displayTick = 'FENNEC';
-                    return `
-                                                                                                                                <div class="bg-black/30 border border-white/5 rounded-lg p-4 mb-2">
-                                                                                                                                    <div class="flex items-center justify-between">
-                                                                                                                                        <div class="flex items-center gap-3">
-                                                                                                                                            <i class="fas fa-arrow-up text-fennec text-xl"></i>
-                                                                                                                                           <div>
-                                                                                                                                                <div class="text-sm font-bold text-white">Withdraw ${__escapeHtml(amountStr)} ${__escapeHtml(displayTick)}</div>
-                                                                                                                                                <div class="text-xs text-gray-400">${cur}/${sum} confirmations</div>
-                                                                                                                                            </div>
-                                                                                                                                        </div>
-                                                                                                                                        <div class="text-right">
-                                                                                                                                            <div class="text-xs font-bold text-fennec">${percent}%</div>
-                                                                                                                                            <div class="w-20 bg-white/10 rounded-full h-2 mt-1">
-                                                                                                                                                <div class="bg-fennec h-2 rounded-full" style="width: ${percent}%"></div>
-                                                                                                                                            </div>
-                                                                                                                                        </div>
-                                                                                                                                    </div>
-                                                                                                                                </div>
-                                                                                                                            `;
-                })
-                .join('');
-        }
-
-        pendingEl.innerHTML = html;
-
-        pendingEl.querySelectorAll('.open-mint-html').forEach(btn => {
-            btn.addEventListener('click', event => {
-                event.stopPropagation();
-                const orderId = btn.dataset.orderId;
-                if (!orderId) return;
-                const pendingOps = JSON.parse(localStorage.getItem('pending_operations') || '[]');
-                const op = pendingOps.find(o => o.type === 'mint' && o.orderId === orderId);
-                const htmlCode = op && op.htmlCode ? op.htmlCode : '';
-                if (!htmlCode) return;
-                const blob = new Blob([htmlCode], { type: 'text/html' });
-                const url = URL.createObjectURL(blob);
-                window.open(url, '_blank');
-                setTimeout(() => {
-                    try {
-                        URL.revokeObjectURL(url);
-                    } catch (e) {}
-                }, 60000);
-            });
-        });
-    } catch (e) {
-        console.error('Error refreshing pending operations:', e);
-        pendingEl.innerHTML = `
-                                                                                                                        <div class="text-center py-8 text-red-500 text-xs">
-                                                                                                                            <i class="fas fa-exclamation-triangle text-3xl mb-3"></i>
-                                                                                                                            <p>Error loading pending operations</p>
-                                                                                                                        </div>
-                                                                                                                    `;
-    }
-}
-
-function __legacy_switchDir() {
-    isBuying = !isBuying;
-    document.getElementById('swapIn').value = '';
-    document.getElementById('swapOut').value = '';
-    updateUI();
-}
-
-// switchDir is now imported as module
-
-// Set swap pair (FB_FENNEC or BTC_FB)
-function __legacy_setSwapPair(pair) {
-    currentSwapPair = pair;
-    isBuying = true; // Reset direction
-    document.getElementById('swapIn').value = '';
-    document.getElementById('swapOut').value = '';
-
-    // Update button states (новые ID из предоставленного HTML)
-    const pairFB = document.getElementById('pair-fb-fennec');
-    const pairBTC = document.getElementById('pair-btc-fb');
-    if (pairFB) {
-        pairFB.className =
-            pair === 'FB_FENNEC'
-                ? 'flex-1 py-2 text-xs font-bold border border-fennec bg-fennec/10 text-fennec rounded-lg transition'
-                : 'flex-1 py-2 text-xs font-bold border border-white/10 text-gray-500 hover:text-white rounded-lg transition';
-    }
-    if (pairBTC) {
-        pairBTC.className =
-            pair === 'BTC_FB'
-                ? 'flex-1 py-2 text-xs font-bold border border-fennec bg-fennec/10 text-fennec rounded-lg transition'
-                : 'flex-1 py-2 text-xs font-bold border border-white/10 text-gray-500 hover:text-white rounded-lg transition';
-    }
-    // Старые ID для совместимости
-    const oldPairFB = document.getElementById('swap-pair-fb-fennec');
-    const oldPairBTC = document.getElementById('swap-pair-btc-fb');
-    if (oldPairFB) {
-        oldPairFB.className =
-            pair === 'FB_FENNEC'
-                ? 'flex-1 py-2 rounded-lg text-xs font-bold border transition cursor-pointer border-fennec text-fennec bg-fennec/10'
-                : 'flex-1 py-2 rounded-lg text-xs font-bold border transition cursor-pointer border-gray-700 text-gray-500 hover:text-white';
-    }
-    if (oldPairBTC) {
-        oldPairBTC.className =
-            pair === 'BTC_FB'
-                ? 'flex-1 py-2 rounded-lg text-xs font-bold border transition cursor-pointer border-fennec text-fennec bg-fennec/10'
-                : 'flex-1 py-2 rounded-lg text-xs font-bold border transition cursor-pointer border-gray-700 text-gray-500 hover:text-white';
-    }
-
-    // Update activeTickers based on pair
-    if (pair === 'FB_FENNEC') {
-        activeTickers.tick0 = T_SFB;
-        activeTickers.tick1 = T_FENNEC;
-    } else if (pair === 'BTC_FB') {
-        // Для пула используем правильные тикеры InSwap
-        activeTickers.tick0 = T_SBTC;
-        activeTickers.tick1 = T_SFB;
-    }
-
-    updateUI();
-    fetchReserves(); // Загружаем резервы выбранного пула
-
-    // Обновляем историю свапов для выбранной пары
-    if (userAddress) {
-        setTimeout(refreshTransactionHistory, 500);
-    }
-}
-
-// setSwapPair is now imported as module
-
-function __legacy_setMaxAmount() {
-    if (!userAddress) return window.connectWallet();
-    let bal;
-    if (currentSwapPair === 'FB_FENNEC') {
-        bal = isBuying ? userBalances.sFB : userBalances.FENNEC;
-    } else {
-        // BTC_FB
-        bal = isBuying ? poolReserves.user_sBTC || 0 : userBalances.sFB;
-    }
-    if (bal > 0) {
-        let feeBuffer = 0;
-        if (currentSwapPair === 'FB_FENNEC' && isBuying) feeBuffer = 0.05;
-        const maxAmount = Math.max(0, bal - feeBuffer);
-        if (maxAmount <= 0) {
-            if (typeof showNotification === 'function') {
-                showNotification('Not enough FB after reserving 0.05 for fees', 'warning', 2500);
-            }
-            return;
-        }
-        document.getElementById('swapIn').value = maxAmount.toFixed(8);
-        calc();
-    }
-}
-
-// setMaxAmount is now imported as module
-
-function triggerSwapSuccessFx() {
-    const btn = document.getElementById('swapBtn');
-    if (btn) {
-        btn.classList.remove('swap-success-pulse');
-        void btn.offsetWidth;
-        btn.classList.add('swap-success-pulse');
-    }
-
-    const overlay = document.getElementById('swapSuccessOverlay');
-    if (overlay) {
-        overlay.classList.remove('swap-success-overlay');
-        overlay.style.display = 'flex';
-        void overlay.offsetWidth;
-        overlay.classList.add('swap-success-overlay');
-        setTimeout(() => {
-            overlay.style.display = 'none';
-            overlay.classList.remove('swap-success-overlay');
-        }, 980);
-    }
-}
-
-function openAddLiquidityFromSwap() {
-    const pair = typeof currentSwapPair === 'string' && currentSwapPair === 'BTC_FB' ? 'BTC_FB' : 'FB_FENNEC';
-    openAddLiquidityModal(pair);
-}
-
-function __legacy_closeAddLiquidityModal() {
-    const modal = document.getElementById('addLiquidityModal');
-    if (modal) modal.classList.add('hidden');
-    // Reset to Add tab
-    switchLiquidityTab('add');
-}
-
-function __legacy_switchLiquidityTab(tab) {
-    const addContent = document.getElementById('liqAddContent');
-    const removeContent = document.getElementById('liqRemoveContent');
-    const addTab = document.getElementById('liqTabAdd');
-    const removeTab = document.getElementById('liqTabRemove');
-
-    if (tab === 'add') {
-        if (addContent) addContent.classList.remove('hidden');
-        if (removeContent) removeContent.classList.add('hidden');
-        if (addTab) {
-            addTab.className =
-                'flex-1 px-4 py-2 rounded-xl bg-fennec/15 border border-fennec/30 text-white font-black transition';
-        }
-        if (removeTab) {
-            removeTab.className =
-                'flex-1 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-gray-400 font-black transition';
-        }
-    } else if (tab === 'remove') {
-        if (addContent) addContent.classList.add('hidden');
-        if (removeContent) removeContent.classList.remove('hidden');
-        if (addTab) {
-            addTab.className =
-                'flex-1 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-gray-400 font-black transition';
-        }
-        if (removeTab) {
-            removeTab.className =
-                'flex-1 px-4 py-2 rounded-xl bg-fennec/15 border border-fennec/30 text-white font-black transition';
-        }
-        // Load LP data when switching to remove tab
-        const ctx = window.__liqWithdrawCtx || null;
-        const lpBalEl = document.getElementById('removeLpBalance');
-        if (lpBalEl) {
-            const lpAvail = Number(ctx?.lp || 0) || 0;
-            lpBalEl.textContent = lpAvail > 0 ? lpAvail.toString() : '--';
-        }
-        const inp = document.getElementById('removeLpAmount');
-        if (inp) {
-            inp.value = '';
-            inp.addEventListener('input', updateRemoveLiquidityEstimate);
-        }
-        const recv = document.getElementById('removeReceive');
-        if (recv) recv.textContent = '--';
-        const btn = document.getElementById('removeLiqBtn');
-        if (btn) {
-            btn.disabled = true;
-            btn.className =
-                'mt-3 w-full bg-gradient-to-r from-fennec to-orange-400 text-black font-black text-base py-3 rounded-xl hover:brightness-110 transition opacity-50 cursor-not-allowed';
-        }
-    }
-}
-
-async function __legacy_openAddLiquidityModal(pair) {
-    if (!userAddress) {
-        try {
-            await window.connectWallet();
-        } catch (_) {}
-        if (!userAddress) return;
-    }
-
-    const modal = document.getElementById('addLiquidityModal');
-    if (modal) modal.classList.remove('hidden');
-
-    try {
-        switchLiquidityTab('add');
-    } catch (_) {}
-
-    const p = pair === 'BTC_FB' ? 'BTC_FB' : 'FB_FENNEC';
-
-    // Update fixed pair display
-    const fixedDisplay = document.getElementById('liqFixedPairDisplay');
-    if (fixedDisplay) {
-        fixedDisplay.textContent = p === 'BTC_FB' ? 'BTC / FB' : 'FB / FENNEC';
-    }
-
-    const el0 = document.getElementById('liqAmount0');
-    const el1 = document.getElementById('liqAmount1');
-    const btn = document.getElementById('liqSupplyBtn');
-    if (el0) el0.disabled = true;
-    if (el1) el1.disabled = true;
-    if (btn) btn.disabled = true;
-    try {
-        await selectLiquidityPair(p);
+        const p = String(window.location && window.location.pathname ? window.location.pathname : '').toLowerCase();
+        return p.endsWith('/terminal.html') || p.endsWith('terminal.html');
     } catch (_) {
-        try {
-            currentLiquidityPair = p;
-            await loadLiquidityPoolData(currentLiquidityPair);
-            updateLiquidityBalancesUI();
-        } catch (_) {}
+        return false;
     }
-
-    if (el0) el0.disabled = false;
-    if (el1) el1.disabled = false;
-    if (btn) btn.disabled = false;
-
-    try {
-        const v0 = Number(el0?.value || 0);
-        const v1 = Number(el1?.value || 0);
-        if (v0 > 0) syncLiquidityAmounts(0);
-        else if (v1 > 0) syncLiquidityAmounts(1);
-    } catch (_) {}
-
-    try {
-        refreshMyLiquidityForSelectedPair(false);
-    } catch (_) {}
-
-    try {
-        if (el0) setTimeout(() => el0.focus(), 50);
-    } catch (_) {}
-}
-
-let currentLiquidityPair = 'FB_FENNEC';
-let __liqSyncGuard = false;
-let liquidityPoolData = {
-    pair: 'FB_FENNEC',
-    apiTick0: T_FENNEC,
-    apiTick1: T_SFB,
-    apiReserve0: 0,
-    apiReserve1: 0,
-    uiReserve0: 0,
-    uiReserve1: 0,
-    poolLp: 0
 };
 
 try {
-    if (typeof window.currentLiquidityPair === 'string' && window.currentLiquidityPair)
-        currentLiquidityPair = window.currentLiquidityPair;
-} catch (_) {}
-try {
-    Object.defineProperty(window, 'currentLiquidityPair', {
-        get: () => currentLiquidityPair,
-        set: v => {
-            currentLiquidityPair = String(v || '');
-        },
-        configurable: true
-    });
-} catch (_) {
-    try {
-        window.currentLiquidityPair = currentLiquidityPair;
-    } catch (_) {}
-}
+    if (!window.__fennecWalletRestoreBoot && window.__fennecEnableAutoRestore === true) {
+        window.__fennecWalletRestoreBoot = true;
 
-try {
-    if (window.liquidityPoolData && typeof window.liquidityPoolData === 'object')
-        liquidityPoolData = window.liquidityPoolData;
-} catch (_) {}
-try {
-    Object.defineProperty(window, 'liquidityPoolData', {
-        get: () => liquidityPoolData,
-        set: v => {
-            liquidityPoolData = v;
-        },
-        configurable: true
-    });
-} catch (_) {
-    try {
-        window.liquidityPoolData = liquidityPoolData;
-    } catch (_) {}
-}
+        const __attemptRestore = async () => {
+            try {
+                if (localStorage.getItem('fennec_wallet_manual_disconnect') === '1') return true;
+            } catch (_) {}
 
-function __extractPoolInfoData(json) {
-    if (!json) return null;
-    if (json.data && json.data.tick0) return json.data;
-    if (json.pool && json.pool.tick0) return json.pool;
-    if (json.data && Array.isArray(json.data.list) && json.data.list.length > 0) return json.data.list[0];
-    return null;
-}
+            try {
+                const addrNow = String(window.userAddress || userAddress || '').trim();
+                if (addrNow) return true;
+            } catch (_) {}
 
-function __extractPoolLp(data) {
-    const candidates = [
-        data?.poolLp,
-        data?.poolLP,
-        data?.pool_lp,
-        data?.lp,
-        data?.lpSupply,
-        data?.poolLpSupply,
-        data?.poolLpAmount,
-        data?.pool_lp_supply
-    ];
-    for (const v of candidates) {
-        const n = Number(v);
-        if (Number.isFinite(n) && n > 0) return n;
-    }
-    return 0;
-}
+            try {
+                if (typeof window.unisat === 'undefined') return false;
+            } catch (_) {}
 
-async function __legacy_loadLiquidityPoolData(pair) {
-    const p = pair === 'BTC_FB' ? 'BTC_FB' : 'FB_FENNEC';
-    const queryTick0 = p === 'BTC_FB' ? T_SBTC : T_FENNEC;
-    const queryTick1 = T_SFB;
-
-    try {
-        const now = Date.now();
-        const url = `${BACKEND_URL}?action=quote&tick0=${encodeURIComponent(queryTick0)}&tick1=${encodeURIComponent(queryTick1)}&t=${now}`;
-        const json = await safeFetchJson(url, { timeoutMs: 12000, retries: 2 });
-        const data = __extractPoolInfoData(json);
-        if (!data) return;
-
-        const apiTick0 = data.tick0 || queryTick0;
-        const apiTick1 = data.tick1 || queryTick1;
-        const apiReserve0 = Number(data.amount0 || 0) || 0;
-        const apiReserve1 = Number(data.amount1 || 0) || 0;
-        const poolLp = __extractPoolLp(data);
-
-        let uiReserve0 = 0;
-        let uiReserve1 = 0;
-
-        if (p === 'FB_FENNEC') {
-            const isApi0Fennec = (apiTick0 || '').toString().toUpperCase().includes('FENNEC');
-            uiReserve0 = isApi0Fennec ? apiReserve0 : apiReserve1; // UI0 = FENNEC
-            uiReserve1 = isApi0Fennec ? apiReserve1 : apiReserve0; // UI1 = FB
-        } else {
-            const isApi0Btc = (apiTick0 || '').toString().toUpperCase().includes('SBTC');
-            uiReserve0 = isApi0Btc ? apiReserve0 : apiReserve1; // UI0 = BTC
-            uiReserve1 = isApi0Btc ? apiReserve1 : apiReserve0; // UI1 = FB
-        }
-
-        liquidityPoolData = {
-            pair: p,
-            apiTick0,
-            apiTick1,
-            apiReserve0,
-            apiReserve1,
-            uiReserve0,
-            uiReserve1,
-            poolLp
+            try {
+                if (typeof window.tryRestoreWalletSession !== 'function') return false;
+                const ok = await window.tryRestoreWalletSession();
+                return !!ok;
+            } catch (_) {}
+            return false;
         };
-    } catch (e) {
-        console.error('loadLiquidityPoolData failed:', e);
-    }
-}
 
-async function __legacy_selectLiquidityPair(pair) {
-    currentLiquidityPair = pair === 'BTC_FB' ? 'BTC_FB' : 'FB_FENNEC';
-    const btn0 = document.getElementById('liqPairFBF');
-    const btn1 = document.getElementById('liqPairBFB');
-    if (btn0 && btn1) {
-        btn0.className =
-            currentLiquidityPair === 'FB_FENNEC'
-                ? 'px-4 py-3 rounded-xl bg-fennec/10 border border-fennec/25 text-white font-black hover:bg-fennec/15 hover:border-fennec/45 transition'
-                : 'px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white font-black hover:bg-white/10 hover:border-white/20 transition';
-        btn1.className =
-            currentLiquidityPair === 'BTC_FB'
-                ? 'px-4 py-3 rounded-xl bg-fennec/10 border border-fennec/25 text-white font-black hover:bg-fennec/15 hover:border-fennec/45 transition'
-                : 'px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white font-black hover:bg-white/10 hover:border-white/20 transition';
-    }
-
-    const tick0El = document.getElementById('liqTick0Label');
-    const tick1El = document.getElementById('liqTick1Label');
-    if (tick0El && tick1El) {
-        if (currentLiquidityPair === 'FB_FENNEC') {
-            tick0El.innerText = 'FENNEC';
-            tick1El.innerText = 'FB';
-        } else {
-            tick0El.innerText = 'BTC';
-            tick1El.innerText = 'FB';
-        }
-    }
-
-    await loadLiquidityPoolData(currentLiquidityPair);
-    updateLiquidityBalancesUI();
-    syncLiquidityAmounts(0);
-    refreshMyLiquidityForSelectedPair(false);
-}
-
-let __myLiqCache = null;
-let __myLiqCacheAt = 0;
-
-async function __legacy_fetchMyLiquiditySummary(force) {
-    if (!userAddress) return null;
-    const now = Date.now();
-    if (!force && __myLiqCache && now - __myLiqCacheAt < 15000) return __myLiqCache;
-    try {
-        const pubkey = typeof userPubkey === 'string' && userPubkey ? userPubkey : '';
-        const url = pubkey
-            ? `${BACKEND_URL}?action=inswap_summary&address=${encodeURIComponent(userAddress)}&pubkey=${encodeURIComponent(pubkey)}&t=${now}`
-            : `${BACKEND_URL}?action=inswap_summary&address=${encodeURIComponent(userAddress)}&t=${now}`;
-        const json = await safeFetchJson(url, { timeoutMs: 15000, retries: 1 });
-        const data = json && typeof json === 'object' ? json.data || null : null;
-        __myLiqCache = data;
-        __myLiqCacheAt = now;
-        return data;
-    } catch (_) {
-        return __myLiqCache;
-    }
-}
-
-function __normalizeTickLabel(tick) {
-    const t = String(tick || '').toUpperCase();
-    if (t.includes('FENNEC')) return 'FENNEC';
-    if (t.includes('SBTC') || t === 'BTC') return 'BTC';
-    if (t.includes('SFB') || t === 'FB') return 'FB';
-    return String(tick || '');
-}
-
-function __poolMatchesPair(pool, pair) {
-    const a = String(pool?.tick0 || '').toUpperCase();
-    const b = String(pool?.tick1 || '').toUpperCase();
-    const hasFennec = a.includes('FENNEC') || b.includes('FENNEC');
-    const hasFB =
-        a.includes('SFB') ||
-        b.includes('SFB') ||
-        a === 'FB' ||
-        b === 'FB' ||
-        a === 'SFB___000' ||
-        b === 'SFB___000' ||
-        a.includes('FB') ||
-        b.includes('FB');
-    const hasBTC =
-        a.includes('SBTC') ||
-        b.includes('SBTC') ||
-        a === 'BTC' ||
-        b === 'BTC' ||
-        a === 'SBTC___000' ||
-        b === 'SBTC___000' ||
-        a.includes('BTC') ||
-        b.includes('BTC');
-    if (pair === 'FB_FENNEC') return hasFennec && hasFB;
-    if (pair === 'BTC_FB') return hasBTC && hasFB;
-    return false;
-}
-
-function __formatMaybeNum(v) {
-    const n = Number(v);
-    if (!Number.isFinite(n)) return null;
-    return Math.abs(n) >= 1e8 ? n.toExponential(3) : Math.abs(n) >= 1 ? n.toFixed(6) : n.toFixed(10);
-}
-
-function __escapeHtml(s) {
-    return String(s)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
-}
-
-function __collectEarningFields(obj) {
-    const out = { claimed: [], unclaimed: [] };
-    if (!obj || typeof obj !== 'object') return out;
-    const keys = Object.keys(obj);
-    for (const k of keys) {
-        const lk = k.toLowerCase();
-        const v = obj[k];
-        if (v === null || v === undefined) continue;
-        const numStr = __formatMaybeNum(v);
-        if (!numStr) continue;
-        if (
-            lk.includes('unclaimed') ||
-            lk.includes('unclaim') ||
-            lk.includes('claimable') ||
-            lk.includes('pending') ||
-            lk.includes('owed')
-        ) {
-            out.unclaimed.push({ k, v: numStr });
-            continue;
-        }
-        if (lk.includes('claimed')) {
-            out.claimed.push({ k, v: numStr });
-            continue;
-        }
-    }
-    return out;
-}
-
-function __prettyRewardLabel(key, tick0, tick1) {
-    const k = String(key || '');
-    const lk = k.toLowerCase();
-    const isUnclaimed = lk.includes('unclaimed') || lk.includes('unclaim') || lk.includes('claimable');
-    const idx = lk.endsWith('0') ? 0 : lk.endsWith('1') ? 1 : null;
-    const t = idx === 0 ? String(tick0 || '') : idx === 1 ? String(tick1 || '') : '';
-    const base = isUnclaimed ? 'Claimable rewards' : 'Claimed rewards';
-    return t ? `${base} (${t})` : base;
-}
-
-async function __legacy_refreshMyLiquidityForSelectedPair(force) {
-    const box = document.getElementById('liqMyPos');
-    const body = document.getElementById('liqMyPosBody');
-    const withdrawBox = document.getElementById('liqWithdrawPanel');
-    if (!box || !body) return;
-
-    if (!userAddress) {
-        box.classList.add('hidden');
-        if (withdrawBox) withdrawBox.classList.add('hidden');
-        window.__liqWithdrawCtx = null;
-        return;
-    }
-
-    try {
-        window.__fennecUiCache =
-            window.__fennecUiCache && typeof window.__fennecUiCache === 'object'
-                ? window.__fennecUiCache
-                : { historyHtml: {}, inscriptionsHtml: {}, liquidityHtml: {} };
-    } catch (_) {}
-
-    try {
-        const key = `liq:${String(userAddress || '').trim()}:${String(currentLiquidityPair || '').trim()}`;
-        const cached = window.__fennecUiCache?.liquidityHtml?.[key];
-        if (!force && cached) {
-            body.innerHTML = String(cached);
-        } else {
-            body.innerHTML = '<div class="text-[10px] text-gray-500 font-mono">Loading...</div>';
-        }
-    } catch (_) {
-        body.innerHTML = '<div class="text-[10px] text-gray-500 font-mono">Loading...</div>';
-    }
-    box.classList.remove('hidden');
-    if (withdrawBox) withdrawBox.classList.add('hidden');
-
-    const data = await fetchMyLiquiditySummary(!!force);
-    if (!data) {
-        body.innerHTML =
-            '<div class="text-[10px] text-gray-500 font-mono">Liquidity data unavailable. Try Refresh.</div>';
-        if (withdrawBox) withdrawBox.classList.add('hidden');
-        window.__liqWithdrawCtx = null;
-        return;
-    }
-    const list = data && Array.isArray(data.lp_list) ? data.lp_list : [];
-
-    const pair = currentLiquidityPair === 'BTC_FB' ? 'BTC_FB' : 'FB_FENNEC';
-    const pools = list.filter(p => __poolMatchesPair(p, pair));
-
-    if (!pools.length) {
-        body.innerHTML = '<div class="text-[10px] text-gray-500 font-mono">No liquidity found for this pair.</div>';
-        if (withdrawBox) withdrawBox.classList.add('hidden');
-        window.__liqWithdrawCtx = null;
-        return;
-    }
-
-    let uiAmt0 = 0;
-    let uiAmt1 = 0;
-    let share = 0;
-    let lp = 0;
-    const uiTick0 = pair === 'BTC_FB' ? 'BTC' : 'FENNEC';
-    const uiTick1 = 'FB';
-
-    for (const p of pools) {
-        const a0 = Number(p.amount0 || 0) || 0;
-        const a1 = Number(p.amount1 || 0) || 0;
-        const api0 = String(p.tick0 || '').toUpperCase();
-        if (pair === 'FB_FENNEC') {
-            const api0IsFennec = api0.includes('FENNEC');
-            uiAmt0 += api0IsFennec ? a0 : a1;
-            uiAmt1 += api0IsFennec ? a1 : a0;
-        } else {
-            const api0IsBtc = api0.includes('SBTC') || api0 === 'BTC' || api0.includes('BTC');
-            uiAmt0 += api0IsBtc ? a0 : a1;
-            uiAmt1 += api0IsBtc ? a1 : a0;
-        }
-        share += Number(p.shareOfPool || p.share || 0) || 0;
-        lp += Number(p.lp || p.liq || p.liquidity || 0) || 0;
-    }
-
-    const lpStr = lp ? __formatMaybeNum(lp) || String(lp) : '--';
-    const shareStr = share ? __formatMaybeNum(share) || String(share) : '--';
-
-    body.innerHTML = `
-                                                                                                                    <div class="grid grid-cols-2 gap-3">
-                                                                                                                        <div class="bg-white/5 border border-white/10 rounded-xl p-3">
-                                                                                                                            <div class="text-[10px] text-gray-400 font-bold uppercase tracking-widest">${uiTick0}</div>
-                                                                                                                            <div class="mt-1 text-white text-base font-black">${__escapeHtml(__formatMaybeNum(uiAmt0) || '0')}</div>
-                                                                                                                        </div>
-                                                                                                                        <div class="bg-white/5 border border-white/10 rounded-xl p-3">
-                                                                                                                            <div class="text-[10px] text-gray-400 font-bold uppercase tracking-widest">${uiTick1}</div>
-                                                                                                                            <div class="mt-1 text-white text-base font-black">${__escapeHtml(__formatMaybeNum(uiAmt1) || '0')}</div>
-                                                                                                                        </div>
-                                                                                                                    </div>
-
-                                                                                                                    <div class="mt-3 grid grid-cols-2 gap-3 text-[10px] font-mono">
-                                                                                                                        <div class="text-gray-400">LP: <span class="text-white font-bold">${__escapeHtml(lpStr)}</span></div>
-                                                                                                                        <div class="text-gray-400 text-right">Share: <span class="text-white font-bold">${__escapeHtml(shareStr)}</span></div>
-                                                                                                                    </div>
-                                                                                                                `;
-
-    try {
-        const key = `liq:${String(userAddress || '').trim()}:${String(currentLiquidityPair || '').trim()}`;
-        if (window.__fennecUiCache && window.__fennecUiCache.liquidityHtml) {
-            window.__fennecUiCache.liquidityHtml[key] = String(body.innerHTML || '');
-        }
-    } catch (_) {}
-
-    try {
-        const cfg = typeof getLiquidityConfig === 'function' ? getLiquidityConfig() : null;
-        window.__liqWithdrawCtx = {
-            pair,
-            uiTick0,
-            uiTick1,
-            apiTick0: cfg?.apiTick0 || pools[0]?.tick0 || '',
-            apiTick1: cfg?.apiTick1 || pools[0]?.tick1 || '',
-            lp: Number(lp || 0) || 0
+        const __startRestoreOnce = () => {
+            try {
+                __attemptRestore().catch(() => false);
+            } catch (_) {}
         };
-    } catch (_) {
-        window.__liqWithdrawCtx = null;
-    }
 
-    if (withdrawBox) withdrawBox.classList.add('hidden');
-}
-
-async function __legacy_openRemoveLiquidityModal() {
-    if (!userAddress) {
         try {
-            await window.connectWallet();
-        } catch (_) {}
-        if (!userAddress) return;
-    }
-    const modal = document.getElementById('addLiquidityModal');
-    if (!modal) return;
-    modal.classList.remove('hidden');
-    // Switch to Remove tab
-    switchLiquidityTab('remove');
-}
-
-function __legacy_closeRemoveLiquidityModal() {
-    const modal = document.getElementById('removeLiquidityModal');
-    if (modal) modal.classList.add('hidden');
-}
-
-function __legacy_setMaxRemoveLp() {
-    const ctx = window.__liqWithdrawCtx || null;
-    const lpAvail = Number(ctx?.lp || 0) || 0;
-    const inp = document.getElementById('removeLpAmount');
-    if (!inp) return;
-    inp.value = lpAvail ? __normalizeAmountStr(lpAvail, 8) : '';
-    updateRemoveLiquidityEstimate();
-}
-
-let __removeQuoteTimeout = null;
-async function __legacy_updateRemoveLiquidityEstimate() {
-    clearTimeout(__removeQuoteTimeout);
-    const inp = document.getElementById('removeLpAmount');
-    const recv = document.getElementById('removeReceive');
-    const btn = document.getElementById('removeLiqBtn');
-    const ctx = window.__liqWithdrawCtx || null;
-
-    if (!inp || !recv || !ctx) return;
-
-    const lpVal = Number(inp.value || 0) || 0;
-    if (!lpVal || lpVal <= 0) {
-        recv.textContent = '--';
-        if (btn) {
-            btn.disabled = true;
-            btn.classList.add('opacity-50', 'cursor-not-allowed');
-        }
-        return;
-    }
-
-    recv.textContent = 'Loading...';
-    if (btn) {
-        btn.disabled = true;
-        btn.classList.add('opacity-50', 'cursor-not-allowed');
-    }
-
-    __removeQuoteTimeout = setTimeout(async () => {
-        try {
-            const lpStr = __normalizeAmountStr(lpVal, 8);
-            const qUrl =
-                `${BACKEND_URL}?action=quote_remove_liq` +
-                `&address=${encodeURIComponent(userAddress)}` +
-                `&tick0=${encodeURIComponent(ctx.apiTick0)}` +
-                `&tick1=${encodeURIComponent(ctx.apiTick1)}` +
-                `&lp=${encodeURIComponent(lpStr)}`;
-            const q = await fetch(qUrl, {
-                headers: {
-                    'x-public-key': userPubkey,
-                    'x-address': userAddress
-                },
-                cache: 'no-store'
-            }).then(r => r.json());
-
-            if (q && q.code === 0 && q.data) {
-                const amount0Str = String(q.data.amount0 || q.data.amt0 || '').trim();
-                const amount1Str = String(q.data.amount1 || q.data.amt1 || '').trim();
-                if (amount0Str && amount1Str) {
-                    let uiAmt0 = amount0Str;
-                    let uiAmt1 = amount1Str;
-                    if (ctx.pair === 'FB_FENNEC') {
-                        const api0 = String(ctx.apiTick0 || '').toUpperCase();
-                        const api0IsFennec = api0.includes('FENNEC');
-                        uiAmt0 = api0IsFennec ? amount0Str : amount1Str;
-                        uiAmt1 = api0IsFennec ? amount1Str : amount0Str;
-                    } else {
-                        const api0 = String(ctx.apiTick0 || '').toUpperCase();
-                        const api0IsBtc = api0.includes('SBTC') || api0 === 'BTC' || api0.includes('BTC');
-                        uiAmt0 = api0IsBtc ? amount0Str : amount1Str;
-                        uiAmt1 = api0IsBtc ? amount1Str : amount0Str;
-                    }
-                    // Округлить до 2 знаков после запятой
-                    const amt0Rounded = Number(uiAmt0).toFixed(2);
-                    const amt1Rounded = Number(uiAmt1).toFixed(2);
-                    recv.textContent = `${ctx.uiTick0}: ${amt0Rounded}   |   ${ctx.uiTick1}: ${amt1Rounded}`;
-                    if (btn) {
-                        btn.disabled = false;
-                        btn.classList.remove('opacity-50', 'cursor-not-allowed');
-                    }
-                    return;
-                }
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', () => setTimeout(__startRestoreOnce, 0), { once: true });
+            } else {
+                setTimeout(__startRestoreOnce, 0);
             }
-            recv.textContent = 'Quote failed';
-        } catch (e) {
-            recv.textContent = 'Error';
+        } catch (_) {
+            setTimeout(__startRestoreOnce, 0);
         }
+    }
+} catch (_) {}
+
+let __debounceQuoteTimer = null;
+let __debounceReverseTimer = null;
+function debounceQuote() {
+    try {
+        if (__debounceQuoteTimer) clearTimeout(__debounceQuoteTimer);
+    } catch (_) {}
+    __debounceQuoteTimer = setTimeout(() => {
+        try {
+            calc();
+        } catch (_) {}
     }, 500);
 }
-
-async function __legacy_doRemoveLiquidity() {
-    if (!userAddress) return window.connectWallet();
-
-    const btn = document.getElementById('removeLiqBtn');
-    const originalText = btn ? btn.innerText : '';
-    try {
-        await checkFractalNetwork();
-
-        if (!userPubkey)
-            try {
-                userPubkey = await window.unisat.getPublicKey();
-            } catch (_) {}
-
-        const ctx = window.__liqWithdrawCtx || null;
-        if (!ctx || !ctx.apiTick0 || !ctx.apiTick1) throw new Error('No liquidity context');
-
-        const inp = document.getElementById('removeLpAmount');
-        const lpVal = Number(inp?.value || 0) || 0;
-        if (!lpVal || lpVal <= 0) throw new Error('Enter LP amount');
-
-        const lpStr = __normalizeAmountStr(lpVal, 8);
-        if (!lpStr || Number(lpStr) <= 0) throw new Error('Invalid LP amount');
-        if (ctx.lp && lpVal > Number(ctx.lp || 0) * 1.0000001) throw new Error('LP amount exceeds your position');
-
-        if (btn) {
-            btn.disabled = true;
-            btn.innerText = 'QUOTING…';
-        }
-
-        const qUrl =
-            `${BACKEND_URL}?action=quote_remove_liq` +
-            `&address=${encodeURIComponent(userAddress)}` +
-            `&tick0=${encodeURIComponent(ctx.apiTick0)}` +
-            `&tick1=${encodeURIComponent(ctx.apiTick1)}` +
-            `&lp=${encodeURIComponent(lpStr)}`;
-        const q = await fetch(qUrl, {
-            headers: {
-                'x-public-key': userPubkey,
-                'x-address': userAddress
-            },
-            cache: 'no-store'
-        }).then(r => r.json());
-        if (!q || q.code !== 0 || !q.data) throw new Error(q?.msg || q?.error || 'quote_remove_liq failed');
-
-        const amount0Str = String(q.data.amount0 || q.data.amt0 || '').trim();
-        const amount1Str = String(q.data.amount1 || q.data.amt1 || '').trim();
-        if (!amount0Str || !amount1Str) throw new Error('quote_remove_liq returned empty amounts');
-
-        try {
-            const recv = document.getElementById('removeReceive');
-            if (recv) {
-                let uiAmt0 = amount0Str;
-                let uiAmt1 = amount1Str;
-                if (ctx.pair === 'FB_FENNEC') {
-                    const api0 = String(ctx.apiTick0 || '').toUpperCase();
-                    const api0IsFennec = api0.includes('FENNEC');
-                    uiAmt0 = api0IsFennec ? amount0Str : amount1Str;
-                    uiAmt1 = api0IsFennec ? amount1Str : amount0Str;
-                } else {
-                    const api0 = String(ctx.apiTick0 || '').toUpperCase();
-                    const api0IsBtc = api0.includes('SBTC') || api0 === 'BTC' || api0.includes('BTC');
-                    uiAmt0 = api0IsBtc ? amount0Str : amount1Str;
-                    uiAmt1 = api0IsBtc ? amount1Str : amount0Str;
-                }
-                recv.textContent = `${ctx.uiTick0}: ${uiAmt0}   |   ${ctx.uiTick1}: ${uiAmt1}`;
-            }
-        } catch (_) {}
-
-        const ts = Math.floor(Date.now() / 1000);
-        const feeTick = T_SFB;
-        const payType = 'tick';
-        const slippage = '0.05';
-
-        if (btn) btn.innerText = 'PREPARING…';
-        const preUrl =
-            `${BACKEND_URL}?action=pre_remove_liq` +
-            `&address=${encodeURIComponent(userAddress)}` +
-            `&tick0=${encodeURIComponent(ctx.apiTick0)}` +
-            `&tick1=${encodeURIComponent(ctx.apiTick1)}` +
-            `&amount0=${encodeURIComponent(amount0Str)}` +
-            `&amount1=${encodeURIComponent(amount1Str)}` +
-            `&lp=${encodeURIComponent(lpStr)}` +
-            `&slippage=${encodeURIComponent(slippage)}` +
-            `&ts=${encodeURIComponent(ts)}` +
-            `&feeTick=${encodeURIComponent(feeTick)}` +
-            `&payType=${encodeURIComponent(payType)}`;
-        const pre = await fetch(preUrl, {
-            headers: {
-                'x-public-key': userPubkey,
-                'x-address': userAddress
-            },
-            cache: 'no-store'
-        }).then(r => r.json());
-        if (!pre || pre.code !== 0 || !pre.data) throw new Error(pre?.msg || pre?.error || 'pre_remove_liq failed');
-
-        const signMsgs = Array.isArray(pre.data.signMsgs)
-            ? pre.data.signMsgs
-            : pre.data.signMsg
-              ? [pre.data.signMsg]
-              : pre.data.sign_msg
-                ? [pre.data.sign_msg]
-                : pre.data.msg
-                  ? [pre.data.msg]
-                  : [];
-        const msgsToSign = signMsgs
-            .map(m => (typeof m === 'object' ? (m.text ?? m.msg ?? m.message ?? m.signMsg ?? m.sign_msg ?? m.id) : m))
-            .map(m => (m === null || m === undefined ? '' : String(m)))
-            .filter(m => m.length > 0);
-        if (!msgsToSign.length) throw new Error('pre_remove_liq returned empty signMsgs');
-
-        const feeAmount = String(pre.data.feeAmount || pre.data.fee_amount || '').trim();
-        const feeTickPrice = String(pre.data.feeTickPrice || pre.data.fee_tick_price || '').trim();
-        if (!feeAmount || !feeTickPrice) throw new Error('pre_remove_liq returned empty feeAmount/feeTickPrice');
-
-        const sigs = [];
-        for (let i = 0; i < msgsToSign.length; i += 1) {
-            if (btn) btn.innerText = `SIGNING (${i + 1}/${msgsToSign.length})…`;
-            await new Promise(r => setTimeout(r, 250));
-            const sig = await window.unisat.signMessage(msgsToSign[i], 'bip322-simple');
-            sigs.push(sig);
-        }
-
-        if (!Array.isArray(sigs) || sigs.length !== msgsToSign.length || sigs.some(s => !s || typeof s !== 'string')) {
-            throw new Error('Wallet returned invalid signature(s)');
-        }
-
-        if (btn) btn.innerText = 'SUBMITTING…';
-        const body = {
-            address: userAddress,
-            tick0: ctx.apiTick0,
-            tick1: ctx.apiTick1,
-            lp: lpStr,
-            amount0: amount0Str,
-            amount1: amount1Str,
-            slippage,
-            ts,
-            feeTick,
-            feeAmount,
-            feeTickPrice,
-            sigs,
-            payType,
-            rememberPayType: false
-        };
-
-        console.log('Submitting remove_liq with body:', body);
-
-        const sub = await fetch(`${BACKEND_URL}?action=remove_liq`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-public-key': userPubkey,
-                'x-address': userAddress
-            },
-            body: JSON.stringify(body)
-        }).then(r => r.json());
-
-        if (!sub || sub.code !== 0) throw new Error(sub?.msg || sub?.error || 'remove_liq failed');
-
-        showSuccess(`Liquidity withdrawn! ID: ${sub.data?.id || 'OK'}`);
-        if (typeof showNotification === 'function')
-            showNotification('Liquidity withdrawn successfully', 'success', 3200);
-        closeAddLiquidityModal();
-        setTimeout(() => {
-            try {
-                refreshMyLiquidityForSelectedPair(true);
-            } catch (_) {}
-            try {
-                checkBalance();
-            } catch (_) {}
-        }, 1200);
-    } catch (e) {
-        console.error('Remove liquidity error:', e);
-        if (typeof showNotification === 'function') showNotification(e?.message || String(e), 'error', 4500);
-        document.getElementById('errorMsg').innerText = e.message || String(e);
-        document.getElementById('errorModal').classList.remove('hidden');
-    } finally {
-        if (btn) {
-            btn.disabled = false;
-            btn.innerText = originalText;
-        }
-    }
-}
-
-function __legacy_getBalanceForTick(tick) {
-    const t = (tick || '').toString().toUpperCase();
-    if (t.includes('FENNEC')) return Number(userBalances.FENNEC || 0) || 0;
-    if (t.includes('SBTC') || t === 'BTC') return Number(poolReserves.user_sBTC || 0) || 0;
-    if (t.includes('SFB') || t === 'FB') return Number(userBalances.sFB || 0) || 0;
-    return 0;
-}
-
-function __legacy_getLiquidityConfig() {
-    const p = currentLiquidityPair === 'BTC_FB' ? 'BTC_FB' : 'FB_FENNEC';
-    const uiTick0 = p === 'BTC_FB' ? T_SBTC : T_FENNEC;
-    const uiTick1 = T_SFB;
-
-    const apiTick0 = liquidityPoolData?.pair === p ? liquidityPoolData.apiTick0 : uiTick0;
-    const apiTick1 = liquidityPoolData?.pair === p ? liquidityPoolData.apiTick1 : uiTick1;
-    const uiReserve0 = liquidityPoolData?.pair === p ? Number(liquidityPoolData.uiReserve0 || 0) || 0 : 0;
-    const uiReserve1 = liquidityPoolData?.pair === p ? Number(liquidityPoolData.uiReserve1 || 0) || 0 : 0;
-    const poolLp = liquidityPoolData?.pair === p ? Number(liquidityPoolData.poolLp || 0) || 0 : 0;
-
-    const mapUiToApiAmounts = (amountUi0, amountUi1) => {
-        const a0 = Number(amountUi0 || 0) || 0;
-        const a1 = Number(amountUi1 || 0) || 0;
-        if (p === 'FB_FENNEC') {
-            const api0IsFennec = (apiTick0 || '').toString().toUpperCase().includes('FENNEC');
-            return api0IsFennec ? { amount0: a0, amount1: a1 } : { amount0: a1, amount1: a0 };
-        }
-        const api0IsBtc = (apiTick0 || '').toString().toUpperCase().includes('SBTC');
-        return api0IsBtc ? { amount0: a0, amount1: a1 } : { amount0: a1, amount1: a0 };
-    };
-
-    return {
-        label: p === 'BTC_FB' ? 'BTC/FB' : 'FB/FENNEC',
-        pair: p,
-        uiTick0,
-        uiTick1,
-        apiTick0,
-        apiTick1,
-        reserve0: uiReserve0,
-        reserve1: uiReserve1,
-        poolLp,
-        bal0: getBalanceForTick(uiTick0),
-        bal1: getBalanceForTick(uiTick1),
-        mapUiToApiAmounts
-    };
-}
-
-function __legacy_updateLiquidityBalancesUI() {
-    const cfg = getLiquidityConfig();
-    const b0 = document.getElementById('liqBal0');
-    const b1 = document.getElementById('liqBal1');
-    if (b0) b0.innerText = Number(cfg.bal0 || 0).toFixed(8);
-    if (b1) b1.innerText = Number(cfg.bal1 || 0).toFixed(8);
-}
-
-function __toFixedTrim(num, maxDecimals) {
-    const n = Number(num);
-    if (!Number.isFinite(n)) return '';
-    const d = Number.isFinite(Number(maxDecimals)) ? Math.max(0, Math.min(18, Number(maxDecimals))) : 8;
-    const s = n.toFixed(d);
-    return s
-        .replace(/\.0+$/, '')
-        .replace(/(\.\d*?)0+$/, '$1')
-        .replace(/\.$/, '');
-}
-
-function __legacy__normalizeAmountStr(value, maxDecimals) {
-    if (value === null || value === undefined) return '';
-    const s = String(value).trim();
-    if (!s) return '';
-
-    if (/e/i.test(s)) {
-        const n = Number(s);
-        return __toFixedTrim(n, maxDecimals);
-    }
-
-    if (!/^[0-9]*\.?[0-9]*$/.test(s)) {
-        const n = Number(s);
-        return __toFixedTrim(n, maxDecimals);
-    }
-
-    const n = Number(s);
-    if (!Number.isFinite(n)) return '';
-    return __toFixedTrim(n, maxDecimals);
-}
-
-function __legacy_computeExpectedLp(amount0, amount1, reserve0, reserve1, poolLp) {
-    const a0 = Number(amount0 || 0);
-    const a1 = Number(amount1 || 0);
-    const r0 = Number(reserve0 || 0);
-    const r1 = Number(reserve1 || 0);
-    const p = Number(poolLp || 0);
-    if (!a0 || !a1) return 0;
-
-    if (p > 0 && r0 > 0 && r1 > 0) {
-        return Math.max(0, Math.min((a0 * p) / r0, (a1 * p) / r1));
-    }
-    if (r0 > 0 && r1 > 0) {
-        const pEst = Math.sqrt(r0 * r1);
-        if (Number.isFinite(pEst) && pEst > 0) {
-            return Math.max(0, Math.min((a0 * pEst) / r0, (a1 * pEst) / r1));
-        }
-    }
-    return Math.max(0, Math.sqrt(a0 * a1));
-}
-
-function __legacy_syncLiquidityAmounts(changedIndex) {
-    if (__liqSyncGuard) return;
-    __liqSyncGuard = true;
-    try {
-        const cfg = getLiquidityConfig();
-        const el0 = document.getElementById('liqAmount0');
-        const el1 = document.getElementById('liqAmount1');
-        if (!el0 || !el1) return;
-
-        const r0 = Number(cfg.reserve0 || 0);
-        const r1 = Number(cfg.reserve1 || 0);
-        const v0 = parseFloat(el0.value || '0') || 0;
-        const v1 = parseFloat(el1.value || '0') || 0;
-
-        if (r0 > 0 && r1 > 0) {
-            if (changedIndex === 0 && v0 > 0) {
-                el1.value = (v0 * (r1 / r0)).toFixed(8);
-            }
-            if (changedIndex === 1 && v1 > 0) {
-                el0.value = (v1 * (r0 / r1)).toFixed(8);
-            }
-        }
-
-        const lpEl = document.getElementById('liqExpectedLP');
-        const lp = computeExpectedLp(
-            parseFloat(el0.value || '0') || 0,
-            parseFloat(el1.value || '0') || 0,
-            r0,
-            r1,
-            cfg.poolLp || 0
-        );
-        if (lpEl) lpEl.innerText = lp ? lp.toFixed(8) : '--';
-
-        // Активировать кнопку SUPPLY если введены суммы
-        const btn = document.getElementById('liqSupplyBtn');
-        if (btn) {
-            const v0Final = parseFloat(el0.value || '0') || 0;
-            const v1Final = parseFloat(el1.value || '0') || 0;
-            if (v0Final > 0 && v1Final > 0) {
-                btn.disabled = false;
-                btn.classList.remove('opacity-50', 'cursor-not-allowed');
-            } else {
-                btn.disabled = true;
-                btn.classList.add('opacity-50', 'cursor-not-allowed');
-            }
-        }
-    } finally {
-        __liqSyncGuard = false;
-    }
-}
-
-function __legacy_setMaxLiqAmount(which) {
-    if (!userAddress) return window.connectWallet();
-    updateLiquidityBalancesUI();
-    const cfg = getLiquidityConfig();
-    const el0 = document.getElementById('liqAmount0');
-    const el1 = document.getElementById('liqAmount1');
-    if (!el0 || !el1) return;
-
-    const feeBuffer = 0.05;
-    const max0 = Math.max(0, Number(cfg.bal0 || 0) - (cfg.uiTick0 === T_SFB ? feeBuffer : 0));
-    const max1 = Math.max(0, Number(cfg.bal1 || 0) - (cfg.uiTick1 === T_SFB ? feeBuffer : 0));
-
-    if (which === 0) {
-        el0.value = max0.toFixed(8);
-        syncLiquidityAmounts(0);
-        return;
-    }
-
-    el1.value = max1.toFixed(8);
-    syncLiquidityAmounts(1);
-}
-
-async function __legacy_copyLiquidityPairForSearch() {
-    const cfg = getLiquidityConfig();
-    try {
-        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-            await navigator.clipboard.writeText(cfg.label);
-        }
-    } catch (e) {}
-}
-
-async function __legacy_doAddLiquidity() {
-    if (!userAddress) return window.connectWallet();
-    try {
-        await checkFractalNetwork();
-    } catch (e) {
-        document.getElementById('errorMsg').innerText = e.message;
-        document.getElementById('errorModal').classList.remove('hidden');
-        return;
-    }
-
-    const cfg = getLiquidityConfig();
-    const el0 = document.getElementById('liqAmount0');
-    const el1 = document.getElementById('liqAmount1');
-    const btn = document.getElementById('liqSupplyBtn');
-    if (!el0 || !el1 || !btn) return;
-
-    const amount0 = parseFloat(el0.value || '0') || 0;
-    const amount1 = parseFloat(el1.value || '0') || 0;
-    if (!amount0 || !amount1) {
-        if (typeof showNotification === 'function') showNotification('Enter amounts', 'warning', 2000);
-        return;
-    }
-
-    // Leave small FB buffer for fees
-    const feeBuffer = 0.05;
-    if (cfg.uiTick0 === T_SFB && amount0 > Math.max(0, cfg.bal0 - feeBuffer)) {
-        if (typeof showNotification === 'function') showNotification('Reserved 0.05 FB for fees', 'info', 2200);
-        el0.value = Math.max(0, cfg.bal0 - feeBuffer).toFixed(8);
-        syncLiquidityAmounts(0);
-        return;
-    }
-    if (cfg.uiTick1 === T_SFB && amount1 > Math.max(0, cfg.bal1 - feeBuffer)) {
-        if (typeof showNotification === 'function') showNotification('Reserved 0.05 FB for fees', 'info', 2200);
-        el1.value = Math.max(0, cfg.bal1 - feeBuffer).toFixed(8);
-        syncLiquidityAmounts(1);
-        return;
-    }
-
-    if (amount0 > (cfg.bal0 || 0) || amount1 > (cfg.bal1 || 0)) {
-        document.getElementById('depositLinkModal').classList.remove('hidden');
-        return;
-    }
-
-    btn.disabled = true;
-    const originalText = btn.innerText;
-    btn.innerText = 'PREPARING…';
-
-    try {
-        if (!userPubkey)
-            try {
-                userPubkey = await window.unisat.getPublicKey();
-            } catch (e) {}
-
-        const ts = Math.floor(Date.now() / 1000);
-
-        // Estimate expected LP using poolLp if available
-        const expectedLp = computeExpectedLp(amount0, amount1, cfg.reserve0, cfg.reserve1, cfg.poolLp || 0);
-        const lpStr = __normalizeAmountStr(expectedLp || 0, 8);
-        if (!lpStr || Number(lpStr) <= 0) {
-            throw new Error('Invalid LP amount');
-        }
-
-        const apiAmounts = cfg.mapUiToApiAmounts(amount0, amount1);
-        const amount0Str = __normalizeAmountStr(apiAmounts.amount0, 8);
-        const amount1Str = __normalizeAmountStr(apiAmounts.amount1, 8);
-        if (!amount0Str || !amount1Str || Number(amount0Str) <= 0 || Number(amount1Str) <= 0) {
-            throw new Error('Invalid amount');
-        }
-        const feeTick = T_SFB;
-        const payType = 'tick';
-
-        const preUrl =
-            `${BACKEND_URL}?action=pre_add_liq` +
-            `&address=${encodeURIComponent(userAddress)}` +
-            `&tick0=${encodeURIComponent(cfg.apiTick0)}` +
-            `&tick1=${encodeURIComponent(cfg.apiTick1)}` +
-            `&amount0=${encodeURIComponent(amount0Str)}` +
-            `&amount1=${encodeURIComponent(amount1Str)}` +
-            `&lp=${encodeURIComponent(lpStr)}` +
-            `&slippage=${encodeURIComponent('0.05')}` +
-            `&ts=${encodeURIComponent(ts)}` +
-            `&feeTick=${encodeURIComponent(feeTick)}` +
-            `&payType=${encodeURIComponent(payType)}`;
-        const pre = await fetch(preUrl, {
-            headers: {
-                'x-public-key': userPubkey,
-                'x-address': userAddress
-            },
-            cache: 'no-store'
-        }).then(r => r.json());
-        if (!pre || pre.code !== 0 || !pre.data) throw new Error(pre?.msg || pre?.error || 'pre_add_liq failed');
-
-        const signMsgs = Array.isArray(pre.data.signMsgs)
-            ? pre.data.signMsgs
-            : pre.data.signMsg
-              ? [pre.data.signMsg]
-              : pre.data.sign_msg
-                ? [pre.data.sign_msg]
-                : pre.data.msg
-                  ? [pre.data.msg]
-                  : [];
-        const msgsToSign = signMsgs
-            .map(m => (typeof m === 'object' ? (m.text ?? m.msg ?? m.message ?? m.signMsg ?? m.sign_msg ?? m.id) : m))
-            // IMPORTANT: do not trim/normalize; signature verification requires exact bytes
-            .map(m => (m === null || m === undefined ? '' : String(m)))
-            .filter(m => m.length > 0);
-        if (!msgsToSign.length) throw new Error('pre_add_liq returned empty signMsgs');
-
-        const feeAmount = String(pre.data.feeAmount || pre.data.fee_amount || '').trim();
-        const feeTickPrice = String(pre.data.feeTickPrice || pre.data.fee_tick_price || '').trim();
-        if (!feeAmount || !feeTickPrice) throw new Error('pre_add_liq returned empty feeAmount/feeTickPrice');
-
-        const sigs = [];
-        for (let i = 0; i < msgsToSign.length; i += 1) {
-            btn.innerText = `SIGNING (${i + 1}/${msgsToSign.length})…`;
-            await new Promise(r => setTimeout(r, 250));
-            const sig = await window.unisat.signMessage(msgsToSign[i], 'bip322-simple');
-            sigs.push(sig);
-        }
-
-        btn.innerText = 'SUBMITTING…';
-
-        // API body по документации: address, tick0, tick1, amount0, amount1, lp, slippage, ts, feeTick, feeAmount, feeTickPrice, sigs, payType, rememberPayType
-        const body = {
-            address: userAddress,
-            tick0: cfg.apiTick0,
-            tick1: cfg.apiTick1,
-            amount0: amount0Str,
-            amount1: amount1Str,
-            lp: lpStr,
-            slippage: '0.05',
-            ts,
-            feeTick,
-            feeAmount,
-            feeTickPrice,
-            sigs,
-            payType,
-            rememberPayType: false
-        };
-
-        console.log('Submitting add_liq with body:', body);
-
-        const sub = await fetch(`${BACKEND_URL}?action=add_liq`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-public-key': userPubkey,
-                'x-address': userAddress
-            },
-            body: JSON.stringify(body)
-        }).then(r => r.json());
-
-        if (!sub || sub.code !== 0) throw new Error(sub?.msg || sub?.error || 'add_liq failed');
-
-        showSuccess(`Liquidity supplied! ID: ${sub.data?.id || 'OK'}`);
-        if (typeof showNotification === 'function')
-            showNotification('Liquidity supplied successfully', 'success', 3200);
-        setTimeout(checkBalance, 2000);
-    } catch (e) {
-        console.error('Add liquidity error:', e);
-        if (typeof showNotification === 'function') showNotification(e?.message || String(e), 'error', 4500);
-        document.getElementById('errorMsg').innerText = e.message || String(e);
-        document.getElementById('errorModal').classList.remove('hidden');
-    } finally {
-        btn.disabled = false;
-        btn.innerText = originalText;
-    }
-}
-
-// closeAddLiquidityModal is now imported as module
-
-// switchLiquidityTab is now imported as module
-
-// openAddLiquidityModal is now imported as module
-
-// loadLiquidityPoolData is now imported as module
-
-// selectLiquidityPair is now imported as module
-
-// fetchMyLiquiditySummary is now imported as module
-
-// refreshMyLiquidityForSelectedPair is now imported as module
-
-// openRemoveLiquidityModal is now imported as module
-
-// closeRemoveLiquidityModal is now imported as module
-
-// setMaxRemoveLp is now imported as module
-
-// updateRemoveLiquidityEstimate is now imported as module
-
-// doRemoveLiquidity is now imported as module
-
-// getBalanceForTick is now imported as module
-
-// getLiquidityConfig is now imported as module
-
-// updateLiquidityBalancesUI is now imported as module
-
-// __normalizeAmountStr is now imported as module
-
-// computeExpectedLp is now imported as module
-
-// syncLiquidityAmounts is now imported as module
-
-// setMaxLiqAmount is now imported as module
-
-// copyLiquidityPairForSearch is now imported as module
-
-// doAddLiquidity is now imported as module
-function updateUI() {
-    // Update UI based on current swap pair
-    let inTick, outTick, inIcon, outIcon, bal;
-    if (currentSwapPair === 'FB_FENNEC') {
-        inTick = isBuying ? 'FB' : 'FENNEC';
-        outTick = isBuying ? 'FENNEC' : 'FB';
-        inIcon = isBuying ? 'img/FB.png' : 'img/phav.png';
-        outIcon = isBuying ? 'img/phav.png' : 'img/FB.png';
-        bal = isBuying ? userBalances.sFB : userBalances.FENNEC;
-    } else {
-        // BTC_FB (sBTC <-> FB, но отображаем как BTC)
-        inTick = isBuying ? 'BTC' : 'FB';
-        outTick = isBuying ? 'FB' : 'BTC';
-        // SVG иконка для BTC
-        inIcon = isBuying ? 'img/BTC.svg' : 'img/FB.png';
-        outIcon = isBuying ? 'img/FB.png' : 'img/BTC.svg';
-
-        if (isBuying) {
-            // Продаем sBTC -> получаем FB. Нужен баланс sBTC на InSwap
-            bal = poolReserves.user_sBTC || 0;
-        } else {
-            // Продаем FB -> получаем sBTC. Нужен баланс FB на InSwap
-            bal = userBalances.sFB || 0;
-        }
-    }
-
-    const iconInEl = document.getElementById('iconIn');
-    const tickerInEl = document.getElementById('tickerIn');
-    const iconOutEl = document.getElementById('iconOut');
-    const tickerOutEl = document.getElementById('tickerOut');
-    const balInEl = document.getElementById('balIn');
-
-    if (iconInEl) iconInEl.src = inIcon;
-    if (tickerInEl) tickerInEl.innerText = inTick;
-    if (iconOutEl) iconOutEl.src = outIcon;
-    if (tickerOutEl) tickerOutEl.innerText = outTick;
-    if (balInEl) balInEl.innerText = `Bal: ${bal.toFixed(4)}`;
-
-    // UPDATE BUTTON TEXT - просто "SWAP" для всех пар
-    const btn = document.getElementById('swapBtn');
-    if (btn) {
-        btn.innerText = 'SWAP';
-    }
-
-    updateWithdrawUI();
-}
-
-// window.connectWallet is already defined at the top of the script
-
-async function fetchReserves() {
-    const __pairKey = String(currentSwapPair || '').trim() || 'default';
-    return await __fennecDedupe(`fetchReserves:${__pairKey}`, async () => {
-        try {
-            // Проверяем кэш
-            const now = Date.now();
-            if (poolCache.data && now - poolCache.timestamp < poolCache.ttl) {
-                console.log('Using cached pool data');
-                return poolCache.data;
-            }
-
-            // Fetch pool info based on current swap pair
-            let queryParams = '';
-            if (currentSwapPair === 'BTC_FB') {
-                // Пробуем прямой порядок
-                queryParams = `tick0=${T_SBTC}&tick1=${T_SFB}`;
-            } else {
-                queryParams = `tick0=${T_FENNEC}&tick1=${T_SFB}`;
-            }
-
-            let poolUrl = `${BACKEND_URL}?action=quote&${queryParams}`;
-
-            const json = await safeFetchJson(poolUrl, { timeoutMs: 12000, retries: 2 });
-            if (!json) throw new Error('Failed to fetch pool data');
-            console.log(`Pool response for ${currentSwapPair}:`, json);
-
-            let data = null;
-            // Логика извлечения данных
-            if (json.data) {
-                if (json.data.tick0)
-                    data = json.data; // Одиночный объект
-                else if (Array.isArray(json.data.list) && json.data.list.length > 0) data = json.data.list[0];
-            } else if (json.pool) {
-                data = json.pool;
-            }
-
-            // Если данных нет, и это пара BTC_FB, пробуем поменять тикеры местами
-            if (!data && currentSwapPair === 'BTC_FB') {
-                console.log('Retrying pool fetch with swapped tickers...');
-                queryParams = `tick0=${T_SFB}&tick1=${T_SBTC}`;
-                poolUrl = `${BACKEND_URL}?action=quote&${queryParams}&t=${now}`;
-                const retryJson = await safeFetchJson(poolUrl, { timeoutMs: 12000, retries: 1 });
-                if (retryJson.data && retryJson.data.tick0) {
-                    data = retryJson.data;
-                } else if (retryJson.pool) {
-                    data = retryJson.pool;
-                }
-            }
-
-            if (data) {
-                // Сохраняем активные тикеры, как они вернулись из API
-                activeTickers.tick0 = data.tick0;
-                activeTickers.tick1 = data.tick1;
-
-                console.log(
-                    `Pool data: tick0=${data.tick0}, tick1=${data.tick1}, amount0=${data.amount0}, amount1=${data.amount1}`
-                );
-
-                // Парсим резервы
-                if (currentSwapPair === 'FB_FENNEC') {
-                    if (data.tick0.includes('FENNEC')) {
-                        poolReserves.FENNEC = parseFloat(data.amount0);
-                        poolReserves.sFB = parseFloat(data.amount1);
-                    } else {
-                        poolReserves.sFB = parseFloat(data.amount0);
-                        poolReserves.FENNEC = parseFloat(data.amount1);
-                    }
-                } else {
-                    // sBTC - FB pair
-                    // Проверяем точное совпадение или частичное
-                    const isTick0BTC = data.tick0 === T_SBTC || data.tick0.includes('sBTC');
-
-                    if (isTick0BTC) {
-                        poolReserves.BTC = parseFloat(data.amount0);
-                        poolReserves.sFB = parseFloat(data.amount1);
-                    } else {
-                        poolReserves.sFB = parseFloat(data.amount0);
-                        poolReserves.BTC = parseFloat(data.amount1);
-                    }
-                }
-
-                console.log(
-                    `Pool reserves: BTC=${poolReserves.BTC}, sFB=${poolReserves.sFB}, FENNEC=${poolReserves.FENNEC}`
-                );
-
-                const statusEl = document.getElementById('statusVal');
-                if (statusEl) statusEl.innerText = 'Active';
-                // Кэшируем данные
-                poolCache.data = data;
-                poolCache.timestamp = now;
-                // Если есть введенное значение, пересчитываем
-                const swapInEl = document.getElementById('swapIn');
-                if (swapInEl && swapInEl.value) calc();
-            } else {
-                console.warn('Pool data not found for query:', queryParams);
-                const statusEl2 = document.getElementById('statusVal');
-                if (statusEl2) statusEl2.innerText = 'Empty';
-            }
-        } catch (e) {
-            console.warn('Pool fetch error', e);
-            const statusEl3 = document.getElementById('statusVal');
-            if (statusEl3) statusEl3.innerText = 'Offline';
-        }
-    });
-}
-async function checkBalance(force = false) {
-    if (!userAddress) return;
-    const __addrKey = String(userAddress || '').trim();
-    return await __fennecDedupe(`checkBalance:${__addrKey}:${force ? 1 : 0}`, async () => {
-        const now = Date.now();
-        try {
-            if (!force && balanceCache && balanceCache.data && now - balanceCache.timestamp < balanceCache.ttl) {
-                const cached = balanceCache.data;
-                if (cached && typeof cached === 'object') {
-                    try {
-                        if (cached.userBalances && typeof cached.userBalances === 'object') {
-                            userBalances.sFB = Number(cached.userBalances.sFB || 0) || 0;
-                            userBalances.FENNEC = Number(cached.userBalances.FENNEC || 0) || 0;
-                            userBalances.BTC = Number(cached.userBalances.BTC || 0) || 0;
-                        }
-                    } catch (_) {}
-                    try {
-                        if (cached.walletBalances && typeof cached.walletBalances === 'object') {
-                            walletBalances.sFB = Number(cached.walletBalances.sFB || 0) || 0;
-                            walletBalances.FENNEC = Number(cached.walletBalances.FENNEC || 0) || 0;
-                            walletBalances.BTC = Number(cached.walletBalances.BTC || 0) || 0;
-                        }
-                    } catch (_) {}
-                    try {
-                        if (cached.poolReserves && typeof cached.poolReserves === 'object') {
-                            poolReserves.user_sBTC = Number(cached.poolReserves.user_sBTC || 0) || 0;
-                        }
-                    } catch (_) {}
-
-                    updatePnL();
-                    updateUI();
-                    try {
-                        if (typeof updateLiquidityBalancesUI === 'function') updateLiquidityBalancesUI();
-                    } catch (_) {}
-
-                    try {
-                        const liqModal = document.getElementById('addLiquidityModal');
-                        if (liqModal && !liqModal.classList.contains('hidden')) {
-                            if (typeof loadLiquidityPoolData === 'function') {
-                                loadLiquidityPoolData(currentLiquidityPair);
-                            }
-                        }
-                    } catch (_) {}
-
-                    return;
-                }
-            }
-        } catch (e) {
-            console.warn('Balance check failed', e);
-            return;
-        }
-
-        // ОПТИМИЗАЦИЯ: Используем batch endpoint для получения всех балансов за один запрос
-        const ticks = [T_SFB, T_FENNEC, T_SBTC].join(',');
-        const batchRes = await fetch(`${BACKEND_URL}?action=balance_batch&address=${userAddress}&ticks=${ticks}`).then(
-            r => r.json()
-        );
-
-        // Парсим результаты из batch ответа
-        const rFB = batchRes.data?.[T_SFB] || {};
-        const rFennec = batchRes.data?.[T_FENNEC] || {};
-        const rBTC = batchRes.data?.[T_SBTC] || {};
-
-        userBalances.sFB = parseFloat(
-            rFB.data?.balance?.swap ?? rFB.data?.balance?.available ?? rFB.data?.balance?.total ?? 0
-        );
-        userBalances.FENNEC = parseFloat(rFennec.data?.balance?.swap || rFennec.data?.balance?.available || 0);
-        // Баланс sBTC внутри InSwap (для свапа)
-        poolReserves.user_sBTC = parseFloat(rBTC.data?.balance?.swap || rBTC.data?.balance?.available || 0);
-
-        try {
-            const currentChain = await window.unisat.getChain();
-            const wasOnBitcoin = currentChain === 'BITCOIN_MAINNET';
-
-            if (wasOnBitcoin) {
-                await window.unisat.switchChain('FRACTAL_BITCOIN_MAINNET');
-            }
-
-            const nativeBal = await window.unisat.getBalance();
-            walletBalances.sFB = nativeBal.total / 100000000;
-
-            if (wasOnBitcoin) {
-                await window.unisat.switchChain('BITCOIN_MAINNET');
-            }
-        } catch (e) {
-            console.warn('Failed to refresh FB wallet balance (checkBalance):', e);
-            walletBalances.sFB = 0;
-        }
-
-        try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => {
-                try {
-                    controller.abort();
-                } catch (_) {}
-            }, 6000);
-            const btcBalanceRes = await fetch(`${BACKEND_URL}?action=btc_balance&address=${userAddress}`, {
-                signal: controller.signal,
-                headers: { Accept: 'application/json' }
-            })
-                .then(r => (r.ok ? r.json().catch(() => null) : null))
-                .catch(() => null);
-            clearTimeout(timeoutId);
-            const b = Number(btcBalanceRes?.data?.balance || 0) || 0;
-            walletBalances.BTC = b;
-        } catch (e) {
-            console.warn('Failed to refresh BTC wallet balance (checkBalance):', e);
-            walletBalances.BTC = Number(walletBalances.BTC || 0) || 0;
-        }
-
-        // 2. Native FB Balance (Wallet) - уже загружен выше
-
-        // Get FENNEC wallet balance (BRC-20 in wallet) via UniSat API
-        try {
-            const fennecBalanceUrl = `${BACKEND_URL}?action=balance&address=${userAddress}&tick=${T_FENNEC}&walletOnly=true`;
-            const fennecWalletRes = await fetch(fennecBalanceUrl).then(r => r.json());
-            console.log('FENNEC balance response:', fennecWalletRes);
-            // Try multiple possible fields for balance
-            const balance =
-                fennecWalletRes.data?.availableBalance ||
-                fennecWalletRes.data?.transferableBalance ||
-                fennecWalletRes.data?.balance?.availableBalance ||
-                fennecWalletRes.data?.balance?.transferableBalance ||
-                fennecWalletRes.data?.balance?.available ||
-                fennecWalletRes.data?.balance?.transferable ||
-                0;
-            walletBalances.FENNEC = parseFloat(balance);
-            console.log('FENNEC wallet balance:', walletBalances.FENNEC);
-        } catch (e) {
-            console.warn('Failed to load FENNEC wallet balance:', e);
-            walletBalances.FENNEC = 0;
-        }
-
-        updatePnL();
-        updateUI();
-        if (typeof updateLiquidityBalancesUI === 'function') {
-            updateLiquidityBalancesUI();
-        }
-        const liqModal = document.getElementById('addLiquidityModal');
-        if (liqModal && !liqModal.classList.contains('hidden')) {
-            if (typeof loadLiquidityPoolData === 'function') {
-                loadLiquidityPoolData(currentLiquidityPair);
-            }
-        }
-
-        try {
-            balanceCache.data = {
-                userBalances: {
-                    sFB: Number(userBalances.sFB || 0) || 0,
-                    FENNEC: Number(userBalances.FENNEC || 0) || 0,
-                    BTC: Number(userBalances.BTC || 0) || 0
-                },
-                walletBalances: {
-                    sFB: Number(walletBalances.sFB || 0) || 0,
-                    FENNEC: Number(walletBalances.FENNEC || 0) || 0,
-                    BTC: Number(walletBalances.BTC || 0) || 0
-                },
-                poolReserves: {
-                    user_sBTC: Number(poolReserves.user_sBTC || 0) || 0
-                }
-            };
-            balanceCache.timestamp = now;
-        } catch (_) {}
-    });
-}
-
-// ===== PERSONAL PNL (MY STASH) =====
-function updatePnL() {
-    try {
-        const pnlCard = document.getElementById('pnlCard');
-        if (!pnlCard) return; // Element doesn't exist, skip
-
-        // Check if user has FENNEC balance
-        const fennecBalance = userBalances.FENNEC || 0;
-
-        if (fennecBalance < 0.01) {
-            pnlCard.classList.add('hidden');
-            return;
-        }
-
-        // Show card
-        pnlCard.classList.remove('hidden');
-        const pnlAmount = document.getElementById('pnlAmount');
-        if (pnlAmount) {
-            const fennecBalNum = typeof fennecBalance === 'number' ? fennecBalance : parseFloat(fennecBalance || 0);
-            pnlAmount.innerText = fennecBalNum.toFixed(2);
-        }
-
-        // Get current price from chart
-        const currentPriceEl = document.getElementById('chartPrice');
-        if (currentPriceEl && currentPriceEl.innerText !== '--') {
-            // ИСПРАВЛЕНИЕ: Используем точное значение из data-атрибута если есть, иначе парсим
-            const currentPrice = currentPriceEl.dataset.price
-                ? parseFloat(currentPriceEl.dataset.price)
-                : parseFloat(currentPriceEl.innerText);
-            if (!isNaN(currentPrice)) {
-                const valueInFB = fennecBalance * currentPrice;
-                const pnlPercent = document.getElementById('pnlPercent');
-                if (pnlPercent) {
-                    pnlPercent.innerText = `≈ ${valueInFB.toFixed(2)} FB`;
-                    pnlPercent.className = 'text-lg font-bold font-mono text-fennec';
-                }
-            }
-        }
-    } catch (e) {
-        console.warn('PnL update error:', e);
-    }
-}
-
-// ===== THE DIG ANIMATION =====
-let digInterval = null;
-function startDiggingAnimation() {
-    const btn = document.getElementById('swapBtn');
-    if (!btn) return;
-
-    // Save original text
-    if (!btn.dataset.originalText) btn.dataset.originalText = btn.innerText;
-
-    // Change button
-    btn.innerHTML = `
-                                                                                                                    <div class="flex items-center justify-center gap-3">
-                                                                                                                        <span class="text-xl digging-fox"></span>
-                                                                                                                        <span>DIGGING FOR TOKENS...</span>
-                                                                                                                    </div>
-                                                                                                                `;
-
-    // Clear previous interval if exists
-    if (digInterval) clearInterval(digInterval);
-
-    // Flying dirt effect
-    digInterval = setInterval(() => {
-        if (!btn.disabled) {
-            clearInterval(digInterval);
-            digInterval = null;
-            return;
-        }
-
-        const rect = btn.getBoundingClientRect();
-        const dirt = document.createElement('div');
-        dirt.className = 'dirt-particle';
-        // Random position around button
-        dirt.style.left = rect.left + rect.width / 2 + (Math.random() * 40 - 20) + 'px';
-        dirt.style.top = rect.top + 20 + 'px';
-        dirt.style.animation = `dirtFly ${0.5 + Math.random()}s ease-out forwards`;
-        document.body.appendChild(dirt);
-
-        setTimeout(() => dirt.remove(), 1000);
-    }, 100);
-}
-
-function stopDiggingAnimation() {
-    const btn = document.getElementById('swapBtn');
-    if (digInterval) {
-        clearInterval(digInterval);
-        digInterval = null;
-    }
-    if (btn && btn.dataset.originalText) {
-        btn.innerText = btn.dataset.originalText;
-    }
-}
-
-// ===== WHALE WATCHER =====
-let lastWhaleTx = '';
-
-// ИСПРАВЛЕНИЕ: Кэш для swap_history чтобы не делать дублирующиеся запросы
-const swapHistoryCache = {
-    data: null,
-    timestamp: 0,
-    ttl: 45000 // 45 секунд кэш
-};
-
-// ИСПРАВЛЕНИЕ: Единая функция загрузки swap_history для всех вкладок
-async function loadSwapHistory(useCache = true) {
-    const now = Date.now();
-    const __lsKey = 'fennec_swap_history_cache_v2';
-    const __readLs = () => {
-        try {
-            const raw = localStorage.getItem(__lsKey);
-            if (!raw) return null;
-            const parsed = JSON.parse(raw);
-            if (!parsed || typeof parsed !== 'object') return null;
-            const ts = Number(parsed.ts || 0) || 0;
-            if (!ts || now - ts > swapHistoryCache.ttl) return null;
-            const data = parsed.data;
-            if (!data || typeof data !== 'object') return null;
-            return data;
-        } catch (_) {
-            return null;
-        }
-    };
-
-    return await __fennecDedupe(`loadSwapHistory:${useCache ? 1 : 0}`, async () => {
-        // 1) memory cache
-        if (useCache && swapHistoryCache.data && now - swapHistoryCache.timestamp < swapHistoryCache.ttl) {
-            return swapHistoryCache.data;
-        }
-
-        // 2) localStorage cache (warm-start)
-        if (useCache) {
-            const cached = __readLs();
-            if (cached) {
-                swapHistoryCache.data = cached;
-                swapHistoryCache.timestamp = now;
-                return cached;
-            }
-        }
-
-        try {
-            const limit = 50;
-            const [sResFB_FENNEC, sResBTC_FB] = await Promise.all([
-                safeFetchJson(`${BACKEND_URL}?action=swap_history&start=0&limit=${limit}&tick=sFB___000/FENNEC`, {
-                    timeoutMs: 12000,
-                    retries: 2
-                }).then(r => r || { code: -1 }),
-                safeFetchJson(`${BACKEND_URL}?action=swap_history&start=0&limit=${limit}&tick=sBTC___000/sFB___000`, {
-                    timeoutMs: 12000,
-                    retries: 2
-                }).then(r => r || { code: -1 })
-            ]);
-
-            const result = {
-                fbFennec: sResFB_FENNEC,
-                btcFb: sResBTC_FB,
-                timestamp: now
-            };
-
-            swapHistoryCache.data = result;
-            swapHistoryCache.timestamp = now;
-
-            try {
-                localStorage.setItem(__lsKey, JSON.stringify({ ts: now, data: result }));
-            } catch (_) {}
-
-            return result;
-        } catch (e) {
-            return swapHistoryCache.data || { fbFennec: { code: -1 }, btcFb: { code: -1 } };
-        }
-    });
-}
-
-try {
-    window.fetchReserves = fetchReserves;
-} catch (_) {}
-try {
-    window.checkBalance = checkBalance;
-} catch (_) {}
-try {
-    window.refreshTransactionHistory = refreshTransactionHistory;
-} catch (_) {}
-try {
-    window.loadSwapHistory = loadSwapHistory;
-} catch (_) {}
-try {
-    window.checkWhales = checkWhales;
-} catch (_) {}
-try {
-    window.updateUI = updateUI;
-} catch (_) {}
-
-async function checkWhales() {
-    try {
-        // ИСПРАВЛЕНИЕ: Используем кэшированные данные вместо нового запроса
-        const swapData = await loadSwapHistory(true);
-        const sResFB_FENNEC = swapData.fbFennec;
-
-        if (sResFB_FENNEC.code === 0 && sResFB_FENNEC.data?.list?.length > 0) {
-            const tx = sResFB_FENNEC.data.list[0]; // Most recent
-
-            // If this is a new transaction (not the one we saw last time)
-            if (tx.txid !== lastWhaleTx) {
-                lastWhaleTx = tx.txid;
-
-                // Determine direction and amounts
-                const tickIn = tx.tickIn || tx.tick0 || '';
-                const tickOut = tx.tickOut || tx.tick1 || '';
-                const amountIn = parseFloat(tx.amountIn || tx.amount0 || tx.amount || 0);
-                const amountOut = parseFloat(tx.amountOut || tx.amount1 || 0);
-
-                const isFennecToFB = tickIn.includes('FENNEC');
-                const fennecAmount = isFennecToFB ? amountIn : amountOut;
-                const fbAmount = isFennecToFB ? amountOut : amountIn;
-
-                // Whale threshold: > 1000 FENNEC or > 10 FB
-                if (fennecAmount > 1000 || fbAmount > 10) {
-                    showWhaleAlert(fennecAmount, fbAmount, isFennecToFB);
-                }
-            }
-        }
-    } catch (e) {
-        console.warn('Whale check error:', e);
-    }
-}
-
-function showWhaleAlert(fennecAmount, fbAmount, isFennecToFB) {
-    const el = document.getElementById('whaleWatcher');
-    const msg = document.getElementById('whaleMsg');
-
-    el.classList.remove('hidden');
-    // Small delay for slide-in animation
-    setTimeout(() => el.classList.remove('translate-y-[200%]'), 100);
-
-    // Format message
-    const direction = isFennecToFB ? 'FENNEC → FB' : 'FB → FENNEC';
-    const mainAmount = isFennecToFB ? fennecAmount : fbAmount;
-    const mainTick = isFennecToFB ? 'FENNEC' : 'FB';
-
-    try {
-        msg.innerHTML = '';
-        msg.appendChild(document.createTextNode('Wow! Someone just swapped '));
-        const strong = document.createElement('span');
-        strong.className = 'text-fennec font-bold';
-        strong.textContent = `${mainAmount.toFixed(0)} ${mainTick}`;
-        msg.appendChild(strong);
-        msg.appendChild(document.createTextNode(`! (${direction})`));
-    } catch (_) {
-        msg.textContent = `Wow! Someone just swapped ${mainAmount.toFixed(0)} ${mainTick}! (${direction})`;
-    }
-
-    // Hide after 7 seconds
-    setTimeout(() => {
-        el.classList.add('translate-y-[200%]');
-    }, 7000);
-}
-
-// ИСПРАВЛЕНИЕ: Отключен автоматический whale watching для снижения нагрузки на API
-// Whale watching теперь происходит только при обновлении истории транзакций
-// setInterval(checkWhales, 10000); // Отключено
-
-// ИСПРАВЛЕНИЕ: Увеличен debounce для снижения количества запросов к API
-let timer, reverseTimer;
-function debounceQuote() {
-    clearTimeout(timer);
-    timer = setTimeout(() => calc(), 500);
-} // Увеличено с 100ms до 500ms
 function debounceReverse() {
-    clearTimeout(reverseTimer);
-    reverseTimer = setTimeout(() => calcReverse(), 500);
-} // Увеличено с 100ms до 500ms
+    try {
+        if (__debounceReverseTimer) clearTimeout(__debounceReverseTimer);
+    } catch (_) {}
+    __debounceReverseTimer = setTimeout(() => {
+        try {
+            calcReverse();
+        } catch (_) {}
+    }, 500);
+}
 
 async function calc() {
     const val = parseFloat(document.getElementById('swapIn').value);
@@ -5680,10 +1160,9 @@ async function calc() {
     try {
         // Формируем URL правильно - проверяем, есть ли уже параметры в BACKEND_URL
         const separator = BACKEND_URL.includes('?') ? '&' : '?';
-        // ВАЖНО: address обязателен для quote_swap, если нет - используем пустую строку или подключаем кошелек
+        // ВАЖНО: address обязателен для quote_swap, если нет - используем fallback calculation
         if (!userAddress) {
-            console.warn('No address for quote_swap, connecting wallet...');
-            window.connectWallet();
+            console.warn('No address for quote_swap, using fallback calculation...');
             // Используем fallback расчет если адрес недоступен
             throw new Error('Address required');
         }
@@ -5798,11 +1277,11 @@ async function calcReverse() {
         const separator = BACKEND_URL.includes('?') ? '&' : '?';
         // ВАЖНО: address обязателен для quote_swap
         if (!userAddress) {
-            console.warn('No address for quote_swap, connecting wallet...');
-            window.connectWallet();
+            console.warn('No address for quote_swap, using fallback calculation...');
             throw new Error('Address required');
         }
         const quoteUrl = `${BACKEND_URL}${separator}action=quote_swap&exactType=exactOut&tickIn=${tickIn}&tickOut=${tickOut}&amount=${desiredOut}&address=${userAddress}`;
+
         const quoteRes = await fetch(quoteUrl).then(r => {
             if (!r.ok) {
                 console.error('Quote API error (reverse):', r.status, r.statusText);
@@ -6711,7 +2190,9 @@ async function depositSelectedInscriptions() {
 // Keep old modal function for backward compatibility
 async function openInscriptionModal() {
     // Redirect to deposit tab and load inscriptions
-    switchTab('deposit');
+    try {
+        if (typeof window.switchTab === 'function') window.switchTab('deposit');
+    } catch (_) {}
     setDepositToken('FENNEC');
     setTimeout(loadFennecInscriptions, 300);
 }
@@ -7020,6 +2501,38 @@ async function executeDeposit(inscriptionId) {
             btn.disabled = false;
         }
     }
+}
+
+// DEPOSIT TOKEN SELECTION
+async function setDepositToken(tok, options = {}) {
+    depositToken = tok;
+    // Update UI buttons
+    const sfbBtn = document.getElementById('dep-sfb');
+    const fennecBtn = document.getElementById('dep-fennec');
+    if (sfbBtn) {
+        sfbBtn.className = `flex-1 py-2 rounded-lg text-xs font-bold border transition cursor-pointer ${tok === 'sFB' ? 'border-fennec text-fennec bg-fennec/10' : 'border-gray-700 text-gray-500 hover:text-white'}`;
+    }
+    if (fennecBtn) {
+        fennecBtn.className = `flex-1 py-2 rounded-lg text-xs font-bold border transition cursor-pointer ${tok === 'FENNEC' ? 'border-fennec text-fennec bg-fennec/10' : 'border-gray-700 text-gray-500 hover:text-white'}`;
+    }
+    // Update deposit label
+    const labelEl = document.getElementById('depTickerLabel');
+    if (labelEl) labelEl.innerText = tok === 'sFB' ? 'FB' : 'FENNEC';
+
+    // Load fees when switching tokens
+    if (!options.skipFees) {
+        await loadFees('deposit');
+    }
+
+    if (!options.skipFetch) {
+        updateDepositUI();
+    }
+}
+
+function updateDepositUI() {
+    const bal = depositToken === 'sFB' ? userBalances.sFB : userBalances.FENNEC;
+    const balEl = document.getElementById('depBalance');
+    if (balEl) balEl.innerText = `Available: ${bal.toFixed(4)}`;
 }
 
 // WITHDRAW (FIXED: NetworkType + Smart Sign)
@@ -9496,7 +5009,9 @@ async function executeAIAction(action) {
         const tab = action.params.tab;
         // Расширенный список вкладок
         if (['swap', 'deposit', 'withdraw'].includes(tab)) {
-            switchTab(tab);
+            try {
+                if (typeof window.switchTab === 'function') window.switchTab(tab);
+            } catch (_) {}
             highlightElement(`tab-${tab}`);
         }
         // Открытие Fennec ID
@@ -9544,7 +5059,9 @@ async function executeAIAction(action) {
             if (!userAddress) return;
         }
 
-        switchTab('swap');
+        try {
+            if (typeof window.switchTab === 'function') window.switchTab('swap');
+        } catch (_) {}
         const params = action.params;
 
         // Устанавливаем параметры
@@ -9582,7 +5099,9 @@ async function executeAIAction(action) {
             if (!userAddress) return;
         }
 
-        switchTab('swap');
+        try {
+            if (typeof window.switchTab === 'function') window.switchTab('swap');
+        } catch (_) {}
         const params = action.params;
         const amount = params.amount;
         // ИСПРАВЛЕНИЕ: buy=true означает покупку FENNEC (отдаем FB)
@@ -9616,9 +5135,11 @@ async function executeAIAction(action) {
     if (action.type === 'OPEN_ID' || action.type === 'GET_ID') {
         if (!userAddress) {
             await window.connectWallet();
-            if (typeof switchTab === 'function') {
-                switchTab('audit');
-            }
+            try {
+                if (typeof window.switchTab === 'function') {
+                    window.switchTab('audit');
+                }
+            } catch (_) {}
         }
         if (userAddress && typeof window.refreshAudit === 'function') {
             if (false) window.refreshAudit();
@@ -9644,13 +5165,17 @@ async function executeAIAction(action) {
 
     // 9. ОТКРЫТИЕ ДЕПОЗИТА
     if (action.type === 'OPEN_DEPOSIT') {
-        switchTab('deposit');
+        try {
+            if (typeof window.switchTab === 'function') window.switchTab('deposit');
+        } catch (_) {}
         highlightElement('tab-deposit');
     }
 
     // 10. ОТКРЫТИЕ ВЫВОДА
     if (action.type === 'OPEN_WITHDRAW') {
-        switchTab('withdraw');
+        try {
+            if (typeof window.switchTab === 'function') window.switchTab('withdraw');
+        } catch (_) {}
         highlightElement('tab-withdraw');
     }
 
@@ -12066,7 +7591,7 @@ async function __legacy_runAudit(forceRefresh = false) {
             }
         } catch (_) {}
         try {
-            if (typeof window.initAudit === 'function') __fennecInitAuditSafe();
+            if (typeof window.initAudit === 'function') fennecInitAuditSafe();
         } catch (_) {}
         return;
     }
@@ -12241,7 +7766,7 @@ async function __legacy_runAudit(forceRefresh = false) {
                                 window.__fennecAuditUi.scannedAt = Date.now();
                             }
                         } catch (_) {}
-                        if (typeof window.initAudit === 'function') __fennecInitAuditSafe();
+                        if (typeof window.initAudit === 'function') fennecInitAuditSafe();
                         return;
                     }
                 }
@@ -12281,7 +7806,7 @@ async function __legacy_runAudit(forceRefresh = false) {
                             window.__fennecAuditUi.scannedAt = Date.now();
                         }
                     } catch (_) {}
-                    if (typeof window.initAudit === 'function') __fennecInitAuditSafe();
+                    if (typeof window.initAudit === 'function') fennecInitAuditSafe();
                     return;
                 }
             } catch (_) {}
@@ -12324,7 +7849,7 @@ async function __legacy_runAudit(forceRefresh = false) {
                                 window.__fennecAuditUi.scannedAt = Date.now();
                             }
                         } catch (_) {}
-                        if (typeof window.initAudit === 'function') __fennecInitAuditSafe();
+                        if (typeof window.initAudit === 'function') fennecInitAuditSafe();
                         return;
                     }
                 } catch (e) {}
@@ -12405,7 +7930,7 @@ async function __legacy_runAudit(forceRefresh = false) {
             }
         } catch (_) {}
 
-        if (typeof window.initAudit === 'function') __fennecInitAuditSafe();
+        if (typeof window.initAudit === 'function') fennecInitAuditSafe();
 
         // Auto-open existing ID after a successful scan
         try {
@@ -12447,7 +7972,7 @@ async function __legacy_runAudit(forceRefresh = false) {
             } catch (_) {}
             try {
                 window.auditLoading = false;
-                if (typeof window.initAudit === 'function') __fennecInitAuditSafe();
+                if (typeof window.initAudit === 'function') fennecInitAuditSafe();
             } catch (_) {}
             return;
         }
@@ -14797,7 +10322,7 @@ function sendMessageLegacy() {
     }, 500);
 }
 
-function oracleQuickLegacy(action) {
+function oracleQuick(action) {
     const messages = document.getElementById('chatMessages');
     if (!messages) return;
 
@@ -14811,9 +10336,7 @@ function oracleQuickLegacy(action) {
     else if (action === 'deposit') response = 'Use the Terminal Deposit tab to fund your account with FB or BTC.';
     else if (action === 'withdraw') response = 'Use the Terminal Withdraw tab to move your funds back to your wallet.';
     else if (action === 'clear') {
-        try {
-            if (typeof window.oracleQuick === 'function') return window.oracleQuick('clear');
-        } catch (_) {}
+        messages.innerHTML = '';
         return;
     }
 
@@ -14835,7 +10358,7 @@ try {
     window.setDepositToken = setDepositToken;
     window.setMaxDepositAmount = setMaxDepositAmount;
     window.closeProgress = closeProgress;
-    window.oracleQuick = oracleQuick || oracleQuickLegacy;
+    window.oracleQuick = oracleQuick;
     window.sendMessage = sendMessage || sendMessageLegacy;
 } catch (e) {
     console.error('Failed to export Terminal functions:', e);
@@ -14846,10 +10369,24 @@ try {
     installUtilsGlobals();
     initializeApp();
 
-    // Initialize event bindings for interactive elements
-    if (typeof initializeEventBindings === 'function') {
-        initializeEventBindings();
-        console.log('✅ Event bindings initialized');
+    const bootBindings = () => {
+        try {
+            if (window.__fennecEventBindingsInitialized) return;
+            window.__fennecEventBindingsInitialized = true;
+        } catch (_) {}
+
+        try {
+            if (typeof initializeEventBindings === 'function') {
+                initializeEventBindings();
+                console.log('✅ Event bindings initialized');
+            }
+        } catch (_) {}
+    };
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bootBindings, { once: true });
+    } else {
+        bootBindings();
     }
 } catch (e) {
     console.error('Failed to initialize app modules:', e);

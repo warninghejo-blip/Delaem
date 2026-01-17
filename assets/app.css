@@ -801,6 +801,13 @@ input[type='number'] {
     border-radius: 8px;
     height: 20px;
 }
+
+.loading-data .balance-value,
+.loading-data .chart-container {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
 @keyframes shimmer {
     0% {
         background-position: 200% 0;

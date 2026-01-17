@@ -1032,7 +1032,7 @@ async function runAudit(forceRefresh = false) {
     // Wallet is required (scan/open must not auto-start before connect)
     // (handled above)
 
-    if (typeof generateRecursiveChildHTML !== 'function' && hasContainer) {
+    if (typeof window.generateRecursiveChildHTML !== 'function' && hasContainer) {
         container.innerHTML = `
                                                                                                     <div class="w-full max-w-md bg-red-900/20 border border-red-500/50 p-4 rounded-xl text-red-200">
                                                                                                         <p class="font-bold mb-2">Fennec ID library missing</p>
@@ -1531,5 +1531,5 @@ try {
     window.fetchAuditData = fetchAuditData;
 } catch (_) {}
 
-export { prefetchFennecAudit, initAudit, runAudit, refreshAudit, startAuditRefreshTimer };
+export { prefetchFennecAudit, initAudit, runAudit, refreshAudit, startAuditRefreshTimer, fetchAuditData };
 export { FENNEC_ID_EPOCH, fennecIdKeyV2, fennecMintedCardsKey, __fennecInitAuditSafe, MIN_AUDIT_REFRESH_INTERVAL };

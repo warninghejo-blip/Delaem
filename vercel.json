@@ -27,6 +27,10 @@
             "dest": "/api/proxy.js"
         },
         {
+            "src": "/content/(.*)",
+            "dest": "/api/proxy.js"
+        },
+        {
             "src": "/(.*)",
             "dest": "/$1"
         }

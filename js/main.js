@@ -49,64 +49,32 @@ const __getVersion = () => {
         const v = String(u.searchParams.get('v') || '').trim();
         return v;
     } catch (_) {
-        return v;
+        return '';
     }
+};
+
+const __loadModuleScript = src => {
+    return new Promise((resolve, reject) => {
+        try {
+            const s = document.createElement('script');
+            s.src = src;
+            s.type = 'module';
+            s.async = false;
+            s.onload = () => resolve(true);
+            s.onerror = () => reject(new Error(`Failed to load module: ${src}`));
+            document.head.appendChild(s);
+        } catch (e) {
+            reject(e);
+        }
+    });
 };
 
 (async () => {
     const v = __getVersion();
     const suffix = v ? `?v=${encodeURIComponent(v)}` : '';
 
-    // Initialize state first
     try {
-        const { initializeFromGlobals } = await import(`./app/state.js${suffix}`);
-        initializeFromGlobals();
-    } catch (_) {
-        void _;
-    }
-
-    try {
-        await import(`./app/core.js${suffix}`);
-    } catch (_) {
-        void _;
-    }
-    try {
-        await import(`./app/chart.js${suffix}`);
-    } catch (_) {
-        void _;
-    }
-    try {
-        await import(`./app/audit_ui.js${suffix}`);
-    } catch (_) {
-        void _;
-    }
-    try {
-        await import(`./app/terminal_tabs.js${suffix}`);
-    } catch (_) {
-        void _;
-    }
-    try {
-        await import(`./app/swap_ui.js${suffix}`);
-    } catch (_) {
-        void _;
-    }
-    try {
-        await import(`./app/liquidity_ui.js${suffix}`);
-    } catch (_) {
-        void _;
-    }
-
-    // Initialize event bindings after all modules are loaded
-    try {
-        const { initializeEventBindings } = await import(`./app/event_bindings.js${suffix}`);
-        initializeEventBindings();
-    } catch (_) {
-        void _;
-    }
-
-    // Load assets/app.js as ES6 module instead of legacy script
-    try {
-        await import(`../assets/app.js${suffix}`);
+        await __loadModuleScript(`assets/app.js${suffix}`);
     } catch (_) {
         void _;
     }

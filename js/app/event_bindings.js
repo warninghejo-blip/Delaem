@@ -5,6 +5,16 @@
 
 import { switchDir, setSwapPair, setMaxAmount } from './swap_ui.js';
 
+const __bindOnce = (el, event, handler, options) => {
+    if (!el) return;
+    try {
+        const key = `fennecBound${String(event || '').trim()}`;
+        if (el.dataset && el.dataset[key] === '1') return;
+        if (el.dataset) el.dataset[key] = '1';
+    } catch (_) {}
+    el.addEventListener(event, handler, options);
+};
+
 // Chart timeframe buttons
 const chartTimeframeButtons = [
     { id: 'chart-1h', timeframe: '1h' },
@@ -49,7 +59,7 @@ export function initializeEventBindings() {
     // Wallet buttons
     const connectBtn = document.getElementById('connectBtn');
     if (connectBtn) {
-        connectBtn.addEventListener('click', () => {
+        __bindOnce(connectBtn, 'click', () => {
             if (typeof window.connectWallet === 'function') {
                 window.connectWallet();
             }
@@ -58,7 +68,7 @@ export function initializeEventBindings() {
 
     const disconnectBtn = document.getElementById('disconnectBtn');
     if (disconnectBtn) {
-        disconnectBtn.addEventListener('click', () => {
+        __bindOnce(disconnectBtn, 'click', () => {
             if (typeof window.disconnectWallet === 'function') {
                 window.disconnectWallet();
             }
@@ -67,7 +77,7 @@ export function initializeEventBindings() {
 
     const refreshBtn = document.getElementById('refreshBtn');
     if (refreshBtn) {
-        refreshBtn.addEventListener('click', () => {
+        __bindOnce(refreshBtn, 'click', () => {
             if (typeof window.manualRefresh === 'function') {
                 window.manualRefresh();
             }
@@ -76,7 +86,7 @@ export function initializeEventBindings() {
 
     const visionFennecIdBtn = document.getElementById('visionFennecIdBtn');
     if (visionFennecIdBtn) {
-        visionFennecIdBtn.addEventListener('click', () => {
+        __bindOnce(visionFennecIdBtn, 'click', () => {
             if (typeof window.onVisionFennecIdClick === 'function') {
                 window.onVisionFennecIdClick();
             }
@@ -87,7 +97,7 @@ export function initializeEventBindings() {
     chartTimeframeButtons.forEach(({ id, timeframe }) => {
         const btn = document.getElementById(id);
         if (btn) {
-            btn.addEventListener('click', () => {
+            __bindOnce(btn, 'click', () => {
                 if (typeof window.setChartTimeframe === 'function') {
                     window.setChartTimeframe(timeframe);
                 }
@@ -99,7 +109,7 @@ export function initializeEventBindings() {
     tabButtons.forEach(({ id, tab }) => {
         const btn = document.getElementById(id);
         if (btn) {
-            btn.addEventListener('click', () => {
+            __bindOnce(btn, 'click', () => {
                 if (typeof window.switchTab === 'function') {
                     window.switchTab(tab);
                 }
@@ -111,26 +121,26 @@ export function initializeEventBindings() {
     swapPairButtons.forEach(({ id, pair }) => {
         const btn = document.getElementById(id);
         if (btn) {
-            btn.addEventListener('click', () => setSwapPair(pair));
+            __bindOnce(btn, 'click', () => setSwapPair(pair));
         }
     });
 
     // Max amount button
     const maxAmountBtn = document.getElementById('max-amount-btn');
     if (maxAmountBtn) {
-        maxAmountBtn.addEventListener('click', setMaxAmount);
+        __bindOnce(maxAmountBtn, 'click', setMaxAmount);
     }
 
     // Swap direction button
     const switchDirBtn = document.getElementById('switch-dir-btn');
     if (switchDirBtn) {
-        switchDirBtn.addEventListener('click', switchDir);
+        __bindOnce(switchDirBtn, 'click', switchDir);
     }
 
     // Swap button
     const swapBtn = document.getElementById('swapBtn');
     if (swapBtn) {
-        swapBtn.addEventListener('click', () => {
+        __bindOnce(swapBtn, 'click', () => {
             if (typeof window.doSwap === 'function') {
                 window.doSwap();
             }
@@ -140,7 +150,7 @@ export function initializeEventBindings() {
     // Add liquidity modal button
     const addLiquidityBtn = document.getElementById('add-liquidity-btn');
     if (addLiquidityBtn) {
-        addLiquidityBtn.addEventListener('click', () => {
+        __bindOnce(addLiquidityBtn, 'click', () => {
             if (typeof window.openAddLiquidityModal === 'function') {
                 const pair = window.currentSwapPair || 'FB_FENNEC';
                 window.openAddLiquidityModal(pair);
@@ -152,7 +162,7 @@ export function initializeEventBindings() {
     depositTokenButtons.forEach(({ id, token }) => {
         const btn = document.getElementById(id);
         if (btn) {
-            btn.addEventListener('click', () => {
+            __bindOnce(btn, 'click', () => {
                 if (typeof window.setDepositToken === 'function') {
                     // Handle sFB token mapping
                     const tokenValue = id === 'dep-sfb' ? 'sFB' : token;
@@ -166,7 +176,7 @@ export function initializeEventBindings() {
     withdrawTokenButtons.forEach(({ id, token }) => {
         const btn = document.getElementById(id);
         if (btn) {
-            btn.addEventListener('click', () => {
+            __bindOnce(btn, 'click', () => {
                 if (typeof window.setWithdrawToken === 'function') {
                     // Handle sFB token mapping
                     const tokenValue = id === 'wd-sfb' ? 'sFB' : token;
@@ -189,7 +199,7 @@ export function initializeEventBindings() {
     feeButtons.forEach(({ id, fee }) => {
         const btn = document.getElementById(id);
         if (btn) {
-            btn.addEventListener('click', () => {
+            __bindOnce(btn, 'click', () => {
                 const isDeposit = id.startsWith('dep-');
                 if (typeof window.setDepositFee === 'function' && isDeposit) {
                     window.setDepositFee(fee);
@@ -203,7 +213,7 @@ export function initializeEventBindings() {
     // Custom fee input handling
     const depFeeCustomInput = document.getElementById('dep-fee-custom-input');
     if (depFeeCustomInput) {
-        depFeeCustomInput.addEventListener('change', e => {
+        __bindOnce(depFeeCustomInput, 'change', e => {
             if (typeof window.setDepositFeeCustom === 'function') {
                 window.setDepositFeeCustom(e.target.value);
             }
@@ -212,7 +222,7 @@ export function initializeEventBindings() {
 
     const wdFeeCustomInput = document.getElementById('wd-fee-custom-input');
     if (wdFeeCustomInput) {
-        wdFeeCustomInput.addEventListener('change', e => {
+        __bindOnce(wdFeeCustomInput, 'change', e => {
             if (typeof window.setWithdrawFeeCustom === 'function') {
                 window.setWithdrawFeeCustom(e.target.value);
             }
@@ -222,7 +232,7 @@ export function initializeEventBindings() {
     // Fennec max amount button
     const maxFennecBtn = document.getElementById('max-fennec-btn');
     if (maxFennecBtn) {
-        maxFennecBtn.addEventListener('click', () => {
+        __bindOnce(maxFennecBtn, 'click', () => {
             if (typeof window.setMaxFennecAmount === 'function') {
                 window.setMaxFennecAmount();
             }
@@ -232,7 +242,7 @@ export function initializeEventBindings() {
     // Create inscription button
     const createInscriptionBtn = document.getElementById('btn-create-inscription');
     if (createInscriptionBtn) {
-        createInscriptionBtn.addEventListener('click', () => {
+        __bindOnce(createInscriptionBtn, 'click', () => {
             if (typeof window.createFennecInscription === 'function') {
                 window.createFennecInscription();
             }
@@ -242,7 +252,7 @@ export function initializeEventBindings() {
     // Max amount buttons for deposit/withdraw
     const maxDepositBtn = document.getElementById('max-deposit-btn');
     if (maxDepositBtn) {
-        maxDepositBtn.addEventListener('click', () => {
+        __bindOnce(maxDepositBtn, 'click', () => {
             if (typeof window.setMaxDepositAmount === 'function') {
                 window.setMaxDepositAmount();
             }
@@ -252,7 +262,7 @@ export function initializeEventBindings() {
     // Max withdraw button
     const maxWithdrawBtn = document.getElementById('max-withdraw-btn');
     if (maxWithdrawBtn) {
-        maxWithdrawBtn.addEventListener('click', () => {
+        __bindOnce(maxWithdrawBtn, 'click', () => {
             if (typeof window.setMaxWithdrawAmount === 'function') {
                 window.setMaxWithdrawAmount();
             }
@@ -262,7 +272,7 @@ export function initializeEventBindings() {
     // Deposit and withdraw action buttons
     const depositBtn = document.getElementById('btnDeposit');
     if (depositBtn) {
-        depositBtn.addEventListener('click', () => {
+        __bindOnce(depositBtn, 'click', () => {
             if (typeof window.doDeposit === 'function') {
                 window.doDeposit();
             }
@@ -272,7 +282,7 @@ export function initializeEventBindings() {
     // Withdraw action button
     const withdrawBtn = document.getElementById('btnWithdraw');
     if (withdrawBtn) {
-        withdrawBtn.addEventListener('click', () => {
+        __bindOnce(withdrawBtn, 'click', () => {
             if (typeof window.doWithdraw === 'function') {
                 window.doWithdraw();
             }
