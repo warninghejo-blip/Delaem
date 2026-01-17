@@ -86,6 +86,10 @@ const oracleQuick =
 window.showSection = showSection;
 window.__fennecInitAuditSafe = __fennecInitAuditSafe;
 
+// Экспортируем заглушки
+window.setDepositToken = setDepositToken;
+window.oracleQuick = oracleQuick;
+
 // Liquidity функции
 window.refreshMyLiquidityForSelectedPair = refreshMyLiquidityForSelectedPair;
 window.openAddLiquidityModal = openAddLiquidityModal;
