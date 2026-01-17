@@ -31,7 +31,13 @@ import {
     setMaxRemoveLp
 } from '../js/app/liquidity_ui.js';
 
-import { initAudit, runAudit, refreshAudit, startAuditRefreshTimer } from '../js/app/audit_ui.js';
+import {
+    initAudit,
+    runAudit,
+    refreshAudit,
+    startAuditRefreshTimer,
+    __fennecInitAuditSafe
+} from '../js/app/audit_ui.js';
 
 import {
     seedChartPriceFromCache,
@@ -40,20 +46,16 @@ import {
     updateChart,
     setChartTimeframe,
     updateLiveTicker,
-    startPublicTickerUpdates,
-    stopPublicTickerUpdates,
-    __fennecStartSmartPolling,
-    __fennecStopSmartPolling
+    updatePriceData
 } from '../js/app/chart.js';
 
 import { doSwap, setSwapPair, switchDir, setMaxAmount } from '../js/app/swap_ui.js';
 
 // Import new UI modules
-import { showSection, setupSectionRouter, fennecInitAuditSafe } from '../js/ui/navigation.js';
+import { showSection, fennecInitAuditSafe } from '../js/ui/navigation.js';
 import { initializeApp } from '../js/ui/init.js';
 import {
     showNotification,
-    showError,
     showSuccess,
     closeProgress,
     toggleTheme,
@@ -62,13 +64,27 @@ import {
     installUtilsGlobals
 } from '../js/ui/utils.js';
 
+// Заглушки для отсутствующих функций
+const setDepositToken =
+    window.setDepositToken ||
+    function (token) {
+        console.warn('setDepositToken not implemented:', token);
+    };
+
+const oracleQuick =
+    window.oracleQuick ||
+    function (action) {
+        console.warn('oracleQuick not implemented:', action);
+        return oracleQuickLegacy(action);
+    };
+
 // Все функции определяются позже в этом файле и экспортируются в window
 // connectWallet, disconnectWallet, manualRefresh, doWithdraw, createFennecInscription
 // setDepositFee, setWithdrawFee, setDepositToken, setWithdrawToken, etc.
 
 // Экспортируем импортированные функции в window для работы onclick атрибутов
 window.showSection = showSection;
-window.__fennecInitAuditSafe = fennecInitAuditSafe;
+window.__fennecInitAuditSafe = __fennecInitAuditSafe;
 
 // Liquidity функции
 window.refreshMyLiquidityForSelectedPair = refreshMyLiquidityForSelectedPair;
