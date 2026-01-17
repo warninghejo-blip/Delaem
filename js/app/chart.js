@@ -71,6 +71,15 @@ function initChart() {
         }
     }
 
+    // Also check global instance
+    if (window.myChartInstance) {
+        try {
+            window.myChartInstance.destroy();
+        } catch (e) {
+            console.warn('Error destroying global chart instance:', e);
+        }
+    }
+
     priceChart = new Chart(ctx, {
         type: 'line',
         data: {
@@ -123,6 +132,9 @@ function initChart() {
             }
         }
     });
+
+    // Save to global instance for external control
+    window.myChartInstance = priceChart;
 
     console.log('Chart initialized');
 
@@ -344,22 +356,22 @@ function updateChart() {
     // Дедупликация и равномерное распределение точек
     // Для каждого таймфрейма - разный интервал дедупликации
     let dedupInterval = 60000; // 1 минута по умолчанию
-    let maxPoints = 200;
+    let maxPoints = 2000;
     if (chartTimeframe === '1h') {
         dedupInterval = 10000; // 10 секунд для более детального графика
         maxPoints = 360; // До 360 точек (1 точка каждые 10 секунд)
     } else if (chartTimeframe === '24h') {
-        dedupInterval = 15 * 60000; // 15 минут
-        maxPoints = 96;
+        dedupInterval = 5 * 60000; // 5 минут (было 15)
+        maxPoints = 288; // 24ч * 12 точек/час
     } else if (chartTimeframe === '7d') {
-        dedupInterval = 60 * 60000; // 1 час
-        maxPoints = 168;
+        dedupInterval = 30 * 60000; // 30 минут (было 1 час)
+        maxPoints = 336; // 7д * 48 точек/день
     } else if (chartTimeframe === '30d') {
-        dedupInterval = 4 * 60 * 60000; // 4 часа
-        maxPoints = 180;
+        dedupInterval = 2 * 60 * 60000; // 2 часа (было 4)
+        maxPoints = 360; // 30д * 12 точек/день
     } else if (chartTimeframe === 'all') {
-        dedupInterval = 12 * 60 * 60000; // 12 часов
-        maxPoints = 200;
+        dedupInterval = 6 * 60 * 60000; // 6 часов (было 12)
+        maxPoints = 720; // 90д * 4 точек/день = 360, увеличено до 720
     }
 
     // Дедупликация: оставляем только одну точку на интервал

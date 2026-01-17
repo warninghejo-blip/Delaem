@@ -8244,26 +8244,7 @@ async function __fennecSmartPollOnce() {
     } catch (_) {}
 }
 
-function __fennecStartSmartPolling() {
-    if (__fennecSmartPollInterval) return;
-    __fennecSmartPollInterval = setInterval(() => {
-        try {
-            __fennecSmartPollOnce();
-        } catch (_) {}
-    }, 25000);
-    try {
-        __fennecSmartPollOnce();
-    } catch (_) {}
-}
-
-function __fennecStopSmartPolling() {
-    if (__fennecSmartPollInterval) {
-        clearInterval(__fennecSmartPollInterval);
-        __fennecSmartPollInterval = null;
-    }
-}
-
-// Polling functions are now imported as modules
+// __fennecStartSmartPolling and __fennecStopSmartPolling are imported from chart.js
 
 // ===== PROGRESS TRACKING =====
 let progressInterval = null;
