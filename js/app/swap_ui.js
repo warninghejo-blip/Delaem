@@ -1,7 +1,9 @@
+import { getState, setState } from './state.js';
+
 export function switchDir() {
     try {
-        const cur = !!window.isBuying;
-        window.isBuying = !cur;
+        const cur = !!getState('isBuying');
+        setState('isBuying', !cur);
     } catch (_) {}
 
     try {
@@ -18,8 +20,8 @@ export function switchDir() {
 
 export function setSwapPair(pair) {
     try {
-        window.currentSwapPair = pair;
-        window.isBuying = true;
+        setState('currentSwapPair', pair);
+        setState('isBuying', true);
     } catch (_) {}
 
     try {
@@ -90,7 +92,7 @@ export function setSwapPair(pair) {
 
 export function setMaxAmount() {
     try {
-        if (!window.userAddress) {
+        if (!getState('userAddress')) {
             if (typeof window.connectWallet === 'function') return window.connectWallet();
             return;
         }
@@ -98,8 +100,8 @@ export function setMaxAmount() {
 
     let bal = 0;
     try {
-        const pair = window.currentSwapPair;
-        const buying = !!window.isBuying;
+        const pair = getState('currentSwapPair');
+        const buying = !!getState('isBuying');
         const ub = window.userBalances || {};
         const pr = window.poolReserves || {};
 
@@ -114,7 +116,7 @@ export function setMaxAmount() {
 
     let feeBuffer = 0;
     try {
-        if (window.currentSwapPair === 'FB_FENNEC' && window.isBuying) feeBuffer = 0.05;
+        if (getState('currentSwapPair') === 'FB_FENNEC' && getState('isBuying')) feeBuffer = 0.05;
     } catch (_) {}
 
     const maxAmount = Math.max(0, bal - feeBuffer);
@@ -147,4 +149,7 @@ export function installSwapUiGlobals(target = window) {
     } catch (_) {}
 }
 
-installSwapUiGlobals();
+// Note: installSwapUiGlobals() call removed - will be handled in main.js
+
+// Export functions for use in event bindings
+export { switchDir, setSwapPair, setMaxAmount };

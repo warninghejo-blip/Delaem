@@ -1,3 +1,59 @@
+// Импорты функций из модулей
+import {
+    refreshMyLiquidityForSelectedPair,
+    openAddLiquidityModal,
+    switchLiquidityTab,
+    updateRemoveLiquidityEstimate,
+    selectLiquidityPair,
+    loadLiquidityPoolData,
+    updateLiquidityBalancesUI,
+    syncLiquidityAmounts,
+    fetchMyLiquiditySummary,
+    getLiquidityConfig,
+    computeExpectedLp,
+    __normalizeAmountStr,
+    closeAddLiquidityModal,
+    getBalanceForTick
+} from '../js/app/liquidity_ui.js';
+
+import { initAudit, runAudit, refreshAudit, startAuditRefreshTimer } from '../js/app/audit_ui.js';
+
+import {
+    seedChartPriceFromCache,
+    initChart,
+    loadHistoricalPrices,
+    updateChart,
+    setChartTimeframe,
+    updateLiveTicker,
+    startPublicTickerUpdates,
+    stopPublicTickerUpdates,
+    __fennecStartSmartPolling,
+    __fennecStopSmartPolling
+} from '../js/app/chart.js';
+
+import { doSwap, setSwapPair, switchDir, setMaxAmount } from '../js/app/swap_ui.js';
+
+// Временные заглушки для функций из отсутствующих модулей
+const setDepositFeeCustom = window.setDepositFeeCustom || function () {};
+const setWithdrawFeeCustom = window.setWithdrawFeeCustom || function () {};
+const setDepositFee = window.setDepositFee || function () {};
+const setWithdrawFee = window.setWithdrawFee || function () {};
+const loadFees = window.loadFees || function () {};
+const setDepositToken = window.setDepositToken || function () {};
+const setMaxDepositAmount = window.setMaxDepositAmount || function () {};
+const setMaxFennecAmount = window.setMaxFennecAmount || function () {};
+const setWithdrawToken = window.setWithdrawToken || function () {};
+const setMaxWithdrawAmount = window.setMaxWithdrawAmount || function () {};
+const doWithdraw = window.doWithdraw || function () {};
+const createFennecInscription = window.createFennecInscription || function () {};
+const manualRefresh = window.manualRefresh || function () {};
+const connectWallet = window.connectWallet || function () {};
+const disconnectWallet = window.disconnectWallet || function () {};
+const onVisionFennecIdClick = window.onVisionFennecIdClick || function () {};
+const oracleQuick = window.oracleQuick || function () {};
+const fetchAuditData = window.fetchAuditData || function () {};
+const updatePriceData = window.updatePriceData || function () {};
+
 // ИСПРАВЛЕНИЕ: Предварительно объявляем функции на window, чтобы они были доступны для inline onclick
 // Это предотвращает ошибки "function is not defined" при парсинге HTML
 // DO NOT REMOVE.
@@ -3951,10 +4007,7 @@ function __legacy_switchDir() {
     updateUI();
 }
 
-const switchDir = window.switchDir || __legacy_switchDir;
-try {
-    window.switchDir = switchDir;
-} catch (_) {}
+// switchDir is now imported as module
 
 // Set swap pair (FB_FENNEC or BTC_FB)
 function __legacy_setSwapPair(pair) {
@@ -4013,10 +4066,7 @@ function __legacy_setSwapPair(pair) {
     }
 }
 
-const setSwapPair = window.setSwapPair || __legacy_setSwapPair;
-try {
-    window.setSwapPair = setSwapPair;
-} catch (_) {}
+// setSwapPair is now imported as module
 
 function __legacy_setMaxAmount() {
     if (!userAddress) return window.connectWallet();
@@ -5222,111 +5272,47 @@ async function __legacy_doAddLiquidity() {
     }
 }
 
-var closeAddLiquidityModal = window.closeAddLiquidityModal || __legacy_closeAddLiquidityModal;
-try {
-    window.closeAddLiquidityModal = closeAddLiquidityModal;
-} catch (_) {}
+// closeAddLiquidityModal is now imported as module
 
-var switchLiquidityTab = window.switchLiquidityTab || __legacy_switchLiquidityTab;
-try {
-    window.switchLiquidityTab = switchLiquidityTab;
-} catch (_) {}
+// switchLiquidityTab is now imported as module
 
-var openAddLiquidityModal = window.openAddLiquidityModal || __legacy_openAddLiquidityModal;
-try {
-    window.openAddLiquidityModal = openAddLiquidityModal;
-} catch (_) {}
+// openAddLiquidityModal is now imported as module
 
-var loadLiquidityPoolData = window.loadLiquidityPoolData || __legacy_loadLiquidityPoolData;
-try {
-    window.loadLiquidityPoolData = loadLiquidityPoolData;
-} catch (_) {}
+// loadLiquidityPoolData is now imported as module
 
-var selectLiquidityPair = window.selectLiquidityPair || __legacy_selectLiquidityPair;
-try {
-    window.selectLiquidityPair = selectLiquidityPair;
-} catch (_) {}
+// selectLiquidityPair is now imported as module
 
-var fetchMyLiquiditySummary = window.fetchMyLiquiditySummary || __legacy_fetchMyLiquiditySummary;
-try {
-    window.fetchMyLiquiditySummary = fetchMyLiquiditySummary;
-} catch (_) {}
+// fetchMyLiquiditySummary is now imported as module
 
-var refreshMyLiquidityForSelectedPair =
-    window.refreshMyLiquidityForSelectedPair || __legacy_refreshMyLiquidityForSelectedPair;
-try {
-    window.refreshMyLiquidityForSelectedPair = refreshMyLiquidityForSelectedPair;
-} catch (_) {}
+// refreshMyLiquidityForSelectedPair is now imported as module
 
-const openRemoveLiquidityModal = window.openRemoveLiquidityModal || __legacy_openRemoveLiquidityModal;
-try {
-    window.openRemoveLiquidityModal = openRemoveLiquidityModal;
-} catch (_) {}
+// openRemoveLiquidityModal is now imported as module
 
-const closeRemoveLiquidityModal = window.closeRemoveLiquidityModal || __legacy_closeRemoveLiquidityModal;
-try {
-    window.closeRemoveLiquidityModal = closeRemoveLiquidityModal;
-} catch (_) {}
+// closeRemoveLiquidityModal is now imported as module
 
-const setMaxRemoveLp = window.setMaxRemoveLp || __legacy_setMaxRemoveLp;
-try {
-    window.setMaxRemoveLp = setMaxRemoveLp;
-} catch (_) {}
+// setMaxRemoveLp is now imported as module
 
-var updateRemoveLiquidityEstimate = window.updateRemoveLiquidityEstimate || __legacy_updateRemoveLiquidityEstimate;
-try {
-    window.updateRemoveLiquidityEstimate = updateRemoveLiquidityEstimate;
-} catch (_) {}
+// updateRemoveLiquidityEstimate is now imported as module
 
-const doRemoveLiquidity = window.doRemoveLiquidity || __legacy_doRemoveLiquidity;
-try {
-    window.doRemoveLiquidity = doRemoveLiquidity;
-} catch (_) {}
+// doRemoveLiquidity is now imported as module
 
-var getBalanceForTick = window.getBalanceForTick || __legacy_getBalanceForTick;
-try {
-    window.getBalanceForTick = getBalanceForTick;
-} catch (_) {}
+// getBalanceForTick is now imported as module
 
-var getLiquidityConfig = window.getLiquidityConfig || __legacy_getLiquidityConfig;
-try {
-    window.getLiquidityConfig = getLiquidityConfig;
-} catch (_) {}
+// getLiquidityConfig is now imported as module
 
-var updateLiquidityBalancesUI = window.updateLiquidityBalancesUI || __legacy_updateLiquidityBalancesUI;
-try {
-    window.updateLiquidityBalancesUI = updateLiquidityBalancesUI;
-} catch (_) {}
+// updateLiquidityBalancesUI is now imported as module
 
-var __normalizeAmountStr = window.__normalizeAmountStr || __legacy__normalizeAmountStr;
-try {
-    window.__normalizeAmountStr = __normalizeAmountStr;
-} catch (_) {}
+// __normalizeAmountStr is now imported as module
 
-var computeExpectedLp = window.computeExpectedLp || __legacy_computeExpectedLp;
-try {
-    window.computeExpectedLp = computeExpectedLp;
-} catch (_) {}
+// computeExpectedLp is now imported as module
 
-var syncLiquidityAmounts = window.syncLiquidityAmounts || __legacy_syncLiquidityAmounts;
-try {
-    window.syncLiquidityAmounts = syncLiquidityAmounts;
-} catch (_) {}
+// syncLiquidityAmounts is now imported as module
 
-const setMaxLiqAmount = window.setMaxLiqAmount || __legacy_setMaxLiqAmount;
-try {
-    window.setMaxLiqAmount = setMaxLiqAmount;
-} catch (_) {}
+// setMaxLiqAmount is now imported as module
 
-const copyLiquidityPairForSearch = window.copyLiquidityPairForSearch || __legacy_copyLiquidityPairForSearch;
-try {
-    window.copyLiquidityPairForSearch = copyLiquidityPairForSearch;
-} catch (_) {}
+// copyLiquidityPairForSearch is now imported as module
 
-const doAddLiquidity = window.doAddLiquidity || __legacy_doAddLiquidity;
-try {
-    window.doAddLiquidity = doAddLiquidity;
-} catch (_) {}
+// doAddLiquidity is now imported as module
 function updateUI() {
     // Update UI based on current swap pair
     let inTick, outTick, inIcon, outIcon, bal;
@@ -6618,8 +6604,7 @@ function setWithdrawFeeCustom(value) {
     }
 }
 
-window.setDepositFeeCustom = setDepositFeeCustom;
-window.setWithdrawFeeCustom = setWithdrawFeeCustom;
+// Functions are now imported as modules
 
 let __feesLastLoadedAt = 0;
 async function loadFees(type) {
@@ -6671,9 +6656,7 @@ async function loadFees(type) {
 }
 
 // Make fee functions globally available
-window.setDepositFee = setDepositFee;
-window.setWithdrawFee = setWithdrawFee;
-window.loadFees = loadFees;
+// Functions are now imported as modules
 async function doDeposit() {
     // Route to correct function based on token
     if (depositToken === 'FENNEC') {
@@ -8832,24 +8815,7 @@ function __legacy_stopPublicTickerUpdates() {
     }
 }
 
-var seedChartPriceFromCache = window.seedChartPriceFromCache || __legacy_seedChartPriceFromCache;
-window.seedChartPriceFromCache = seedChartPriceFromCache;
-var initChart = window.initChart || __legacy_initChart;
-window.initChart = initChart;
-var loadHistoricalPrices = window.loadHistoricalPrices || __legacy_loadHistoricalPrices;
-window.loadHistoricalPrices = loadHistoricalPrices;
-var updatePriceData = window.updatePriceData || __legacy_updatePriceData;
-window.updatePriceData = updatePriceData;
-var updateChart = window.updateChart || __legacy_updateChart;
-window.updateChart = updateChart;
-const setChartTimeframe = window.setChartTimeframe || __legacy_setChartTimeframe;
-window.setChartTimeframe = setChartTimeframe;
-var updateLiveTicker = window.updateLiveTicker || __legacy_updateLiveTicker;
-window.updateLiveTicker = updateLiveTicker;
-const startPublicTickerUpdates = window.startPublicTickerUpdates || __legacy_startPublicTickerUpdates;
-window.startPublicTickerUpdates = startPublicTickerUpdates;
-const stopPublicTickerUpdates = window.stopPublicTickerUpdates || __legacy_stopPublicTickerUpdates;
-window.stopPublicTickerUpdates = stopPublicTickerUpdates;
+// Chart functions are now imported as modules
 
 let __fennecSmartPollInterval = null;
 let __fennecLastTipHeight = 0;
@@ -8921,8 +8887,7 @@ function __fennecStopSmartPolling() {
     }
 }
 
-window.__fennecStartSmartPolling = __fennecStartSmartPolling;
-window.__fennecStopSmartPolling = __fennecStopSmartPolling;
+// Polling functions are now imported as modules
 
 // ===== PROGRESS TRACKING =====
 let progressInterval = null;
@@ -10010,7 +9975,7 @@ function setChatLoading(isLoading) {
     if (btn) btn.disabled = !!isLoading;
 }
 
-window.oracleQuick = function (type) {
+function windowOracleQuick(type) {
     if (type === 'help') {
         const input = document.getElementById('chatInput');
         if (input) input.value = 'What can you do?';
@@ -10054,7 +10019,7 @@ window.oracleQuick = function (type) {
         if (input) input.focus();
         return;
     }
-};
+}
 
 async function sendMessage() {
     const input = document.getElementById('chatInput');
@@ -11252,8 +11217,7 @@ async function __legacy_fetchAuditData(abortSignal = null, silent = false) {
     }
 }
 
-var fetchAuditData = window.fetchAuditData || __legacy_fetchAuditData;
-window.fetchAuditData = fetchAuditData;
+// fetchAuditData is now imported as module
 
 // Initialize Audit UI
 window.initAuditLoading = false;
@@ -11685,9 +11649,7 @@ async function __legacy_initAudit() {
     }
 }
 
-try {
-    window.initAudit = window.initAudit || __legacy_initAudit;
-} catch (_) {}
+// initAudit is now imported as module
 
 // Helper functions for child HTML processing - MUST be defined BEFORE usage
 const parseDnaFromChildHtml = html => {
@@ -13161,9 +13123,7 @@ async function __legacy_runAudit(forceRefresh = false) {
     }
 }
 
-try {
-    window.runAudit = window.runAudit || __legacy_runAudit;
-} catch (_) {}
+// runAudit is now imported as module
 
 // Helper: Get progressive animation class
 function getAnimationClass(baseKey, tier) {
@@ -13346,9 +13306,7 @@ function __legacy_startAuditRefreshTimer() {
     }, 1000);
 }
 
-try {
-    window.startAuditRefreshTimer = window.startAuditRefreshTimer || __legacy_startAuditRefreshTimer;
-} catch (_) {}
+// startAuditRefreshTimer is now imported as module
 
 async function mintAuditCard(event) {
     if (!window.auditIdentity) {

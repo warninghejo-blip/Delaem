@@ -544,55 +544,53 @@ Request Context: ${JSON.stringify(context, null, 2)}
                 let btcPrice = 0;
                 let fbPrice = 0;
 
-                // ИСПРАВЛЕНИЕ: Используем Mempool Fractal API для BTC (разгружаем CoinGecko)
                 try {
-                    const mempoolRes = await fetch('https://mempool.fractalbitcoin.io/api/v1/prices', {
-                        headers: { 'User-Agent': 'Mozilla/5.0' }
-                    });
-                    if (mempoolRes.ok) {
-                        const mempoolJson = await mempoolRes.json();
-                        // Mempool API возвращает цены в формате { USD: price }
-                        btcPrice = mempoolJson.USD || 0;
-                    }
-                } catch (e) {
-                    console.error('Mempool Fractal BTC price error:', e);
-                }
-
-                // Fallback: CoinGecko для BTC (если Mempool не работает)
-                if (btcPrice === 0) {
-                    try {
-                        const cgRes = await fetch(
-                            'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd',
-                            {
-                                headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' }
-                            }
-                        );
+                    const cache =
+                        globalThis.__fennecCgPricesV1 || (globalThis.__fennecCgPricesV1 = { ts: 0, btc: 0, fb: 0 });
+                    const now = Date.now();
+                    if (
+                        cache &&
+                        Number(cache.ts || 0) > 0 &&
+                        now - Number(cache.ts || 0) < 15000 &&
+                        ((Number(cache.btc || 0) || 0) > 0 || (Number(cache.fb || 0) || 0) > 0)
+                    ) {
+                        btcPrice = Number(cache.btc || 0) || 0;
+                        fbPrice = Number(cache.fb || 0) || 0;
+                    } else {
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => controller.abort(), 2500);
+                        const cgUrl =
+                            'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,fractal-bitcoin&vs_currencies=usd';
+                        const cgRes = await fetch(cgUrl, {
+                            headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' },
+                            signal: controller.signal
+                        }).finally(() => clearTimeout(timeoutId));
                         if (cgRes.ok) {
-                            const cgJson = await cgRes.json();
-                            btcPrice = cgJson.bitcoin?.usd || 0;
+                            const cgJson = await cgRes.json().catch(() => null);
+                            btcPrice = Number(cgJson?.bitcoin?.usd || 0) || 0;
+                            fbPrice = Number(cgJson?.['fractal-bitcoin']?.usd || 0) || 0;
                         }
-                    } catch (e) {
-                        console.error('CoinGecko BTC price error:', e);
+                        try {
+                            cache.ts = now;
+                            cache.btc = btcPrice;
+                            cache.fb = fbPrice;
+                        } catch (_) {}
                     }
-                }
+                } catch (_) {}
 
-                // ИСПРАВЛЕНИЕ: Сначала пытаемся получить цену FB с CoinGecko (fractal-bitcoin)
-                try {
-                    const cgFBRes = await fetch(
-                        'https://api.coingecko.com/api/v3/simple/price?ids=fractal-bitcoin&vs_currencies=usd',
-                        {
-                            headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' }
+                if (!(btcPrice > 0)) {
+                    try {
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => controller.abort(), 2000);
+                        const mempoolRes = await fetch('https://mempool.fractalbitcoin.io/api/v1/prices', {
+                            headers: { 'User-Agent': 'Mozilla/5.0' },
+                            signal: controller.signal
+                        }).finally(() => clearTimeout(timeoutId));
+                        if (mempoolRes.ok) {
+                            const mempoolJson = await mempoolRes.json().catch(() => null);
+                            btcPrice = Number(mempoolJson?.USD || 0) || 0;
                         }
-                    );
-                    if (cgFBRes.ok) {
-                        const cgFBJson = await cgFBRes.json();
-                        if (cgFBJson['fractal-bitcoin']?.usd) {
-                            fbPrice = cgFBJson['fractal-bitcoin'].usd;
-                            console.log(' FB price from CoinGecko:', fbPrice);
-                        }
-                    }
-                } catch (e) {
-                    console.error('CoinGecko FB price error:', e);
+                    } catch (_) {}
                 }
 
                 // Fallback: FB считаем из пула FB-Биткоин с учетом текущего курса биткоина
@@ -804,41 +802,52 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             (async () => {
                                 let btc = 0,
                                     fb = 0;
-                                try {
-                                    const p = await Promise.race([
-                                        getCMCPrices(),
-                                        new Promise(resolve =>
-                                            setTimeout(() => resolve({ btcPrice: 0, fbPrice: 0 }), 3000)
-                                        )
-                                    ]);
-                                    btc = Number(p?.btcPrice || 0) || 0;
-                                    fb = Number(p?.fbPrice || 0) || 0;
-                                } catch (e) {
-                                    void e;
-                                }
-                                let fennec_in_fb = 0;
-                                try {
-                                    const query = `?tick0=${encodeURIComponent('FENNEC')}&tick1=${encodeURIComponent('sFB___000')}`;
-                                    let poolUrl = `${SWAP_BASE}/brc20-swap/pool_info${query}`;
-                                    let res = await fetch(poolUrl, { headers: upstreamHeaders });
-                                    if (!res.ok && res.status === 404) {
-                                        poolUrl = `${SWAP_BASE}/indexer/brc20-swap/pool_info${query}`;
-                                        res = await fetch(poolUrl, { headers: upstreamHeaders });
-                                    }
-                                    const json = await res.json().catch(() => null);
-                                    const d = json?.data && typeof json.data === 'object' ? json.data : null;
-                                    const a0 = Number(d?.amount0 || 0) || 0;
-                                    const a1 = Number(d?.amount1 || 0) || 0;
-                                    const t0 = String(d?.tick0 || '').toUpperCase();
-                                    const t1 = String(d?.tick1 || '').toUpperCase();
-                                    if (a0 > 0 && a1 > 0) {
-                                        if (t0.includes('FENNEC')) fennec_in_fb = a1 / a0;
-                                        else if (t1.includes('FENNEC')) fennec_in_fb = a0 / a1;
-                                    }
-                                } catch (e) {
-                                    void e;
-                                }
-                                return { btc, fb, fennec_in_fb };
+                                const pPromise = Promise.race([
+                                    getCMCPrices(),
+                                    new Promise(resolve => setTimeout(() => resolve({ btcPrice: 0, fbPrice: 0 }), 3000))
+                                ]).catch(() => ({ btcPrice: 0, fbPrice: 0 }));
+
+                                const fPromise = Promise.race([
+                                    (async () => {
+                                        let fennec_in_fb = 0;
+                                        try {
+                                            const query = `?tick0=${encodeURIComponent('FENNEC')}&tick1=${encodeURIComponent('sFB___000')}`;
+                                            let poolUrl = `${SWAP_BASE}/brc20-swap/pool_info${query}`;
+                                            const controller = new AbortController();
+                                            const timeoutId = setTimeout(() => controller.abort(), 2200);
+                                            let res = await fetch(poolUrl, {
+                                                headers: upstreamHeaders,
+                                                signal: controller.signal
+                                            }).finally(() => clearTimeout(timeoutId));
+                                            if (!res.ok && res.status === 404) {
+                                                poolUrl = `${SWAP_BASE}/indexer/brc20-swap/pool_info${query}`;
+                                                const controller2 = new AbortController();
+                                                const timeoutId2 = setTimeout(() => controller2.abort(), 2200);
+                                                res = await fetch(poolUrl, {
+                                                    headers: upstreamHeaders,
+                                                    signal: controller2.signal
+                                                }).finally(() => clearTimeout(timeoutId2));
+                                            }
+                                            const json = await res.json().catch(() => null);
+                                            const d = json?.data && typeof json.data === 'object' ? json.data : null;
+                                            const a0 = Number(d?.amount0 || 0) || 0;
+                                            const a1 = Number(d?.amount1 || 0) || 0;
+                                            const t0 = String(d?.tick0 || '').toUpperCase();
+                                            const t1 = String(d?.tick1 || '').toUpperCase();
+                                            if (a0 > 0 && a1 > 0) {
+                                                if (t0.includes('FENNEC')) fennec_in_fb = a1 / a0;
+                                                else if (t1.includes('FENNEC')) fennec_in_fb = a0 / a1;
+                                            }
+                                        } catch (_) {}
+                                        return fennec_in_fb;
+                                    })(),
+                                    new Promise(resolve => setTimeout(() => resolve(0), 2400))
+                                ]).catch(() => 0);
+
+                                const [p, fennec_in_fb] = await Promise.all([pPromise, fPromise]);
+                                btc = Number(p?.btcPrice || 0) || 0;
+                                fb = Number(p?.fbPrice || 0) || 0;
+                                return { btc, fb, fennec_in_fb: Number(fennec_in_fb || 0) || 0 };
                             })(),
                             new Promise(resolve => setTimeout(() => resolve(null), 3500))
                         ]);
@@ -902,8 +911,14 @@ Request Context: ${JSON.stringify(context, null, 2)}
             // Совместимость: price_line endpoint для фронта
             if (action === 'price_line') {
                 try {
-                    const tick0 = __normalizeSwapTick(url.searchParams.get('tick0') || 'sFB___000');
-                    const tick1 = __normalizeSwapTick(url.searchParams.get('tick1') || 'FENNEC');
+                    const __canonSwapTick = t => {
+                        const n = __normalizeSwapTick(t);
+                        if (n === 'sFB') return 'sFB___000';
+                        if (n === 'sBTC') return 'sBTC___000';
+                        return n;
+                    };
+                    const tick0 = __canonSwapTick(url.searchParams.get('tick0') || 'sFB___000');
+                    const tick1 = __canonSwapTick(url.searchParams.get('tick1') || 'FENNEC');
                     const timeRange = String(url.searchParams.get('timeRange') || '7d').trim();
 
                     const __rangeMs = tr => {
@@ -951,16 +966,18 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         if (!list.length) break;
 
                         let pageMinMs = Infinity;
+                        let pageMaxMs = 0;
 
                         for (const it of list) {
                             const ts = Number(it?.ts || 0) || 0;
                             if (!ts) continue;
                             const ms = ts * 1000;
                             if (ms < pageMinMs) pageMinMs = ms;
+                            if (ms > pageMaxMs) pageMaxMs = ms;
                             if (ms < cutoffMs) continue;
 
-                            const tin = __normalizeSwapTick(it?.tickIn);
-                            const tout = __normalizeSwapTick(it?.tickOut);
+                            const tin = __canonSwapTick(it?.tickIn);
+                            const tout = __canonSwapTick(it?.tickOut);
                             const aIn = Number(it?.amountIn || 0) || 0;
                             const aOut = Number(it?.amountOut || 0) || 0;
                             if (!tin || !tout || aIn <= 0 || aOut <= 0) continue;
@@ -983,7 +1000,8 @@ Request Context: ${JSON.stringify(context, null, 2)}
 
                         // Ранний stop: если в этой странице уже есть значения старее cutoff,
                         // то следующая страница будет еще старее (swap_history обычно отсортирован по времени).
-                        if (Number.isFinite(pageMinMs) && pageMinMs < cutoffMs) break;
+                        // ИСПРАВЛЕНИЕ: используем max timestamp страницы. Это устойчиво, даже если порядок в list ASC/DESC.
+                        if (Number.isFinite(pageMaxMs) && pageMaxMs > 0 && pageMaxMs < cutoffMs) break;
 
                         if (list.length < limit) break;
                         start += limit;
@@ -3539,7 +3557,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         const result = await safeFetch(
                             () =>
                                 fetch(
-                                    `${FRACTAL_BASE}/indexer/address/${address}/brc20/summary?start=0&limit=500&tick_filter=56&exclude_zero=true`,
+                                    `${FRACTAL_BASE}/indexer/address/${address}/brc20/summary?start=0&limit=500&exclude_zero=true`,
                                     { headers: upstreamHeaders }
                                 ),
                             {
@@ -3548,7 +3566,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 cacheKey: `unisat_brc20_${address}`,
                                 retryOn429: !__fastMode,
                                 traceLabel: 'unisat_brc20_summary',
-                                traceUrl: `${FRACTAL_BASE}/indexer/address/${address}/brc20/summary?start=0&limit=500&tick_filter=56&exclude_zero=true`
+                                traceUrl: `${FRACTAL_BASE}/indexer/address/${address}/brc20/summary?start=0&limit=500&exclude_zero=true`
                             }
                         );
                         if (result) {
@@ -4806,7 +4824,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         // Пробуем запросить BRC-20 отдельно
                         try {
                             const brc20Res = await fetch(
-                                `${FRACTAL_BASE}/indexer/address/${address}/brc20/summary?start=0&limit=500&tick_filter=56&exclude_zero=true`,
+                                `${FRACTAL_BASE}/indexer/address/${address}/brc20/summary?start=0&limit=500&exclude_zero=true`,
                                 {
                                     headers: upstreamHeaders
                                 }
@@ -5635,7 +5653,17 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 );
 
                                 debugInfo[`total_collections_public_res_${page}`] = res ? 'has_data' : 'null';
-                                const list = Array.isArray(res?.data?.inscription) ? res.data.inscription : [];
+                                const d0 =
+                                    res && typeof res === 'object' ? (res.data !== undefined ? res.data : res) : null;
+                                const d1 = d0 && d0.data && typeof d0.data === 'object' ? d0.data : null;
+                                const list =
+                                    (Array.isArray(d0?.inscription) ? d0.inscription : null) ||
+                                    (Array.isArray(d0?.inscriptions) ? d0.inscriptions : null) ||
+                                    (Array.isArray(d0?.list) ? d0.list : null) ||
+                                    (Array.isArray(d1?.inscription) ? d1.inscription : null) ||
+                                    (Array.isArray(d1?.inscriptions) ? d1.inscriptions : null) ||
+                                    (Array.isArray(d1?.list) ? d1.list : null) ||
+                                    [];
                                 debugInfo[`total_collections_public_list_length_${page}`] = list.length;
 
                                 if (!list.length) {
@@ -5686,7 +5714,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                     }
                                 }
 
-                                const total = Number(res?.data?.total || 0);
+                                const total = Number(d0?.total ?? d1?.total ?? 0);
                                 debugInfo[`total_collections_public_total_${page}`] = total;
                                 cursor += list.length;
                                 page++;
@@ -6306,6 +6334,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                         firstTxTs = 0;
                                     } else {
                                         // Timestamp валидный - только если он в прошлом или настоящем И прошел все проверки
+                                        firstTxTs = candidateTs;
                                         debugInfo.first_tx_method = 'history_sorted';
                                         debugInfo.first_tx_from_history = firstTxTs;
                                         debugInfo.first_tx_absolute_now_check = strictNowCheck;
@@ -7062,10 +7091,36 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 return raw.toUpperCase() === 'FENNEC';
                             });
                             if (fen) {
+                                const __num = v => {
+                                    if (v === null || v === undefined) return 0;
+                                    if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+                                    const s = String(v).trim().replace(/,/g, '');
+                                    const n = Number(s);
+                                    return Number.isFinite(n) ? n : 0;
+                                };
                                 // ИСПРАВЛЕНИЕ: brc20-prog может иметь другие поля для баланса
-                                const avail = parseFloat(fen.availableBalance || fen.balance || 0);
-                                const trans = parseFloat(fen.transferableBalance || 0);
-                                fennecWalletBalance = avail + trans || 0;
+                                const avail = __num(
+                                    fen.availableBalance ??
+                                        fen.available_balance ??
+                                        fen.available ??
+                                        fen.balance ??
+                                        fen.overallBalance ??
+                                        fen.overall_balance ??
+                                        fen.totalBalance ??
+                                        fen.total_balance ??
+                                        fen.total ??
+                                        fen.amount ??
+                                        0
+                                );
+                                const trans = __num(
+                                    fen.transferableBalance ??
+                                        fen.transferable_balance ??
+                                        fen.transferable ??
+                                        fen.transferableAmount ??
+                                        fen.transferable_amount ??
+                                        0
+                                );
+                                fennecWalletBalance = Math.max(0, avail + trans);
                                 debugInfo.fennec_balance_method = 'brc20_summary_detail';
                             }
                         }
@@ -7076,8 +7131,24 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         const fennecData = allBalance.data.FENNEC;
                         const bal = fennecData.balance || fennecData;
                         if (typeof bal === 'object' && bal !== null) {
-                            fennecInSwapBalance = parseFloat(
-                                bal.swap || bal.module || bal.pendingSwap || bal.pendingAvailable || 0
+                            const __num = v => {
+                                if (v === null || v === undefined) return 0;
+                                if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+                                const s = String(v).trim().replace(/,/g, '');
+                                const n = Number(s);
+                                return Number.isFinite(n) ? n : 0;
+                            };
+                            fennecInSwapBalance = __num(
+                                bal.swap ??
+                                    bal.module ??
+                                    bal.pendingSwap ??
+                                    bal.pendingAvailable ??
+                                    bal.available ??
+                                    bal.total ??
+                                    bal.amount ??
+                                    bal.overallBalance ??
+                                    bal.balance ??
+                                    0
                             );
                         } else {
                             fennecInSwapBalance = parseFloat(bal || 0);

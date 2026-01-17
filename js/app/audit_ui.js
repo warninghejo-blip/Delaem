@@ -166,22 +166,12 @@ async function fetchAuditData(abortSignal = null, silent = false) {
     throw lastErr || new Error('Oracle error');
 }
 
-try {
-    window.fetchAuditData = window.fetchAuditData || fetchAuditData;
-} catch (_) {}
+// fetchAuditData is now imported as module
 
-try {
-    window.initAudit = window.initAudit || initAudit;
-} catch (_) {}
-try {
-    window.runAudit = window.runAudit || runAudit;
-} catch (_) {}
-try {
-    window.refreshAudit = window.refreshAudit || refreshAudit;
-} catch (_) {}
-try {
-    window.startAuditRefreshTimer = window.startAuditRefreshTimer || startAuditRefreshTimer;
-} catch (_) {}
+// initAudit is now imported as module
+// runAudit is now imported as module
+// refreshAudit is now imported as module
+// startAuditRefreshTimer is now imported as module
 
 const FENNEC_ID_EPOCH = '2026-01-02';
 const fennecIdKeyV2 = addr => `fennec_id_child_v3_${String(addr || '').trim()}`;

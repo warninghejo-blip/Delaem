@@ -71,6 +71,15 @@ const __loadLegacyScript = src => {
 (async () => {
     const v = __getVersion();
     const suffix = v ? `?v=${encodeURIComponent(v)}` : '';
+
+    // Initialize state first
+    try {
+        const { initializeFromGlobals } = await import(`./app/state.js${suffix}`);
+        initializeFromGlobals();
+    } catch (_) {
+        void _;
+    }
+
     try {
         await import(`./app/core.js${suffix}`);
     } catch (_) {
@@ -101,5 +110,14 @@ const __loadLegacyScript = src => {
     } catch (_) {
         void _;
     }
+
+    // Initialize event bindings after all modules are loaded
+    try {
+        const { initializeEventBindings } = await import(`./app/event_bindings.js${suffix}`);
+        initializeEventBindings();
+    } catch (_) {
+        void _;
+    }
+
     await __loadLegacyScript(`assets/app.js${suffix}`);
 })();

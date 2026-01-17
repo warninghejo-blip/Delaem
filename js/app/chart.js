@@ -653,7 +653,7 @@ async function updateLiveTicker() {
             __seedDashboardPricesFromCache();
 
             const dash = await fetch(`${BACKEND_URL}?action=get_dashboard_data`, {
-                cache: 'force-cache'
+                cache: 'no-store'
             })
                 .then(r => (r.ok ? r.json().catch(() => null) : null))
                 .catch(() => null);

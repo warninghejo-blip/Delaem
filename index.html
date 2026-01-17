@@ -132,7 +132,6 @@
                         <i class="fab fa-telegram"></i>
                     </a>
                     <button
-                        onclick="window.manualRefresh()"
                         id="refreshBtn"
                         class="hidden bg-gradient-to-br from-fennec/25 via-orange-600/20 to-orange-700/15 text-fennec px-3.5 py-2 rounded-xl font-bold hover:brightness-125 hover:scale-105 transition-all duration-200 text-[11px] border border-fennec/40 flex items-center gap-2 shadow-[0_0_20px_rgba(255,107,53,0.3)] hover:shadow-[0_0_32px_rgba(255,107,53,0.5)] backdrop-blur-sm"
                     >
@@ -141,14 +140,12 @@
                         <span id="refreshTimer" class="hidden text-[10px] opacity-75"></span>
                     </button>
                     <button
-                        onclick="window.disconnectWallet()"
                         id="disconnectBtn"
                         class="hidden bg-red-600/20 text-red-400 px-4 py-2 rounded-lg font-bold hover:bg-red-600/30 transition text-xs border border-red-500/50 flex items-center gap-2"
                     >
                         <i class="fas fa-sign-out-alt"></i> <span id="disconnectBtnText">DISCONNECT</span>
                     </button>
                     <button
-                        onclick="window.connectWallet()"
                         id="connectBtn"
                         class="bg-gradient-to-r from-fennec to-orange-600 text-black px-4 py-2 rounded-lg font-bold hover:brightness-110 transition text-xs shadow-[0_0_20px_rgba(255,107,53,0.4)] flex items-center gap-2"
                         data-t="connect"
@@ -255,7 +252,6 @@
                                 <span>ENTER TERMINAL</span> <i class="fas fa-terminal"></i>
                             </a>
                             <button
-                                onclick="window.onVisionFennecIdClick()"
                                 id="visionFennecIdBtn"
                                 class="border border-fennec/30 bg-fennec/5 text-white px-8 py-4 rounded-xl font-bold text-lg hover:bg-fennec/10 transition flex items-center justify-center gap-2"
                             >
@@ -565,31 +561,31 @@
                             </div>
                             <div class="flex gap-2">
                                 <button
-                                    onclick="setChartTimeframe('1h')"
+                                    id="chart-1h"
                                     class="text-xs px-2 py-1 rounded bg-white/5 hover:bg-fennec/20 transition"
                                 >
                                     1H
                                 </button>
                                 <button
-                                    onclick="setChartTimeframe('24h')"
+                                    id="chart-24h"
                                     class="text-xs px-2 py-1 rounded bg-white/5 hover:bg-fennec/20 transition"
                                 >
                                     24H
                                 </button>
                                 <button
-                                    onclick="setChartTimeframe('7d')"
+                                    id="chart-7d"
                                     class="text-xs px-2 py-1 rounded bg-white/5 hover:bg-fennec/20 transition"
                                 >
                                     7D
                                 </button>
                                 <button
-                                    onclick="setChartTimeframe('30d')"
+                                    id="chart-30d"
                                     class="text-xs px-2 py-1 rounded bg-white/5 hover:bg-fennec/20 transition"
                                 >
                                     30D
                                 </button>
                                 <button
-                                    onclick="setChartTimeframe('all')"
+                                    id="chart-all"
                                     class="text-xs px-2 py-1 rounded bg-white/5 hover:bg-fennec/20 transition"
                                 >
                                     ALL
@@ -655,38 +651,10 @@
                         </div>
                         <!-- TABS -->
                         <div class="flex border-b border-white/10 mb-6">
-                            <button
-                                class="tab-btn active w-1/4"
-                                onclick="switchTab('swap')"
-                                id="tab-swap"
-                                data-t="swap"
-                            >
-                                SWAP
-                            </button>
-                            <button
-                                class="tab-btn w-1/4"
-                                onclick="switchTab('deposit')"
-                                id="tab-deposit"
-                                data-t="deposit"
-                            >
-                                DEPOSIT
-                            </button>
-                            <button
-                                class="tab-btn w-1/4"
-                                onclick="switchTab('withdraw')"
-                                id="tab-withdraw"
-                                data-t="withdraw"
-                            >
-                                WITHDRAW
-                            </button>
-                            <button
-                                class="tab-btn w-1/4"
-                                onclick="switchTab('pending')"
-                                id="tab-pending"
-                                data-t="activity"
-                            >
-                                PENDING
-                            </button>
+                            <button class="tab-btn active w-1/4" id="tab-swap" data-t="swap">SWAP</button>
+                            <button class="tab-btn w-1/4" id="tab-deposit" data-t="deposit">DEPOSIT</button>
+                            <button class="tab-btn w-1/4" id="tab-withdraw" data-t="withdraw">WITHDRAW</button>
+                            <button class="tab-btn w-1/4" id="tab-pending" data-t="activity">PENDING</button>
                         </div>
 
                         <!-- SWAP TAB -->
@@ -724,7 +692,7 @@
                                     <div class="flex gap-2 items-center">
                                         <span class="text-[10px] text-gray-500" id="balIn">Bal: --</span>
                                         <button
-                                            onclick="setMaxAmount()"
+                                            id="max-amount-btn"
                                             class="text-[10px] text-fennec font-bold hover:text-white px-2 py-0.5 bg-fennec/10 rounded"
                                         >
                                             MAX
@@ -757,7 +725,7 @@
 
                             <div class="flex justify-center items-center gap-4 -my-5 relative z-10">
                                 <button
-                                    onclick="switchDir()"
+                                    id="switch-dir-btn"
                                     class="bg-[#2b1d1a] border border-fennec/30 p-3 rounded-full text-fennec shadow-xl hover:scale-110 transition hover:border-fennec rotate-90"
                                     title="Switch direction"
                                 >
@@ -794,7 +762,7 @@
                                 <span id="rateVal" class="font-semibold">Rate: --</span>
                                 <button
                                     type="button"
-                                    onclick="openAddLiquidityModal(currentSwapPair)"
+                                    id="add-liquidity-btn"
                                     class="px-4 py-2 text-[11px] font-black bg-fennec/15 text-fennec border border-fennec/30 rounded-lg hover:bg-fennec/25 transition shadow-lg tracking-widest"
                                     title="Manage Liquidity"
                                 >
@@ -803,7 +771,6 @@
                             </div>
 
                             <button
-                                onclick="doSwap()"
                                 id="swapBtn"
                                 class="w-full bg-fennec text-black font-black text-xl py-4 rounded-xl mt-6 hover:bg-white hover:scale-[1.01] transition shadow-[0_0_20px_rgba(255,107,53,0.3)] tracking-wide flex items-center justify-center gap-2"
                                 data-t="swap_action"
@@ -828,21 +795,18 @@
                         <div id="view-deposit" class="tab-content hidden">
                             <div class="flex gap-2 mb-6">
                                 <button
-                                    onclick="setDepositToken('BTC')"
                                     id="dep-btc"
                                     class="flex-1 py-2 text-xs font-bold border border-fennec bg-fennec/10 text-fennec rounded-lg"
                                 >
                                     BTC
                                 </button>
                                 <button
-                                    onclick="setDepositToken('sFB')"
                                     id="dep-sfb"
                                     class="flex-1 py-2 text-xs font-bold border border-white/10 text-gray-500 hover:text-white rounded-lg"
                                 >
                                     FB
                                 </button>
                                 <button
-                                    onclick="setDepositToken('FENNEC')"
                                     id="dep-fennec"
                                     class="flex-1 py-2 text-xs font-bold border border-white/10 text-gray-500 hover:text-white rounded-lg"
                                 >
@@ -855,7 +819,7 @@
                                     <span class="text-xs text-gray-400" id="depBalance">Balance: --</span>
                                     <div class="flex items-center gap-2">
                                         <button
-                                            onclick="setMaxDepositAmount()"
+                                            id="max-deposit-btn"
                                             class="text-[10px] text-fennec font-bold hover:text-white px-2 py-0.5 bg-fennec/10 rounded"
                                         >
                                             MAX
@@ -881,7 +845,6 @@
                                     </div>
                                     <div class="flex gap-2" id="depFeeSelector">
                                         <button
-                                            onclick="setDepositFee('medium')"
                                             id="dep-fee-medium"
                                             class="flex-1 py-2 text-xs font-bold border border-fennec bg-fennec/10 text-fennec rounded-lg transition"
                                         >
@@ -889,7 +852,6 @@
                                             <div class="text-[10px] text-fennec/70" id="dep-fee-medium-value">--</div>
                                         </button>
                                         <button
-                                            onclick="setDepositFee('fast')"
                                             id="dep-fee-fast"
                                             class="flex-1 py-2 text-xs font-bold border border-white/10 text-gray-500 hover:text-white rounded-lg transition"
                                         >
@@ -897,7 +859,6 @@
                                             <div class="text-[10px] text-gray-600" id="dep-fee-fast-value">--</div>
                                         </button>
                                         <button
-                                            onclick="setDepositFee('custom')"
                                             id="dep-fee-custom"
                                             class="flex-1 py-2 text-xs font-bold border border-white/10 text-gray-500 hover:text-white rounded-lg transition"
                                         >
@@ -910,14 +871,12 @@
                                                 step="1"
                                                 class="text-[10px] bg-black/40 border border-white/20 rounded w-full text-center mt-1 text-white px-1"
                                                 style="display: none"
-                                                onchange="setDepositFeeCustom(this.value)"
                                             />
                                         </button>
                                     </div>
                                 </div>
 
                                 <button
-                                    onclick="doDeposit()"
                                     id="btnDeposit"
                                     class="w-full bg-fennec text-black font-black text-base py-4 rounded-xl hover:bg-white hover:scale-[1.01] transition shadow-[0_0_20px_rgba(255,107,53,0.3)] tracking-wide"
                                     data-t="deposit_btc_btn"
@@ -1042,40 +1001,44 @@
                             <!-- Fee Selection -->
                             <div class="mb-4">
                                 <div class="text-[10px] font-bold text-gray-400 tracking-wider mb-2">NETWORK FEE</div>
-                                <div class="flex gap-2" id="wdFeeSelector">
-                                    <button
-                                        onclick="setWithdrawFee('medium')"
-                                        id="wd-fee-medium"
-                                        class="flex-1 py-2 text-xs font-bold border border-fennec bg-fennec/10 text-fennec rounded-lg transition"
-                                    >
-                                        <div>MEDIUM</div>
-                                        <div class="text-[10px] text-fennec/70" id="wd-fee-medium-value">--</div>
-                                    </button>
-                                    <button
-                                        onclick="setWithdrawFee('fast')"
-                                        id="wd-fee-fast"
-                                        class="flex-1 py-2 text-xs font-bold border border-white/10 text-gray-500 hover:text-white rounded-lg transition"
-                                    >
-                                        <div>FAST</div>
-                                        <div class="text-[10px] text-gray-600" id="wd-fee-fast-value">--</div>
-                                    </button>
-                                    <button
-                                        onclick="setWithdrawFee('custom')"
-                                        id="wd-fee-custom"
-                                        class="flex-1 py-2 text-xs font-bold border border-white/10 text-gray-500 hover:text-white rounded-lg transition"
-                                    >
-                                        <div>CUSTOM</div>
-                                        <input
-                                            type="number"
-                                            id="wd-fee-custom-input"
-                                            placeholder="sat/vB"
-                                            min="1"
-                                            step="1"
-                                            class="text-[10px] bg-black/40 border border-white/20 rounded w-full text-center mt-1 text-white px-1"
-                                            style="display: none"
-                                            onchange="setWithdrawFeeCustom(this.value)"
+                                <div class="flex gap-2 mb-4">
+                                <div
+                                    id="pair-fb-fennec"
+                                    class="flex-1 py-2 text-xs font-bold border border-fennec bg-fennec/10 text-fennec rounded-lg transition hover:bg-fennec/20 cursor-pointer"
+                                    role="button"
+                                >
+                                    <div class="flex items-center justify-center gap-2">
+                                        <img
+                                            src="img/FBSYM.png"
+                                            class="w-4 h-4 rounded-full"
+                                            alt="FB"
                                         />
-                                    </button>
+                                        <span>/</span>
+                                        <img
+                                            src="img/FENNEC.png"
+                                            class="w-4 h-4 rounded-full"
+                                            alt="FENNEC"
+                                        />
+                                    </div>
+                                </div>
+                                <div
+                                    id="pair-btc-fb"
+                                    class="flex-1 py-2 text-xs font-bold border border-white/10 text-gray-500 hover:text-white rounded-lg transition hover:bg-white/5 cursor-pointer"
+                                    role="button"
+                                >
+                                    <div class="flex items-center justify-center gap-2">
+                                        <img
+                                            src="img/BTC.svg"
+                                            class="w-4 h-4"
+                                            alt="BTC"
+                                        />
+                                        <span>/</span>
+                                        <img
+                                            src="img/FBSYM.png"
+                                            class="w-4 h-4 rounded-full"
+                                            alt="FB"
+                                        />
+                                    </div>
                                 </div>
                             </div>
 
