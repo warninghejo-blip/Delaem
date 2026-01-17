@@ -995,7 +995,6 @@ async function runAudit(forceRefresh = false) {
         const progressPercent = document.getElementById('scanPercent');
         const progressMessage = document.getElementById('scanMessage');
 
-        const startTime = Date.now();
         const progressInterval = setInterval(() => {
             // Slowly increment progress but never reach 100 until data is ready
             progress = Math.min(95, progress + Math.random() * 3 + 1);

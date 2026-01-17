@@ -2659,7 +2659,7 @@ try {
 
 const poolCache = window.poolCache;
 const balanceCache = { data: null, timestamp: 0, ttl: 60000 }; // 60 сек
-let currentTheme = localStorage.getItem('fennec_theme') || 'dark';
+const currentTheme = localStorage.getItem('fennec_theme') || 'dark';
 
 // Переводы
 const translations = {
@@ -8193,7 +8193,7 @@ function __legacy_stopPublicTickerUpdates() {
 
 // Chart functions are now imported as modules
 
-let __fennecSmartPollInterval = null;
+const __fennecSmartPollInterval = null;
 let __fennecLastTipHeight = 0;
 
 async function __fennecGetTipHeight() {
@@ -8247,15 +8247,8 @@ async function __fennecSmartPollOnce() {
 // __fennecStartSmartPolling and __fennecStopSmartPolling are imported from chart.js
 
 // ===== PROGRESS TRACKING =====
+// closeProgress is imported from utils.js
 let progressInterval = null;
-
-function closeProgress() {
-    document.getElementById('progressModal').classList.add('hidden');
-    if (progressInterval) {
-        clearInterval(progressInterval);
-        progressInterval = null;
-    }
-}
 
 async function trackWithdrawProgress(withdrawId, tick) {
     document.getElementById('progressModal').classList.remove('hidden');

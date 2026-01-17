@@ -1,5 +1,9 @@
 import { BACKEND_URL, safeFetchJson, __fennecDedupe } from './core.js';
 
+// Chart.js is loaded globally via CDN in index.html
+// eslint-disable-next-line no-undef
+const Chart = typeof window !== 'undefined' ? window.Chart : undefined;
+
 try {
     window.__fennecChartModuleLoaded = true;
 } catch (_) {}
@@ -472,7 +476,7 @@ function updateChart() {
 }
 
 // Get pool info and update market stats from pool_info API
-async function updateMarketStats(fennecPriceInFB) {
+async function updateMarketStats(_fennecPriceInFB) {
     try {
         const marketCapEl = document.getElementById('marketCap');
         const volume24hEl = document.getElementById('volume24h');
