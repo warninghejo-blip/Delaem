@@ -1,4 +1,6 @@
 // Импорты функций из модулей
+import { initializeEventBindings } from '../js/app/event_bindings.js';
+
 import {
     refreshMyLiquidityForSelectedPair,
     openAddLiquidityModal,
@@ -13,7 +15,9 @@ import {
     computeExpectedLp,
     __normalizeAmountStr,
     closeAddLiquidityModal,
-    getBalanceForTick
+    getBalanceForTick,
+    doAddLiquidity,
+    doRemoveLiquidity
 } from '../js/app/liquidity_ui.js';
 
 import { initAudit, runAudit, refreshAudit, startAuditRefreshTimer } from '../js/app/audit_ui.js';
@@ -72,6 +76,8 @@ window.switchLiquidityTab = switchLiquidityTab;
 window.updateRemoveLiquidityEstimate = updateRemoveLiquidityEstimate;
 window.selectLiquidityPair = selectLiquidityPair;
 window.closeAddLiquidityModal = closeAddLiquidityModal;
+window.doAddLiquidity = doAddLiquidity;
+window.doRemoveLiquidity = doRemoveLiquidity;
 
 // Audit функции
 window.initAudit = initAudit;
@@ -14841,6 +14847,12 @@ try {
 try {
     installUtilsGlobals();
     initializeApp();
+
+    // Initialize event bindings for interactive elements
+    if (typeof initializeEventBindings === 'function') {
+        initializeEventBindings();
+        console.log('✅ Event bindings initialized');
+    }
 } catch (e) {
     console.error('Failed to initialize app modules:', e);
 }
