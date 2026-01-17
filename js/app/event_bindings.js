@@ -41,14 +41,13 @@ const swapPairButtons = [
 // Deposit token buttons
 const depositTokenButtons = [
     { id: 'dep-btc', token: 'BTC' },
-    { id: 'dep-fb', token: 'FB' },
+    { id: 'dep-sfb', token: 'sFB' },
     { id: 'dep-fennec', token: 'FENNEC' }
 ];
 
 // Withdraw token buttons
 const withdrawTokenButtons = [
-    { id: 'wd-btc', token: 'BTC' },
-    { id: 'wd-fb', token: 'FB' },
+    { id: 'wd-sfb', token: 'sFB' },
     { id: 'wd-fennec', token: 'FENNEC' }
 ];
 
@@ -191,9 +190,9 @@ export function initializeEventBindings() {
         { id: 'dep-fee-medium', fee: 'medium' },
         { id: 'dep-fee-fast', fee: 'fast' },
         { id: 'dep-fee-custom', fee: 'custom' },
-        { id: 'wd-fee-slow', fee: 'slow' },
-        { id: 'wd-fee-normal', fee: 'normal' },
-        { id: 'wd-fee-fast', fee: 'fast' }
+        { id: 'wd-fee-medium', fee: 'medium' },
+        { id: 'wd-fee-fast', fee: 'fast' },
+        { id: 'wd-fee-custom', fee: 'custom' }
     ];
 
     feeButtons.forEach(({ id, fee }) => {

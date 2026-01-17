@@ -190,7 +190,8 @@ async function loadHistoricalPrices() {
             const apiData = json.data.list
                 .map(item => {
                     const price = parseFloat(item.price);
-                    const timestamp = (item.ts || 0) * 1000; // Convert seconds to milliseconds
+                    const tsRaw = Number(item.ts || item.timestamp || 0) || 0;
+                    const timestamp = tsRaw > 1000000000000 ? tsRaw : tsRaw * 1000;
 
                     // Validate price is reasonable (0.00001 to 10 FB per FENNEC)
                     if (isNaN(price) || price <= 0 || price > 10 || price < 0.00001) {
@@ -215,13 +216,14 @@ async function loadHistoricalPrices() {
                 // Just merge and deduplicate
                 const merged = [...existing, ...apiData].sort((a, b) => a.timestamp - b.timestamp);
 
-                // Remove duplicates by timestamp (within 5 minutes for better deduplication)
-                // Also limit points to reasonable number for each timeframe
-                const deduplicated = [];
-                merged.forEach(p => {
-                    const exists = deduplicated.find(d => Math.abs(d.timestamp - p.timestamp) < 300000); // 5 minutes
-                    if (!exists) deduplicated.push(p);
-                });
+                // Remove exact duplicates by timestamp (fine-grained).
+                const seen = new Map();
+                for (const p of merged) {
+                    const key = Number(p.timestamp || 0) || 0;
+                    if (!key) continue;
+                    if (!seen.has(key)) seen.set(key, p);
+                }
+                const deduplicated = Array.from(seen.values()).sort((a, b) => a.timestamp - b.timestamp);
 
                 // For 90d/all timeframe, limit to max 200 points to avoid overcrowding
                 // For shorter timeframes, use fewer points

@@ -242,6 +242,9 @@ async function checkBalance(force = false) {
                     try {
                         if (typeof updateWithdrawUI === 'function') updateWithdrawUI();
                     } catch (_) {}
+                    try {
+                        if (typeof updateUI === 'function') updateUI();
+                    } catch (_) {}
                     return;
                 }
             }
@@ -323,6 +326,9 @@ async function checkBalance(force = false) {
         } catch (_) {}
         try {
             if (typeof updateWithdrawUI === 'function') updateWithdrawUI();
+        } catch (_) {}
+        try {
+            if (typeof updateUI === 'function') updateUI();
         } catch (_) {}
 
         try {
@@ -497,6 +503,127 @@ async function processFennecIdRegisterQueue() {
         localStorage.setItem(key, JSON.stringify(keep));
     } catch (_) {}
 }
+
+window.refreshFennecIdStatus = async function (force = false, _allowWalletScan = false) {
+    try {
+        const addr = String(userAddress || window.userAddress || '').trim();
+        if (!addr) {
+            window.__fennecIdStatus = { address: '', hasId: false, inscriptionId: '', updatedAt: 0, src: '' };
+            return window.__fennecIdStatus;
+        }
+
+        const now = Date.now();
+        const prev =
+            window.__fennecIdStatus && typeof window.__fennecIdStatus === 'object' ? window.__fennecIdStatus : null;
+        if (!force && prev && String(prev.address || '') === addr && now - (Number(prev.checkedAt || 0) || 0) < 15000) {
+            return prev;
+        }
+
+        let inscriptionId = '';
+        try {
+            inscriptionId = String(localStorage.getItem(fennecIdKeyV2(addr)) || '').trim();
+        } catch (_) {}
+
+        let src = inscriptionId ? 'localStorage' : '';
+        let updatedAt = 0;
+
+        try {
+            const url = `${BACKEND_URL}?action=fennec_id_lookup&address=${encodeURIComponent(addr)}`;
+            const res = await fetch(url, { cache: 'no-store', headers: { Accept: 'application/json' } }).catch(
+                () => null
+            );
+            const j = res && res.ok ? await res.json().catch(() => null) : null;
+            const data = j && typeof j === 'object' ? j.data : null;
+            const id = String(data?.inscriptionId || data?.inscription_id || '').trim();
+            if (id) {
+                inscriptionId = id;
+                updatedAt = Number(data?.updatedAt || 0) || 0;
+                src = 'worker';
+                try {
+                    localStorage.setItem(fennecIdKeyV2(addr), id);
+                } catch (_) {}
+            }
+        } catch (_) {}
+
+        const out = {
+            address: addr,
+            hasId: !!inscriptionId,
+            inscriptionId,
+            updatedAt,
+            checkedAt: now,
+            src
+        };
+        window.__fennecIdStatus = out;
+        return out;
+    } catch (_) {
+        return { address: '', hasId: false, inscriptionId: '', updatedAt: 0, checkedAt: Date.now(), src: 'error' };
+    }
+};
+
+window.openFennecIdInternal = async function (event) {
+    try {
+        if (event && typeof event.preventDefault === 'function') event.preventDefault();
+    } catch (_) {}
+
+    const addr = String(userAddress || window.userAddress || '').trim();
+    if (!addr) {
+        try {
+            if (typeof window.connectWallet === 'function') return window.connectWallet();
+        } catch (_) {}
+        return;
+    }
+
+    try {
+        window.__fennecAuditUi =
+            window.__fennecAuditUi && typeof window.__fennecAuditUi === 'object'
+                ? window.__fennecAuditUi
+                : { addr: '', mode: 'idle', openedAt: 0, scannedAt: 0 };
+        window.__fennecAuditUi.addr = addr;
+        window.__fennecAuditUi.mode = 'opening';
+        window.__fennecAuditUi.openedAt = Date.now();
+    } catch (_) {}
+
+    try {
+        if (typeof window.initAudit === 'function') window.initAudit();
+    } catch (_) {}
+
+    await window.refreshFennecIdStatus(true, false);
+    const id = String((window.__fennecIdStatus && window.__fennecIdStatus.inscriptionId) || '').trim();
+    if (!id) {
+        try {
+            if (typeof window.showNotification === 'function') {
+                window.showNotification('No Fennec ID found for this address', 'warning', 2500);
+            }
+        } catch (_) {}
+        try {
+            window.__fennecAuditUi.mode = 'idle';
+        } catch (_) {}
+        try {
+            if (typeof window.initAudit === 'function') window.initAudit();
+        } catch (_) {}
+        return;
+    }
+
+    if (typeof window.loadExistingCardIntoIframe === 'function') {
+        await window.loadExistingCardIntoIframe(id, window.auditIdentity || null);
+    }
+
+    try {
+        window.__fennecAuditUi.mode = 'opened';
+    } catch (_) {}
+    try {
+        if (typeof window.initAudit === 'function') window.initAudit();
+    } catch (_) {}
+};
+
+window.refreshScannedIdentity = async function (event) {
+    try {
+        if (event && typeof event.preventDefault === 'function') event.preventDefault();
+    } catch (_) {}
+    try {
+        if (typeof window.runAudit === 'function') return window.runAudit(true);
+    } catch (_) {}
+};
 
 async function checkPendingMints() {
     try {
@@ -1039,6 +1166,9 @@ window.calcReverse = calcReverse;
 window.debounceQuote = debounceQuote;
 window.debounceReverse = debounceReverse;
 window.generateRecursiveChildHTML = generateRecursiveChildHTML;
+window.loadExistingCardIntoIframe = loadExistingCardIntoIframe;
+window.loadPreviewCardIntoIframe = loadPreviewCardIntoIframe;
+window.updateUI = updateUI;
 
 // Audit identity calculator must be global (used by audit_ui.js)
 window.calculateFennecIdentity = calculateFennecIdentity;
@@ -1060,6 +1190,71 @@ function __switchDirCompat() {
         window.isBuying = isBuying;
     } catch (_) {}
     return switchDir();
+}
+
+function updateUI() {
+    try {
+        const iconIn = document.getElementById('iconIn');
+        const iconOut = document.getElementById('iconOut');
+        const tickerIn = document.getElementById('tickerIn');
+        const tickerOut = document.getElementById('tickerOut');
+
+        let inLabel = 'FB';
+        let outLabel = 'FENNEC';
+        let inIcon = 'img/FB.png';
+        let outIcon = 'img/phav.png';
+
+        if (currentSwapPair === 'BTC_FB') {
+            if (isBuying) {
+                inLabel = 'BTC';
+                outLabel = 'FB';
+                inIcon = 'img/BTC.svg';
+                outIcon = 'img/FB.png';
+            } else {
+                inLabel = 'FB';
+                outLabel = 'BTC';
+                inIcon = 'img/FB.png';
+                outIcon = 'img/BTC.svg';
+            }
+        } else {
+            if (isBuying) {
+                inLabel = 'FB';
+                outLabel = 'FENNEC';
+                inIcon = 'img/FB.png';
+                outIcon = 'img/phav.png';
+            } else {
+                inLabel = 'FENNEC';
+                outLabel = 'FB';
+                inIcon = 'img/phav.png';
+                outIcon = 'img/FB.png';
+            }
+        }
+
+        if (tickerIn) tickerIn.textContent = inLabel;
+        if (tickerOut) tickerOut.textContent = outLabel;
+        if (iconIn) iconIn.src = inIcon;
+        if (iconOut) iconOut.src = outIcon;
+    } catch (_) {}
+
+    try {
+        const balEl = document.getElementById('balIn');
+        if (balEl) {
+            let bal = 0;
+            if (currentSwapPair === 'FB_FENNEC') {
+                bal = isBuying ? Number(userBalances.sFB || 0) || 0 : Number(userBalances.FENNEC || 0) || 0;
+            } else {
+                bal = isBuying ? Number(poolReserves.user_sBTC || 0) || 0 : Number(userBalances.sFB || 0) || 0;
+            }
+            balEl.textContent = `Bal: ${bal.toFixed(4)}`;
+        }
+    } catch (_) {}
+
+    try {
+        updateDepositUI();
+    } catch (_) {}
+    try {
+        updateWithdrawUI();
+    } catch (_) {}
 }
 
 // UI утилиты
@@ -2515,16 +2710,32 @@ async function setDepositToken(tok, options = {}) {
     depositToken = tok;
     // Update UI buttons
     const sfbBtn = document.getElementById('dep-sfb');
+    const btcBtn = document.getElementById('dep-btc');
     const fennecBtn = document.getElementById('dep-fennec');
     if (sfbBtn) {
         sfbBtn.className = `flex-1 py-2 rounded-lg text-xs font-bold border transition cursor-pointer ${tok === 'sFB' ? 'border-fennec text-fennec bg-fennec/10' : 'border-gray-700 text-gray-500 hover:text-white'}`;
+    }
+    if (btcBtn) {
+        btcBtn.className = `flex-1 py-2 rounded-lg text-xs font-bold border transition cursor-pointer ${tok === 'BTC' ? 'border-fennec text-fennec bg-fennec/10' : 'border-gray-700 text-gray-500 hover:text-white'}`;
     }
     if (fennecBtn) {
         fennecBtn.className = `flex-1 py-2 rounded-lg text-xs font-bold border transition cursor-pointer ${tok === 'FENNEC' ? 'border-fennec text-fennec bg-fennec/10' : 'border-gray-700 text-gray-500 hover:text-white'}`;
     }
     // Update deposit label
     const labelEl = document.getElementById('depTickerLabel');
-    if (labelEl) labelEl.innerText = tok === 'sFB' ? 'FB' : 'FENNEC';
+    if (labelEl) labelEl.innerText = tok === 'BTC' ? 'BTC' : tok === 'sFB' ? 'FB' : 'FENNEC';
+
+    try {
+        const nativeUi = document.getElementById('dep-native-ui');
+        const brc20Ui = document.getElementById('dep-brc20-ui');
+        if (tok === 'FENNEC') {
+            if (nativeUi) nativeUi.style.display = 'none';
+            if (brc20Ui) brc20Ui.style.display = '';
+        } else {
+            if (nativeUi) nativeUi.style.display = '';
+            if (brc20Ui) brc20Ui.style.display = 'none';
+        }
+    } catch (_) {}
 
     // Load fees when switching tokens
     if (!options.skipFees) {
@@ -2537,7 +2748,12 @@ async function setDepositToken(tok, options = {}) {
 }
 
 function updateDepositUI() {
-    const bal = depositToken === 'sFB' ? userBalances.sFB : userBalances.FENNEC;
+    const bal =
+        depositToken === 'BTC'
+            ? walletBalances.BTC
+            : depositToken === 'sFB'
+              ? walletBalances.sFB
+              : walletBalances.FENNEC;
     const balEl = document.getElementById('depBalance');
     if (balEl) balEl.innerText = `Available: ${bal.toFixed(4)}`;
 }
@@ -10359,6 +10575,13 @@ try {
     window.depositSelectedInscriptions = depositSelectedInscriptions;
     window.createFennecInscription = createFennecInscription;
     window.doWithdraw = doWithdraw;
+    window.loadFees = loadFees;
+    window.setDepositFee = setDepositFee;
+    window.setDepositFeeCustom = setDepositFeeCustom;
+    window.setWithdrawFee = setWithdrawFee;
+    window.setWithdrawFeeCustom = setWithdrawFeeCustom;
+    window.updateDepositUI = updateDepositUI;
+    window.updateWithdrawUI = updateWithdrawUI;
     window.setMaxFennecAmount = setMaxFennecAmount;
     window.setWithdrawToken = setWithdrawToken;
     window.setMaxWithdrawAmount = setMaxWithdrawAmount;
