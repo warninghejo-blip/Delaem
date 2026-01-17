@@ -4,7 +4,11 @@ import { BACKEND_URL, T_FENNEC, T_SBTC, T_SFB } from './core.js';
 export function switchDir() {
     try {
         const cur = !!getState('isBuying');
-        setState('isBuying', !cur);
+        const next = !cur;
+        setState('isBuying', next);
+        try {
+            window.isBuying = next;
+        } catch (_) {}
     } catch (_) {}
 
     try {
@@ -20,9 +24,15 @@ export function switchDir() {
 }
 
 export function setSwapPair(pair) {
+    const p = String(pair || 'FB_FENNEC').trim() || 'FB_FENNEC';
     try {
-        setState('currentSwapPair', pair);
+        setState('currentSwapPair', p);
         setState('isBuying', true);
+    } catch (_) {}
+
+    try {
+        window.currentSwapPair = p;
+        window.isBuying = true;
     } catch (_) {}
 
     try {
@@ -37,13 +47,13 @@ export function setSwapPair(pair) {
         const pairBTC = document.getElementById('pair-btc-fb');
         if (pairFB) {
             pairFB.className =
-                pair === 'FB_FENNEC'
+                p === 'FB_FENNEC'
                     ? 'flex-1 py-2 text-xs font-bold border border-fennec bg-fennec/10 text-fennec rounded-lg transition'
                     : 'flex-1 py-2 text-xs font-bold border border-white/10 text-gray-500 hover:text-white rounded-lg transition';
         }
         if (pairBTC) {
             pairBTC.className =
-                pair === 'BTC_FB'
+                p === 'BTC_FB'
                     ? 'flex-1 py-2 text-xs font-bold border border-fennec bg-fennec/10 text-fennec rounded-lg transition'
                     : 'flex-1 py-2 text-xs font-bold border border-white/10 text-gray-500 hover:text-white rounded-lg transition';
         }
@@ -52,13 +62,13 @@ export function setSwapPair(pair) {
         const oldPairBTC = document.getElementById('swap-pair-btc-fb');
         if (oldPairFB) {
             oldPairFB.className =
-                pair === 'FB_FENNEC'
+                p === 'FB_FENNEC'
                     ? 'flex-1 py-2 rounded-lg text-xs font-bold border transition cursor-pointer border-fennec text-fennec bg-fennec/10'
                     : 'flex-1 py-2 rounded-lg text-xs font-bold border transition cursor-pointer border-gray-700 text-gray-500 hover:text-white';
         }
         if (oldPairBTC) {
             oldPairBTC.className =
-                pair === 'BTC_FB'
+                p === 'BTC_FB'
                     ? 'flex-1 py-2 rounded-lg text-xs font-bold border transition cursor-pointer border-fennec text-fennec bg-fennec/10'
                     : 'flex-1 py-2 rounded-lg text-xs font-bold border transition cursor-pointer border-gray-700 text-gray-500 hover:text-white';
         }
@@ -67,10 +77,10 @@ export function setSwapPair(pair) {
     try {
         const at = window.activeTickers && typeof window.activeTickers === 'object' ? window.activeTickers : null;
         if (at) {
-            if (pair === 'FB_FENNEC') {
+            if (p === 'FB_FENNEC') {
                 at.tick0 = window.T_SFB || 'sFB___000';
                 at.tick1 = window.T_FENNEC || 'FENNEC';
-            } else if (pair === 'BTC_FB') {
+            } else if (p === 'BTC_FB') {
                 at.tick0 = window.T_SBTC || 'sBTC___000';
                 at.tick1 = window.T_SFB || 'sFB___000';
             }

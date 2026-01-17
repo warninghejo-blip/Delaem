@@ -53,9 +53,7 @@ async function fetchAuditData(abortSignal = null, silent = false, options = null
                 else abortSignal.addEventListener('abort', () => localController.abort(), { once: true });
             }
 
-            const headers = __noCache
-                ? { Accept: 'application/json', 'Cache-Control': 'no-cache', Pragma: 'no-cache' }
-                : { Accept: 'application/json' };
+            const headers = { Accept: 'application/json' };
             const res = await fetch(url, {
                 signal: localController.signal,
                 cache: __noCache ? 'no-store' : attempt > 0 ? 'no-cache' : 'default',
@@ -232,7 +230,7 @@ async function fetchClientSideStats(address, options = null) {
         timeoutMs,
         retries: 0,
         cache: 'no-store',
-        headers: { Accept: 'application/json', 'Cache-Control': 'no-cache', Pragma: 'no-cache' }
+        headers: { Accept: 'application/json' }
     });
     if (!j || typeof j !== 'object') return null;
 
@@ -289,7 +287,7 @@ async function fetchClientSideCollections(address, options = null) {
         timeoutMs,
         retries: 0,
         cache: 'no-store',
-        headers: { Accept: 'application/json', 'Cache-Control': 'no-cache', Pragma: 'no-cache' }
+        headers: { Accept: 'application/json' }
     });
     const list = Array.isArray(j?.data?.list)
         ? j.data.list
@@ -336,6 +334,40 @@ async function fetchClientSideCollections(address, options = null) {
 const FENNEC_ID_EPOCH = '2026-01-02';
 const fennecIdKeyV2 = addr => `fennec_id_child_v3_${String(addr || '').trim()}`;
 const fennecMintedCardsKey = () => `fennec_minted_cards_v3_${FENNEC_ID_EPOCH}`;
+
+const AUDIT_TIMEOUT_MS = 15000;
+
+const __FENNEC_AUDIT_CACHE_VERSION = '2026-01-18-1';
+
+function __ensureAuditCacheVersion(addr) {
+    try {
+        const a = String(addr || '').trim();
+        if (!a) return;
+        const verKey = 'fennec_audit_cache_ver';
+        const prev = String(localStorage.getItem(verKey) || '').trim();
+        if (prev === __FENNEC_AUDIT_CACHE_VERSION) return;
+
+        try {
+            localStorage.removeItem(`audit_v3_${a}`);
+        } catch (_) {}
+        try {
+            localStorage.setItem(verKey, __FENNEC_AUDIT_CACHE_VERSION);
+        } catch (_) {}
+
+        try {
+            prefetchedFennecAudit = null;
+            prefetchedFennecAuditAddr = '';
+            prefetchedFennecAuditTs = 0;
+        } catch (_) {}
+
+        try {
+            if (window.__fennecPrefetchAudit && typeof window.__fennecPrefetchAudit === 'object') {
+                window.__fennecPrefetchAudit.promise = null;
+                window.__fennecPrefetchAudit.addr = '';
+            }
+        } catch (_) {}
+    } catch (_) {}
+}
 
 try {
     window.FENNEC_ID_EPOCH = window.FENNEC_ID_EPOCH || FENNEC_ID_EPOCH;
@@ -523,6 +555,10 @@ window.__ensureAuditUi =
 async function prefetchFennecAudit(silent = true) {
     const addr = String(window.userAddress || userAddress || '').trim();
     if (!addr) return null;
+
+    try {
+        __ensureAuditCacheVersion(addr);
+    } catch (_) {}
 
     const now = Date.now();
     const cacheKey = `audit_v3_${addr}`;
@@ -1097,7 +1133,6 @@ async function runAudit(forceRefresh = false) {
         console.log('Audit already running');
         return;
     }
-
     const addrConnected = String(window.userAddress || userAddress || '').trim();
     if (!addrConnected) {
         try {
@@ -1112,6 +1147,10 @@ async function runAudit(forceRefresh = false) {
         } catch (_) {}
         return;
     }
+
+    try {
+        __ensureAuditCacheVersion(addrConnected);
+    } catch (_) {}
 
     try {
         const now = Date.now();
@@ -1245,6 +1284,10 @@ async function runAudit(forceRefresh = false) {
 
     try {
         const addr = (userAddress || window.userAddress || '').trim();
+
+        try {
+            __ensureAuditCacheVersion(addr);
+        } catch (_) {}
 
         // ИСПРАВЛЕНИЕ: Сначала проверяем in-flight prefetch и prefetchedFennecAudit
         if (!forceRefresh) {

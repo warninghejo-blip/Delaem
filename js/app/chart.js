@@ -238,7 +238,7 @@ async function loadHistoricalPrices() {
             timeoutMs: 12000,
             retries: 2,
             cache: 'no-store',
-            headers: { Accept: 'application/json', 'Cache-Control': 'no-cache', Pragma: 'no-cache' }
+            headers: { Accept: 'application/json' }
         });
         if (!json) throw new Error('Failed to load price history');
 
