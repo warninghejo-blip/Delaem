@@ -1221,7 +1221,16 @@ async function runAudit(forceRefresh = false) {
             await new Promise(resolve => setTimeout(resolve, minDuration - elapsed));
         }
 
-        const identity = window.calculateFennecIdentity(data);
+        const __calc =
+            typeof window.calculateFennecIdentity === 'function'
+                ? window.calculateFennecIdentity
+                : typeof window.calculateFennecIdentityLegacy === 'function'
+                  ? window.calculateFennecIdentityLegacy
+                  : null;
+        if (!__calc) {
+            throw new Error('calculateFennecIdentity is not available');
+        }
+        const identity = __calc(data);
         try {
             if (identity && typeof identity === 'object') {
                 identity.metrics = identity.metrics && typeof identity.metrics === 'object' ? identity.metrics : {};

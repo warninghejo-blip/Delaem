@@ -180,6 +180,12 @@
 
             __setActiveNav(pathname);
             __runRouteInit(pathname);
+
+            try {
+                if (typeof window.initializeEventBindings === 'function') {
+                    window.initializeEventBindings();
+                }
+            } catch (_) {}
         } finally {
             window.__fennecRouting = false;
         }

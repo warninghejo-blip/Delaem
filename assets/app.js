@@ -1023,6 +1023,9 @@ window.runAudit = runAudit;
 window.refreshAudit = refreshAudit;
 window.startAuditRefreshTimer = startAuditRefreshTimer;
 
+// Bindings helper for SPA swaps
+window.initializeEventBindings = initializeEventBindings;
+
 // Chart функции
 window.setChartTimeframe = setChartTimeframe;
 
@@ -1036,6 +1039,10 @@ window.calcReverse = calcReverse;
 window.debounceQuote = debounceQuote;
 window.debounceReverse = debounceReverse;
 window.generateRecursiveChildHTML = generateRecursiveChildHTML;
+
+// Audit identity calculator must be global (used by audit_ui.js)
+window.calculateFennecIdentity = calculateFennecIdentity;
+window.calculateFennecIdentityLegacy = calculateFennecIdentityLegacy;
 
 function __setSwapPairCompat(pair) {
     try {
@@ -10367,27 +10374,31 @@ try {
 // Initialize app modules
 try {
     installUtilsGlobals();
+} catch (e) {
+    console.error('Failed to install utils globals:', e);
+}
+
+try {
     initializeApp();
+} catch (e) {
+    console.error('Failed to initialize app:', e);
+}
 
-    const bootBindings = () => {
-        try {
-            if (window.__fennecEventBindingsInitialized) return;
-            window.__fennecEventBindingsInitialized = true;
-        } catch (_) {}
+const bootBindings = () => {
+    try {
+        if (typeof initializeEventBindings === 'function') {
+            initializeEventBindings();
+            console.log('✅ Event bindings initialized');
+        }
+    } catch (_) {}
+};
 
-        try {
-            if (typeof initializeEventBindings === 'function') {
-                initializeEventBindings();
-                console.log('✅ Event bindings initialized');
-            }
-        } catch (_) {}
-    };
-
+try {
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', bootBindings, { once: true });
     } else {
         bootBindings();
     }
 } catch (e) {
-    console.error('Failed to initialize app modules:', e);
+    console.error('Failed to boot event bindings:', e);
 }
