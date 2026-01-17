@@ -4092,10 +4092,7 @@ function __legacy_setMaxAmount() {
     }
 }
 
-const setMaxAmount = window.setMaxAmount || __legacy_setMaxAmount;
-try {
-    window.setMaxAmount = setMaxAmount;
-} catch (_) {}
+// setMaxAmount is now imported as module
 
 function triggerSwapSuccessFx() {
     const btn = document.getElementById('swapBtn');
