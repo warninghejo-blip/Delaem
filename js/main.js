@@ -119,5 +119,10 @@ const __loadLegacyScript = src => {
         void _;
     }
 
-    await __loadLegacyScript(`assets/app.js${suffix}`);
+    // Load assets/app.js as ES6 module instead of legacy script
+    try {
+        await import(`../assets/app.js${suffix}`);
+    } catch (_) {
+        void _;
+    }
 })();
