@@ -997,8 +997,6 @@ async function runAudit(forceRefresh = false) {
 
         const startTime = Date.now();
         const progressInterval = setInterval(() => {
-            const elapsed = Date.now() - startTime;
-
             // Slowly increment progress but never reach 100 until data is ready
             progress = Math.min(95, progress + Math.random() * 3 + 1);
 

@@ -3979,13 +3979,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     // 1-5. UniSat API запросы (параллельно)
                     console.log('📊 [1-5/7] Loading UniSat APIs in parallel...');
 
-                    const needRunesFallback =
-                        !(typeof uniscanSummary?.data?.runes_count !== 'undefined') &&
-                        !(
-                            uniscanSummary?.data?.assets?.RunesList &&
-                            Array.isArray(uniscanSummary.data.assets.RunesList) &&
-                            uniscanSummary.data.assets.RunesList.length
-                        );
+                    // needRunesFallback уже объявлена выше (всегда true)
                     // ОПТИМИЗАЦИЯ: Удален unisatBalance и unisatSummary - данные берутся из других источников
                     const [
                         unisatBrc20Summary,

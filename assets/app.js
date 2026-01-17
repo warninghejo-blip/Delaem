@@ -2778,10 +2778,7 @@ function validateAmount(amount, type, token) {
     return { valid: true };
 }
 
-function showError(message) {
-    document.getElementById('errorMsg').innerText = message;
-    document.getElementById('errorModal').classList.remove('hidden');
-}
+// showError уже импортирована из ../js/ui/utils.js
 
 function showSuccess(message, isMintEvent = false) {
     const modal = document.getElementById('successModal');
