@@ -1,3 +1,11 @@
+// Защита от двойной инициализации
+if (window.FENNEC_APP_INITIALIZED) {
+    console.warn('⚠️ Fennec App already initialized, skipping...');
+    throw new Error('Double Init Prevention');
+}
+window.FENNEC_APP_INITIALIZED = true;
+console.log('🚀 Initializing Fennec App...');
+
 // Импорты функций из модулей
 import { initializeEventBindings } from '../js/app/event_bindings.js';
 
@@ -17,7 +25,10 @@ import {
     closeAddLiquidityModal,
     getBalanceForTick,
     doAddLiquidity,
-    doRemoveLiquidity
+    doRemoveLiquidity,
+    setMaxLiqAmount,
+    openRemoveLiquidityModal,
+    setMaxRemoveLp
 } from '../js/app/liquidity_ui.js';
 
 import { initAudit, runAudit, refreshAudit, startAuditRefreshTimer } from '../js/app/audit_ui.js';
@@ -51,19 +62,9 @@ import {
     installUtilsGlobals
 } from '../js/ui/utils.js';
 
-// Временные заглушки для функций из отсутствующих модулей
-const setDepositFeeCustom = window.setDepositFeeCustom || function () {};
-const setWithdrawFeeCustom = window.setWithdrawFeeCustom || function () {};
-const setDepositFee = window.setDepositFee || function () {};
-const setWithdrawFee = window.setWithdrawFee || function () {};
-const loadFees = window.loadFees || function () {};
-const setDepositToken = window.setDepositToken || function () {};
-const setMaxDepositAmount = window.setMaxDepositAmount || function () {};
-const setMaxFennecAmount = window.setMaxFennecAmount || function () {};
-const setWithdrawToken = window.setWithdrawToken || function () {};
-const setMaxWithdrawAmount = window.setMaxWithdrawAmount || function () {};
-// Функции определяются позже в этом файле и экспортируются в window
-// doWithdraw, createFennecInscription, manualRefresh, connectWallet, disconnectWallet, etc.
+// Все функции определяются позже в этом файле и экспортируются в window
+// connectWallet, disconnectWallet, manualRefresh, doWithdraw, createFennecInscription
+// setDepositFee, setWithdrawFee, setDepositToken, setWithdrawToken, etc.
 
 // Экспортируем импортированные функции в window для работы onclick атрибутов
 window.showSection = showSection;
@@ -78,6 +79,9 @@ window.selectLiquidityPair = selectLiquidityPair;
 window.closeAddLiquidityModal = closeAddLiquidityModal;
 window.doAddLiquidity = doAddLiquidity;
 window.doRemoveLiquidity = doRemoveLiquidity;
+window.setMaxLiqAmount = setMaxLiqAmount;
+window.openRemoveLiquidityModal = openRemoveLiquidityModal;
+window.setMaxRemoveLp = setMaxRemoveLp;
 
 // Audit функции
 window.initAudit = initAudit;
