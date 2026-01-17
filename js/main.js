@@ -49,23 +49,8 @@ const __getVersion = () => {
         const v = String(u.searchParams.get('v') || '').trim();
         return v;
     } catch (_) {
-        return '';
+        return v;
     }
-};
-
-const __loadLegacyScript = src => {
-    return new Promise((resolve, reject) => {
-        try {
-            const s = document.createElement('script');
-            s.src = src;
-            s.async = false;
-            s.onload = () => resolve(true);
-            s.onerror = () => reject(new Error(`Failed to load: ${src}`));
-            document.head.appendChild(s);
-        } catch (e) {
-            reject(e);
-        }
-    });
 };
 
 (async () => {

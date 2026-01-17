@@ -377,8 +377,8 @@ Request Context: ${JSON.stringify(context, null, 2)}
                 __normHost(env?.UNISAT_OPEN_API_HOST) ||
                 __normHost(env?.UNISAT_HOST) ||
                 __normHost(env?.OPEN_API_UNISAT_HOST) ||
-                'open-api-staging.unisat.io';
-            const UNISAT_BASE = `https://${__unisatHost}/v1`; // Open API общий (prod/staging via env)
+                'open-api-fractal.unisat.io';
+            const UNISAT_BASE = `https://${__unisatHost}/v1`; // Open API для Fractal (production only)
             const BTC_BASE = `https://${__unisatHost}`;
             const INSWAP_URL = `${FRACTAL_BASE}/brc20-swap`; // Старый URL для обратной совместимости
             const INSWAP_V1_URL = `${FRACTAL_BASE}/brc20-swap`; // Правильный URL по документации
@@ -3536,21 +3536,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         }
                     );
 
-                    // 1. UniSat Balance API - BTC баланс, inscriptionUtxoCount (proxy для ordinals), utxoCount
-                    const unisatBalancePromise = safeFetch(
-                        () =>
-                            fetch(`${FRACTAL_BASE}/indexer/address/${address}/balance`, {
-                                headers: upstreamHeaders
-                            }),
-                        {
-                            isUniSat: true,
-                            useCache: true,
-                            cacheKey: `unisat_balance_${address}`,
-                            retryOn429: !__fastMode,
-                            traceLabel: 'unisat_balance',
-                            traceUrl: `${FRACTAL_BASE}/indexer/address/${address}/balance`
-                        }
-                    );
+                    // ОПТИМИЗАЦИЯ: Удален запрос к /indexer/address/.../balance
+                    // Причина: данные дублируются (баланс берется из Mempool API, inscriptionUtxoCount не нужен)
+                    // const unisatBalancePromise = Promise.resolve(null);
 
                     // 2. UniSat BRC-20 Summary API - все BRC-20 токены разом
                     const unisatBrc20SummaryPromise = (async () => {
@@ -4126,8 +4114,8 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             Array.isArray(uniscanSummary.data.assets.RunesList) &&
                             uniscanSummary.data.assets.RunesList.length
                         );
+                    // ОПТИМИЗАЦИЯ: Удален unisatBalance - данные берутся из Mempool API
                     const [
-                        unisatBalance,
                         unisatBrc20Summary,
                         unisatHistory,
                         unisatRunes,
@@ -4135,7 +4123,6 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         unisatSummary,
                         unisatAbandonNftUtxo
                     ] = await Promise.all([
-                        withTimeout(unisatBalancePromise, UNISAT_AUDIT_TIMEOUT_MS),
                         withTimeout(unisatBrc20SummaryPromise, UNISAT_AUDIT_TIMEOUT_MS),
                         withTimeout(unisatHistoryPromise, UNISAT_AUDIT_TIMEOUT_MS),
                         needRunesFallback
@@ -4145,6 +4132,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         withTimeout(unisatSummaryPromise, UNISAT_AUDIT_TIMEOUT_MS),
                         withTimeout(unisatAbandonNftUtxoPromise, UNISAT_AUDIT_TIMEOUT_MS)
                     ]);
+                    const unisatBalance = null; // Удален запрос - используем только Mempool API
                     await new Promise(r => setTimeout(r, 120));
 
                     // 6. InSwap All Balance API - все токены с балансами и ценами в USD
@@ -5468,21 +5456,26 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         try {
                             requireUniSatKey();
                             const addrEnc = encodeURIComponent(address);
-                            const endpoints = [
-                                `${FRACTAL_BASE}/collection-indexer/address/${addrEnc}/collection/list`,
-                                `${UNISAT_BASE}/collection-indexer/address/${addrEnc}/collection/list`
-                            ];
-                            for (let i = 0; i < endpoints.length; i++) {
-                                const endpointBase = endpoints[i];
-                                const limit = 100;
-                                let start = 0;
-                                let page = 0;
-                                let totalCollectionsCount = 0;
-                                let totalRows = null;
+                            // ОПТИМИЗАЦИЯ: Только production URL, умный ретрай для Fennec Boxes
+                            const endpointBase = `${FRACTAL_BASE}/collection-indexer/address/${addrEnc}/collection/list`;
+                            const limit = 100;
+                            let start = 0;
+                            let page = 0;
+                            let totalCollectionsCount = 0;
+                            let totalRows = null;
 
-                                while (page < (__fastMode ? 2 : 10)) {
-                                    const cacheKey = `collection_indexer_${address}_${endpointBase}_${start}_${page}`;
-                                    const res = await safeFetch(
+                            while (page < (__fastMode ? 2 : 10)) {
+                                const cacheKey = `collection_indexer_${address}_${endpointBase}_${start}_${page}`;
+
+                                // КРИТИЧЕСКАЯ ОПТИМИЗАЦИЯ: Умный ретрай для collection/list (429)
+                                // Максимум 2 попытки с задержкой 1500мс (важно для Fennec Boxes)
+                                let res = null;
+                                let attempt = 0;
+                                const maxAttempts = 2;
+
+                                while (attempt < maxAttempts && !res) {
+                                    attempt++;
+                                    const attemptRes = await safeFetch(
                                         () =>
                                             fetch(endpointBase, {
                                                 method: 'GET',
@@ -5492,47 +5485,55 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                             isUniSat: true,
                                             useCache: true,
                                             cacheKey,
-                                            retryOn429: !__fastMode
+                                            retryOn429: false // Отключаем стандартный ретрай
                                         }
                                     );
 
-                                    let list = [];
-                                    if (Array.isArray(res?.data?.list)) list = res.data.list;
-                                    else if (Array.isArray(res?.data)) list = res.data;
-                                    else if (Array.isArray(res?.list)) list = res.list;
-                                    if (!list.length) break;
-
-                                    // Count collections, not items in collections
-                                    totalCollectionsCount += list.length;
-
-                                    if (page === 0) {
-                                        const totalRaw = res?.data?.total ?? res?.total;
-                                        const total = Number(totalRaw);
-                                        totalRows = Number.isFinite(total) && total > 0 ? Math.floor(total) : null;
+                                    if (attemptRes && attemptRes.code !== 429) {
+                                        res = attemptRes;
+                                        break;
                                     }
 
-                                    if (Number.isFinite(totalRows) && totalRows > 0 && start + list.length >= totalRows)
-                                        break;
-                                    if (list.length < limit) break;
-
-                                    start += list.length;
-                                    page++;
+                                    // Если получили 429 и это не последняя попытка - ждем 1500мс
+                                    if (attempt < maxAttempts) {
+                                        await new Promise(r => setTimeout(r, 1500));
+                                    }
                                 }
 
-                                // Prefer totalRows from API if available, otherwise use counted collections
-                                if (Number.isFinite(totalRows) && totalRows > 0) {
-                                    totalCollections = totalRows;
-                                    debugInfo.total_collections_source = 'unisat_collection_indexer_total';
-                                    debugInfo.total_collections_endpoint = endpointBase;
-                                    debugInfo.total_collections_pages = page + 1;
-                                    break;
-                                } else if (totalCollectionsCount > 0) {
-                                    totalCollections = Math.floor(totalCollectionsCount);
-                                    debugInfo.total_collections_source = 'unisat_collection_indexer_count';
-                                    debugInfo.total_collections_endpoint = endpointBase;
-                                    debugInfo.total_collections_pages = page + 1;
-                                    break;
+                                let list = [];
+                                if (Array.isArray(res?.data?.list)) list = res.data.list;
+                                else if (Array.isArray(res?.data)) list = res.data;
+                                else if (Array.isArray(res?.list)) list = res.list;
+                                if (!list.length) break;
+
+                                // Count collections, not items in collections
+                                totalCollectionsCount += list.length;
+
+                                if (page === 0) {
+                                    const totalRaw = res?.data?.total ?? res?.total;
+                                    const total = Number(totalRaw);
+                                    totalRows = Number.isFinite(total) && total > 0 ? Math.floor(total) : null;
                                 }
+
+                                if (Number.isFinite(totalRows) && totalRows > 0 && start + list.length >= totalRows)
+                                    break;
+                                if (list.length < limit) break;
+
+                                start += list.length;
+                                page++;
+                            }
+
+                            // Prefer totalRows from API if available, otherwise use counted collections
+                            if (Number.isFinite(totalRows) && totalRows > 0) {
+                                totalCollections = totalRows;
+                                debugInfo.total_collections_source = 'unisat_collection_indexer_total';
+                                debugInfo.total_collections_endpoint = endpointBase;
+                                debugInfo.total_collections_pages = page + 1;
+                            } else if (totalCollectionsCount > 0) {
+                                totalCollections = Math.floor(totalCollectionsCount);
+                                debugInfo.total_collections_source = 'unisat_collection_indexer_count';
+                                debugInfo.total_collections_endpoint = endpointBase;
+                                debugInfo.total_collections_pages = page + 1;
                             }
                         } catch (e) {
                             debugInfo.total_collections_collection_indexer_error = e?.message || String(e);
@@ -7339,29 +7340,29 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         }
 
                         // Основной источник: UniSat Collection Indexer по адресу (это владение, не аукцион)
+                        // ОПТИМИЗАЦИЯ: Только production URL, умный ретрай для Fennec Boxes
                         if (!hasFennecBoxes) {
                             try {
                                 if (API_KEY) requireUniSatKey();
                                 const addrEnc = encodeURIComponent(address);
                                 const limit = 100;
-                                const sources = [
-                                    {
-                                        name: 'unisat_collection_indexer_fractal',
-                                        base: `${FRACTAL_BASE}/collection-indexer/address/${addrEnc}/collection/list`
-                                    },
-                                    {
-                                        name: 'unisat_collection_indexer_unisat',
-                                        base: `${UNISAT_BASE}/collection-indexer/address/${addrEnc}/collection/list`
-                                    }
-                                ];
+                                const sourceBase = `${FRACTAL_BASE}/collection-indexer/address/${addrEnc}/collection/list`;
 
-                                for (let s = 0; s < sources.length && !hasFennecBoxes; s++) {
-                                    let start = 0;
-                                    let page = 0;
-                                    while (page < (__fastMode ? 2 : 10) && !hasFennecBoxes) {
-                                        const endpoint = `${sources[s].base}?start=${start}&limit=${limit}`;
-                                        const cacheKey = `fennec_boxes_${sources[s].name}_${address}_${start}_${limit}`;
-                                        const res = await safeFetch(
+                                let start = 0;
+                                let page = 0;
+                                while (page < (__fastMode ? 2 : 10) && !hasFennecBoxes) {
+                                    const endpoint = `${sourceBase}?start=${start}&limit=${limit}`;
+                                    const cacheKey = `fennec_boxes_unisat_collection_indexer_fractal_${address}_${start}_${limit}`;
+
+                                    // КРИТИЧЕСКАЯ ОПТИМИЗАЦИЯ: Умный ретрай для Fennec Boxes (429)
+                                    // Максимум 2 попытки с задержкой 1500мс
+                                    let res = null;
+                                    let attempt = 0;
+                                    const maxAttempts = 2;
+
+                                    while (attempt < maxAttempts && !res) {
+                                        attempt++;
+                                        const attemptRes = await safeFetch(
                                             () =>
                                                 fetch(endpoint, {
                                                     method: 'GET',
@@ -7371,85 +7372,95 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                                 isUniSat: true,
                                                 useCache: true,
                                                 cacheKey,
-                                                retryOn429: !__fastMode
+                                                retryOn429: false // Отключаем стандартный ретрай
                                             }
                                         );
 
-                                        let list = [];
-                                        if (Array.isArray(res?.data?.list)) list = res.data.list;
-                                        else if (Array.isArray(res?.data)) list = res.data;
-                                        else if (Array.isArray(res?.list)) list = res.list;
-
-                                        for (const it of list) {
-                                            const cid =
-                                                asId(it?.collectionId) ||
-                                                asId(it?.collection_id) ||
-                                                asId(it?.collectionSlug) ||
-                                                asId(it?.collection_slug) ||
-                                                asId(it?.slug) ||
-                                                asId(it?.id) ||
-                                                asId(it?.name) ||
-                                                asId(it?.title) ||
-                                                asId(it?.collectionName) ||
-                                                asId(it?.collection_name) ||
-                                                asId(it?.collection?.collectionId) ||
-                                                asId(it?.collection?.collection_id) ||
-                                                asId(it?.collection?.collectionSlug) ||
-                                                asId(it?.collection?.collection_slug) ||
-                                                asId(it?.collection?.slug) ||
-                                                asId(it?.collection?.id) ||
-                                                asId(it?.collection?.name) ||
-                                                asId(it?.collection?.title) ||
-                                                asId(it?.collection?.collectionName) ||
-                                                asId(it?.collection?.collection_name);
-                                            const cidNorm = normKey(cid);
-                                            if (
-                                                cidNorm &&
-                                                (cidNorm === targetCollectionIdNorm ||
-                                                    (cidNorm.includes('fennec') && cidNorm.includes('box')))
-                                            ) {
-                                                const holdingCandidate = it?.holding ?? it?.holdings;
-                                                const countCandidateRaw = Number(
-                                                    holdingCandidate ??
-                                                        it?.count ??
-                                                        it?.amount ??
-                                                        it?.inscriptionCount ??
-                                                        it?.inscription_count ??
-                                                        it?.total ??
-                                                        it?.totalCount ??
-                                                        it?.total_count ??
-                                                        0
-                                                );
-                                                const countCandidateNorm =
-                                                    (holdingCandidate === null || holdingCandidate === undefined) &&
-                                                    Number.isFinite(countCandidateRaw) &&
-                                                    countCandidateRaw >= 20 &&
-                                                    countCandidateRaw % 20 === 0
-                                                        ? countCandidateRaw / 20
-                                                        : countCandidateRaw;
-                                                fennecBoxesCount =
-                                                    Number.isFinite(countCandidateNorm) && countCandidateNorm > 0
-                                                        ? Math.floor(countCandidateNorm)
-                                                        : 1;
-                                                hasFennecBoxes = true;
-                                                debugInfo.fennec_boxes_source = sources[s].name;
-                                                debugInfo.fennec_boxes_endpoint = endpoint;
-                                                debugInfo.fennec_boxes_matched_id = cid;
-                                                debugInfo.fennec_boxes_count_from_api = countCandidateRaw;
-                                                break;
-                                            }
+                                        if (attemptRes && attemptRes.code !== 429) {
+                                            res = attemptRes;
+                                            break;
                                         }
 
-                                        const totalRaw = res?.data?.total ?? res?.total;
-                                        const total = Number(totalRaw);
-                                        if (hasFennecBoxes) break;
-                                        if (!list.length) break;
-                                        if (Number.isFinite(total) && total > 0 && start + list.length >= total) break;
-                                        if (list.length < limit) break;
-
-                                        start += list.length;
-                                        page++;
+                                        // Если получили 429 и это не последняя попытка - ждем 1500мс
+                                        if (attempt < maxAttempts) {
+                                            await new Promise(r => setTimeout(r, 1500));
+                                        }
                                     }
+
+                                    let list = [];
+                                    if (Array.isArray(res?.data?.list)) list = res.data.list;
+                                    else if (Array.isArray(res?.data)) list = res.data;
+                                    else if (Array.isArray(res?.list)) list = res.list;
+
+                                    for (const it of list) {
+                                        const cid =
+                                            asId(it?.collectionId) ||
+                                            asId(it?.collection_id) ||
+                                            asId(it?.collectionSlug) ||
+                                            asId(it?.collection_slug) ||
+                                            asId(it?.slug) ||
+                                            asId(it?.id) ||
+                                            asId(it?.name) ||
+                                            asId(it?.title) ||
+                                            asId(it?.collectionName) ||
+                                            asId(it?.collection_name) ||
+                                            asId(it?.collection?.collectionId) ||
+                                            asId(it?.collection?.collection_id) ||
+                                            asId(it?.collection?.collectionSlug) ||
+                                            asId(it?.collection?.collection_slug) ||
+                                            asId(it?.collection?.slug) ||
+                                            asId(it?.collection?.id) ||
+                                            asId(it?.collection?.name) ||
+                                            asId(it?.collection?.title) ||
+                                            asId(it?.collection?.collectionName) ||
+                                            asId(it?.collection?.collection_name);
+                                        const cidNorm = normKey(cid);
+                                        if (
+                                            cidNorm &&
+                                            (cidNorm === targetCollectionIdNorm ||
+                                                (cidNorm.includes('fennec') && cidNorm.includes('box')))
+                                        ) {
+                                            const holdingCandidate = it?.holding ?? it?.holdings;
+                                            const countCandidateRaw = Number(
+                                                holdingCandidate ??
+                                                    it?.count ??
+                                                    it?.amount ??
+                                                    it?.inscriptionCount ??
+                                                    it?.inscription_count ??
+                                                    it?.total ??
+                                                    it?.totalCount ??
+                                                    it?.total_count ??
+                                                    0
+                                            );
+                                            const countCandidateNorm =
+                                                (holdingCandidate === null || holdingCandidate === undefined) &&
+                                                Number.isFinite(countCandidateRaw) &&
+                                                countCandidateRaw >= 20 &&
+                                                countCandidateRaw % 20 === 0
+                                                    ? countCandidateRaw / 20
+                                                    : countCandidateRaw;
+                                            fennecBoxesCount =
+                                                Number.isFinite(countCandidateNorm) && countCandidateNorm > 0
+                                                    ? Math.floor(countCandidateNorm)
+                                                    : 1;
+                                            hasFennecBoxes = true;
+                                            debugInfo.fennec_boxes_source = 'unisat_collection_indexer_fractal';
+                                            debugInfo.fennec_boxes_endpoint = endpoint;
+                                            debugInfo.fennec_boxes_matched_id = cid;
+                                            debugInfo.fennec_boxes_count_from_api = countCandidateRaw;
+                                            break;
+                                        }
+                                    }
+
+                                    const totalRaw = res?.data?.total ?? res?.total;
+                                    const total = Number(totalRaw);
+                                    if (hasFennecBoxes) break;
+                                    if (!list.length) break;
+                                    if (Number.isFinite(total) && total > 0 && start + list.length >= total) break;
+                                    if (list.length < limit) break;
+
+                                    start += list.length;
+                                    page++;
                                 }
                             } catch (e) {
                                 debugInfo.fennec_boxes_indexer_error = e?.message || String(e);

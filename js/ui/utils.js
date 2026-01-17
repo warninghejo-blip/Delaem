@@ -31,7 +31,7 @@ export function showError(message) {
     if (errorModal) errorModal.classList.remove('hidden');
 }
 
-export function showSuccess(message, isMintEvent = false) {
+export function showSuccess(message) {
     const modal = document.getElementById('successModal');
     const msgEl = document.getElementById('successTxId');
 
@@ -69,7 +69,6 @@ export function toggleLanguage() {
 
 export function toggleChat() {
     const chatWindow = document.getElementById('chatWindow');
-    const chatTrigger = document.getElementById('chatTrigger');
 
     if (!chatWindow) return;
 

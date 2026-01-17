@@ -2670,29 +2670,7 @@ const translations = {
     }
 };
 
-function toggleTheme() {
-    currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', currentTheme);
-    localStorage.setItem('fennec_theme', currentTheme);
-
-    const icon = document.getElementById('themeIcon');
-    icon.className = currentTheme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
-
-    // Уведомление
-    showNotification(currentTheme === 'dark' ? 'Dark Mode' : 'Light Mode');
-}
-
-function toggleLanguage() {
-    currentLang = 'en';
-    localStorage.setItem('fennec_lang', 'en');
-    updateLanguage();
-    // Обновляем элементы с data-t
-    document.querySelectorAll('[data-t]').forEach(el => {
-        const key = el.getAttribute('data-t');
-        if (LANG && LANG.en && LANG.en[key]) el.innerText = LANG.en[key];
-    });
-    showNotification('English only');
-}
+// toggleTheme and toggleLanguage are now imported from utils.js
 
 function updateLanguage() {
     document.querySelectorAll('[data-lang-key]').forEach(el => {
