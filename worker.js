@@ -3477,64 +3477,13 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         },
                         { traceLabel: 'mempool_fractal_utxo', traceUrl: mempoolFractalUtxoUrl }
                     );
-                    // Uniscan как альтернативный источник (если доступен API)
-                    const uniscanAddressUrl = `https://uniscan.cc/api/fractal/address/${address}`;
-                    const uniscanPromise = safeFetch(
-                        () => {
-                            const controller = new AbortController();
-                            const timeoutId = setTimeout(() => controller.abort(), 4500);
-                            return fetch(uniscanAddressUrl, {
-                                headers: {
-                                    Accept: 'application/json',
-                                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                                },
-                                signal: controller.signal
-                            }).finally(() => clearTimeout(timeoutId));
-                        },
-                        { traceLabel: 'uniscan_address', traceUrl: uniscanAddressUrl }
-                    );
 
-                    // ИСПРАВЛЕНИЕ: Объявляем mempoolPromise ДО его использования
-                    const mempoolPromise = Promise.all([mempoolFractalPromise, uniscanPromise]).then(
-                        ([fractal, uniscan]) => {
-                            // Приоритет: mempool.fractalbitcoin.io, затем uniscan
-                            if (
-                                fractal &&
-                                (fractal.chain_stats || fractal.mempool_stats || fractal.funded_txo_count !== undefined)
-                            ) {
-                                return fractal;
-                            }
-                            if (
-                                uniscan &&
-                                (uniscan.chain_stats || uniscan.mempool_stats || uniscan.funded_txo_count !== undefined)
-                            ) {
-                                return uniscan;
-                            }
-                            return fractal || uniscan || null;
-                        }
-                    );
+                    // ОПТИМИЗАЦИЯ: Удален uniscanPromise (404 Not Found)
+                    // Используем только mempool.fractalbitcoin.io
+                    const mempoolPromise = mempoolFractalPromise;
 
-                    const uniscanSummaryPromise = safeFetch(
-                        () => {
-                            const controller = new AbortController();
-                            const timeoutId = setTimeout(() => controller.abort(), 4500);
-                            return fetch(uniscanAddressUrl, {
-                                headers: {
-                                    Accept: 'application/json',
-                                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                                },
-                                signal: controller.signal
-                            }).finally(() => clearTimeout(timeoutId));
-                        },
-                        {
-                            isUniSat: false,
-                            useCache: true,
-                            cacheKey: `uniscan_summary_${address}`,
-                            retryOn429: false,
-                            traceLabel: 'uniscan_summary',
-                            traceUrl: uniscanAddressUrl
-                        }
-                    );
+                    // ОПТИМИЗАЦИЯ: Удален uniscanSummaryPromise (404 за 4.2 секунды)
+                    // const uniscanSummaryPromise = Promise.resolve(null);
 
                     // ОПТИМИЗАЦИЯ: Удален запрос к /indexer/address/.../balance
                     // Причина: данные дублируются (баланс берется из Mempool API, inscriptionUtxoCount не нужен)
@@ -3628,21 +3577,8 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         }
                     );
 
-                    // 5. НОВЫЙ: UniSat Summary API - получаем данные кошелька одним запросом (из кода Gemini)
-                    const unisatSummaryPromise = safeFetch(
-                        () =>
-                            fetch(`${FRACTAL_BASE}/indexer/address/${address}/summary`, {
-                                headers: upstreamHeaders
-                            }),
-                        {
-                            isUniSat: true,
-                            useCache: true,
-                            cacheKey: `unisat_summary_${address}`,
-                            retryOn429: !__fastMode,
-                            traceLabel: 'unisat_summary',
-                            traceUrl: `${FRACTAL_BASE}/indexer/address/${address}/summary`
-                        }
-                    );
+                    // ОПТИМИЗАЦИЯ: Удален unisatSummaryPromise (404 за 4.2 секунды)
+                    // const unisatSummaryPromise = Promise.resolve(null);
 
                     const unisatAbandonNftUtxoPromise = safeFetch(
                         () =>
@@ -3674,45 +3610,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         }
                     );
 
-                    // 6. НОВЫЙ: InSwap Asset Summary API - получаем LP данные из модуля свапа (из кода Gemini)
-                    // КРИТИЧЕСКОЕ: Используем SWAP_BASE для brc20-swap эндпоинтов
-                    // ИСПРАВЛЕНИЕ: Проверяем правильный путь - возможно это /brc20-swap/address/{address}/asset-summary
-                    // Пробуем оба варианта: с /indexer/ и без (fallback)
-                    const inswapAssetSummaryPromise = (async () => {
-                        if (__disableInswap) return null;
-                        // Сначала пробуем без /indexer/
-                        let result = await safeFetch(
-                            () =>
-                                fetch(`${SWAP_BASE}/brc20-swap/address/${address}/asset-summary`, {
-                                    headers: upstreamHeaders
-                                }),
-                            {
-                                isUniSat: true,
-                                useCache: false,
-                                retryOn429: false,
-                                traceLabel: 'inswap_asset_summary_direct',
-                                traceUrl: `${SWAP_BASE}/brc20-swap/address/${address}/asset-summary`
-                            }
-                        );
-                        // Fallback: если не работает, пробуем с /indexer/
-                        if (!result || (result.code !== undefined && result.code !== 0)) {
-                            result = await safeFetch(
-                                () =>
-                                    fetch(`${SWAP_BASE}/indexer/brc20-swap/address/${address}/asset-summary`, {
-                                        headers: upstreamHeaders
-                                    }),
-                                {
-                                    isUniSat: true,
-                                    useCache: true,
-                                    cacheKey: `inswap_asset_summary_${address}`,
-                                    retryOn429: !__fastMode,
-                                    traceLabel: 'inswap_asset_summary_indexer',
-                                    traceUrl: `${SWAP_BASE}/indexer/brc20-swap/address/${address}/asset-summary`
-                                }
-                            );
-                        }
-                        return result;
-                    })();
+                    // ОПТИМИЗАЦИЯ: Удален inswapAssetSummaryPromise (оба 404)
+                    // LP данные уже получаем из inswap_all_balance_direct
+                    // const inswapAssetSummaryPromise = Promise.resolve(null);
 
                     // ОПТИМИЗАЦИЯ: Убран CoinGecko - цены получаем из InSwap all_balance
                     // const cgPromise = null;
@@ -3752,7 +3652,8 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             debugInfo.all_balance_direct_error = e?.message || String(e);
                         }
 
-                        const assetSummary = await Promise.resolve(inswapAssetSummaryPromise).catch(() => null);
+                        // ОПТИМИЗАЦИЯ: Удален inswapAssetSummaryPromise (оба 404)
+                        const assetSummary = null;
                         const list = (() => {
                             const d0 = assetSummary && typeof assetSummary === 'object' ? assetSummary.data : null;
                             if (Array.isArray(d0)) return d0;
@@ -4063,38 +3964,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     // Компромисс: 500ms между UniSat запросами, 2 секунды перед InSwap
 
                     // ОПТИМИЗАЦИЯ: Выполняем запросы параллельно для ускорения (из кода Gemini)
-                    // 0. ПРИОРИТЕТ: Uniscan Summary API (один "жирный" эндпоинт)
-                    console.log('📊 [0/7] Loading Uniscan Summary (priority)...');
-                    let uniscanSummary = null;
-                    try {
-                        uniscanSummary = await Promise.race([
-                            uniscanSummaryPromise,
-                            new Promise(resolve => setTimeout(() => resolve(null), 5500))
-                        ]);
-                        debugInfo.uniscan_summary_loaded = !!uniscanSummary;
-                        debugInfo.uniscan_summary_code = uniscanSummary?.code;
-                        debugInfo.uniscan_summary_msg = uniscanSummary?.msg;
-
-                        // КРИТИЧЕСКОЕ: Проверяем код ответа и наличие данных
-                        if (uniscanSummary && uniscanSummary.code !== 0) {
-                            debugInfo.uniscan_summary_invalid_code = true;
-                            debugInfo.uniscan_summary_fallback_to_unisat = true;
-                            uniscanSummary = null;
-                        } else if (
-                            uniscanSummary &&
-                            (!uniscanSummary.data || typeof uniscanSummary.data !== 'object')
-                        ) {
-                            debugInfo.uniscan_summary_no_data = true;
-                            debugInfo.uniscan_summary_fallback_to_unisat = true;
-                            uniscanSummary = null;
-                        }
-                    } catch (e) {
-                        debugInfo.uniscan_summary_error = e.message;
-                        debugInfo.uniscan_summary_loaded = false;
-                        debugInfo.uniscan_summary_fallback_to_unisat = true;
-                    }
-
-                    await new Promise(r => setTimeout(r, 120));
+                    // ОПТИМИЗАЦИЯ: Удален uniscanSummary (404 за 4.2 секунды)
+                    const uniscanSummary = null;
+                    const needRunesFallback = true; // Всегда используем UniSat для runes
 
                     const withTimeout = (promise, ms) =>
                         Promise.race([promise, new Promise(resolve => setTimeout(() => resolve(null), ms))]).catch(
@@ -4114,13 +3986,12 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             Array.isArray(uniscanSummary.data.assets.RunesList) &&
                             uniscanSummary.data.assets.RunesList.length
                         );
-                    // ОПТИМИЗАЦИЯ: Удален unisatBalance - данные берутся из Mempool API
+                    // ОПТИМИЗАЦИЯ: Удален unisatBalance и unisatSummary - данные берутся из других источников
                     const [
                         unisatBrc20Summary,
                         unisatHistory,
                         unisatRunes,
                         unisatInscriptionData,
-                        unisatSummary,
                         unisatAbandonNftUtxo
                     ] = await Promise.all([
                         withTimeout(unisatBrc20SummaryPromise, UNISAT_AUDIT_TIMEOUT_MS),
@@ -4129,10 +4000,10 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             ? withTimeout(unisatRunesPromise, UNISAT_AUDIT_TIMEOUT_MS)
                             : Promise.resolve(null),
                         withTimeout(unisatInscriptionDataPromise, UNISAT_AUDIT_TIMEOUT_MS),
-                        withTimeout(unisatSummaryPromise, UNISAT_AUDIT_TIMEOUT_MS),
                         withTimeout(unisatAbandonNftUtxoPromise, UNISAT_AUDIT_TIMEOUT_MS)
                     ]);
                     const unisatBalance = null; // Удален запрос - используем только Mempool API
+                    const unisatSummary = null; // Удален запрос (404 за 4.2 секунды)
                     await new Promise(r => setTimeout(r, 120));
 
                     // 6. InSwap All Balance API - все токены с балансами и ценами в USD
@@ -4157,20 +4028,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     }
                     await new Promise(r => setTimeout(r, 120));
 
-                    // 7. НОВЫЙ: InSwap Asset Summary API - LP данные из модуля свапа (из кода Gemini)
-                    console.log('💱 [7/7] Loading InSwap Asset Summary (LP)...');
-                    let inswapAssetSummary = null;
-                    try {
-                        inswapAssetSummary = await Promise.race([
-                            inswapAssetSummaryPromise,
-                            new Promise((_, reject) =>
-                                setTimeout(() => reject(new Error('Timeout')), INSWAP_AUDIT_TIMEOUT_MS)
-                            )
-                        ]).catch(() => null);
-                    } catch (e) {
-                        debugInfo.inswap_asset_summary_error = e.message;
-                    }
-                    await new Promise(r => setTimeout(r, 120));
+                    // ОПТИМИЗАЦИЯ: Удален inswapAssetSummary (оба 404)
+                    // LP данные уже получаем из inswap_all_balance_direct
+                    const inswapAssetSummary = null;
 
                     try {
                         const ab = allBalance && typeof allBalance === 'object' ? allBalance.data : null;
@@ -4384,8 +4244,8 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 };
 
                                 const fetchOne = async (off, label) => {
+                                    // ИСПРАВЛЕНИЕ: Для первой транзакции используем cursor = total - 1, size = 1
                                     const urls = [
-                                        `${FRACTAL_BASE}/indexer/address/${address}/history?start=${off}&limit=1`,
                                         `${FRACTAL_BASE}/indexer/address/${address}/history?cursor=${off}&size=1`
                                     ];
                                     for (let i = 0; i < urls.length; i++) {
@@ -4421,7 +4281,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                                 ts,
                                                 url: u,
                                                 label,
-                                                paramStyle: i === 0 ? 'start_limit' : 'cursor_size'
+                                                paramStyle: 'cursor_size'
                                             };
                                         } catch (_) {
                                             try {
