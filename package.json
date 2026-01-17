@@ -7,8 +7,9 @@
         "@scure/btc-signer": "^1.7.0"
     },
     "scripts": {
+        "build": "node scripts/build_pages.js",
         "deploy:worker": "wrangler deploy",
-        "deploy:pages": "wrangler pages deploy . --project-name=fennec-swap --commit-dirty=true",
+        "deploy:pages": "npm run build && wrangler pages deploy pages_upload --project-name=fennec-swap --commit-dirty=true",
         "deploy-worker": "npm run deploy:worker",
         "deploy-pages": "npm run deploy:pages",
         "deploy": "npm run deploy:worker && npm run deploy:pages",

@@ -4,6 +4,7 @@ node_modules/
 img.rar
 *.rar
 .pages_upload/
+pages_upload/
 
 backup/
 
