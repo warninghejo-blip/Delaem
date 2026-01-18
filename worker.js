@@ -410,9 +410,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     }
                 }
                 const u = v.toUpperCase();
-                if (u === 'SFB') return 'sFB___000';
-                if (u === 'SBTC') return 'sBTC___000';
-                return v;
+                if (u === 'SFB' || u === 'SFB___000') return 'sFB___000';
+                if (u === 'SBTC' || u === 'SBTC___000') return 'sBTC___000';
+                return u;
             };
 
             // ИСПРАВЛЕНИЕ: Строгая функция санитизации timestamp - убийца будущего
@@ -936,26 +936,34 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     const nowMs = Date.now();
                     const cutoffMs = nowMs - __rangeMs(timeRange);
 
-                    const limit = 2000;
+                    const startedAt = Date.now();
+                    const limit = 500;
                     const outList = [];
+
                     let start = 0;
                     let page = 0;
+                    let total = 0;
+                    let direction = 'forward';
+                    let switchedToTail = false;
+
                     const MAX_PAGES =
                         timeRange === '1h'
-                            ? 10
+                            ? 6
                             : timeRange === '24h'
-                              ? 25
+                              ? 12
                               : timeRange === '7d'
-                                ? 120
+                                ? 20
                                 : timeRange === '30d'
-                                  ? 220
+                                  ? 30
                                   : timeRange === '90d'
-                                    ? 420
+                                    ? 45
                                     : timeRange === 'all'
-                                      ? 420
-                                      : 220;
+                                      ? 45
+                                      : 25;
 
                     while (page < MAX_PAGES) {
+                        if (Date.now() - startedAt > 8500) break;
+
                         let endpointUrl = `${SWAP_BASE}/brc20-swap/swap_history?start=${start}&limit=${limit}`;
                         let res = await fetch(endpointUrl, { method: 'GET', headers: upstreamHeaders });
                         if (!res.ok && res.status === 404) {
@@ -965,6 +973,23 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         const json = res.ok ? await res.json().catch(() => null) : null;
                         const list = Array.isArray(json?.data?.list) ? json.data.list : [];
                         if (!list.length) break;
+
+                        if (!total) {
+                            total = Math.max(0, Number(json?.data?.total || 0) || 0);
+                        }
+
+                        // Если API выдаёт список от старых к новым (ASC), то start=0 — это "самое старое".
+                        // В этом случае переключаемся на выборку с конца (последние записи), чтобы быстро получить актуальный диапазон.
+                        if (!switchedToTail && total > 0 && list.length >= 2) {
+                            const firstTs = Number(list[0]?.ts || 0) || 0;
+                            const lastTs = Number(list[list.length - 1]?.ts || 0) || 0;
+                            if (firstTs > 0 && lastTs > 0 && firstTs < lastTs) {
+                                direction = 'backward';
+                                start = Math.max(0, total - limit);
+                                switchedToTail = true;
+                                continue;
+                            }
+                        }
 
                         let pageMinMs = Infinity;
                         let pageMaxMs = 0;
@@ -999,18 +1024,36 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             outList.push({ ts, price: String(price) });
                         }
 
-                        // Ранний stop: если в этой странице уже есть значения старее cutoff,
-                        // то следующая страница будет еще старее (swap_history обычно отсортирован по времени).
-                        // ИСПРАВЛЕНИЕ: используем max timestamp страницы. Это устойчиво, даже если порядок в list ASC/DESC.
-                        if (Number.isFinite(pageMaxMs) && pageMaxMs > 0 && pageMaxMs < cutoffMs) break;
+                        // Ранний stop по диапазону
+                        if (direction === 'backward') {
+                            // Идём в прошлое: если в странице уже встречаются времена старее cutoff,
+                            // то предыдущие страницы будут ещё старее.
+                            if (Number.isFinite(pageMinMs) && pageMinMs > 0 && pageMinMs < cutoffMs) break;
+                        } else {
+                            // Идём вперёд (обычно newest->oldest): если максимум страницы уже старее cutoff, можно стоп.
+                            if (Number.isFinite(pageMaxMs) && pageMaxMs > 0 && pageMaxMs < cutoffMs) break;
+                        }
 
                         if (list.length < limit) break;
-                        start += limit;
+                        if (direction === 'backward') {
+                            if (!switchedToTail) {
+                                // safety: если почему-то не переключились на tail, делаем это один раз
+                                if (total > 0) {
+                                    start = Math.max(0, total - limit);
+                                    switchedToTail = true;
+                                    continue;
+                                }
+                            }
+                            if (start <= 0) break;
+                            start = Math.max(0, start - limit);
+                        } else {
+                            start += limit;
+                        }
                         page += 1;
                     }
 
                     outList.sort((a, b) => (a.ts || 0) - (b.ts || 0));
-                    return sendJSON({ code: 0, data: { list: outList } }, 200);
+                    return sendJSON({ code: 0, data: { list: outList } }, 200, 60, 'public');
                 } catch (e) {
                     void e;
                 }

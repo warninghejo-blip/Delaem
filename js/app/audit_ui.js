@@ -2,7 +2,8 @@ import { BACKEND_URL, safeFetchJson } from './core.js';
 
 const userAddress = null;
 
-const AUDIT_TIMEOUT_MS = 15000;
+const AUDIT_FETCH_TIMEOUT_MS = 60000;
+const AUDIT_PREFETCH_TIMEOUT_MS = 15000;
 
 async function fetchAuditData(abortSignal = null, silent = false, options = null) {
     let addr = String(window.userAddress || userAddress || '').trim();
@@ -46,7 +47,7 @@ async function fetchAuditData(abortSignal = null, silent = false, options = null
             try {
                 localController.abort();
             } catch (_) {}
-        }, AUDIT_TIMEOUT_MS);
+        }, AUDIT_FETCH_TIMEOUT_MS);
         try {
             if (abortSignal) {
                 if (abortSignal.aborted) localController.abort();
@@ -617,7 +618,7 @@ async function prefetchFennecAudit(silent = true) {
         window.__fennecPrefetchAudit.addr = addr;
         window.__fennecPrefetchAudit.promise = (async () => {
             const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), AUDIT_TIMEOUT_MS);
+            const timeout = setTimeout(() => controller.abort(), AUDIT_PREFETCH_TIMEOUT_MS);
             try {
                 const data = await window.fetchAuditData(controller.signal, true).catch(() => null);
                 if (!data) {
