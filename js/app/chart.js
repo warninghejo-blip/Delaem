@@ -8,7 +8,7 @@ try {
     window.__fennecChartModuleLoaded = true;
 } catch (_) {}
 
-const __FENNEC_PRICE_CACHE_VERSION = '2026-01-17-1';
+const __FENNEC_PRICE_CACHE_VERSION = '2026-01-18-1';
 
 function resetChartData(force = false) {
     try {
@@ -28,7 +28,7 @@ function resetChartData(force = false) {
 function __normalizePriceSeries(points, nowMs) {
     try {
         const now = Number(nowMs || Date.now()) || Date.now();
-        const ninetyMs = 90 * 24 * 60 * 60 * 1000;
+        const ninetyMs = 365 * 24 * 60 * 60 * 1000;
         const cutoff90 = now - ninetyMs;
         const src = Array.isArray(points) ? points : [];
         const filtered = src
@@ -206,10 +206,36 @@ function initChart() {
 
     console.log('Chart initialized');
 
+    try {
+        // Terminal timeframe buttons (terminal.html uses ids, no inline onclick)
+        const map = {
+            'chart-1h': '1h',
+            'chart-24h': '24h',
+            'chart-7d': '7d',
+            'chart-30d': '30d',
+            'chart-all': 'all'
+        };
+        for (const [id, tf] of Object.entries(map)) {
+            const btn = document.getElementById(id);
+            if (!btn) continue;
+            if (!btn.__fennecBound) {
+                btn.__fennecBound = true;
+                btn.addEventListener('click', e => {
+                    try {
+                        e.preventDefault();
+                    } catch (_) {}
+                    try {
+                        setChartTimeframe(tf);
+                    } catch (_) {}
+                });
+            }
+        }
+        // Sync initial active state
+        setChartTimeframe(chartTimeframe);
+    } catch (_) {}
+
     // Load data and update chart
-    loadHistoricalPrices().then(() => {
-        updatePriceData();
-    });
+    updatePriceData().catch(() => null);
 }
 
 async function loadHistoricalPrices() {
@@ -221,22 +247,11 @@ async function loadHistoricalPrices() {
 
         if (__chartDebug) console.log('Loading history from InSwap...', chartTimeframe);
 
-        // Load history based on current timeframe
-        // For 'all', use '90d' since InSwap doesn't store more than 90 days
-        const timeRange =
-            chartTimeframe === 'all'
-                ? '90d'
-                : chartTimeframe === '30d'
-                  ? '30d'
-                  : chartTimeframe === '7d'
-                    ? '7d'
-                    : chartTimeframe === '24h'
-                      ? '24h'
-                      : '1h';
+        const timeRange = chartTimeframe;
         const __url = `${BACKEND_URL}?action=price_line&tick0=sFB___000&tick1=FENNEC&timeRange=${timeRange}&_ts=${Date.now()}`;
         const json = await safeFetchJson(__url, {
-            timeoutMs: 12000,
-            retries: 2,
+            timeoutMs: 25000,
+            retries: 0,
             cache: 'no-store',
             headers: { Accept: 'application/json' }
         });
@@ -248,12 +263,16 @@ async function loadHistoricalPrices() {
             // API returns price directly in item.price field (FB per FENNEC)
             const apiData = json.data.list
                 .map(item => {
-                    const price = parseFloat(item.price);
+                    let price = parseFloat(item.price);
+                    if (Number.isFinite(price) && price > 10) {
+                        const inv = 1 / price;
+                        if (Number.isFinite(inv) && inv > 0) price = inv;
+                    }
                     const tsRaw = Number(item.ts || item.timestamp || 0) || 0;
                     const timestamp = tsRaw > 1000000000000 ? tsRaw : tsRaw * 1000;
 
-                    // Validate price is reasonable (0.00001 to 10 FB per FENNEC)
-                    if (isNaN(price) || price <= 0 || price > 10 || price < 0.00001) {
+                    // Validate price is reasonable
+                    if (isNaN(price) || price <= 0 || !Number.isFinite(price) || price > 1000000 || price < 1e-12) {
                         console.warn('Invalid price filtered:', price, item);
                         return null;
                     }
@@ -665,6 +684,9 @@ function setChartTimeframe(tf) {
     // Show loading indicator
     const chartContainer = document.querySelector('.chart-container');
     if (chartContainer && priceChart) {
+        try {
+            chartContainer.querySelectorAll('#chartLoading').forEach(el => el.remove());
+        } catch (_) {}
         const loadingEl = document.createElement('div');
         loadingEl.id = 'chartLoading';
         loadingEl.className = 'absolute inset-0 bg-black/50 flex items-center justify-center z-10';
@@ -672,34 +694,65 @@ function setChartTimeframe(tf) {
         chartContainer.appendChild(loadingEl);
     }
 
-    // Update button states immediately
-    document.querySelectorAll('button[onclick*="setChartTimeframe"]').forEach(btn => {
-        btn.classList.remove('bg-fennec/20', 'text-fennec');
-        btn.classList.add('bg-white/5', 'text-gray-400');
-    });
-    const activeBtn = Array.from(document.querySelectorAll('button[onclick*="setChartTimeframe"]')).find(b =>
-        b.getAttribute('onclick').includes(`'${tf}'`)
-    );
-    if (activeBtn) {
-        activeBtn.classList.remove('bg-white/5', 'text-gray-400');
-        activeBtn.classList.add('bg-fennec/20', 'text-fennec');
-    }
+    // Update button states immediately (support terminal.html ids and legacy inline onclick)
+    try {
+        const terminalIds = ['chart-1h', 'chart-24h', 'chart-7d', 'chart-30d', 'chart-all'];
+        for (const id of terminalIds) {
+            const btn = document.getElementById(id);
+            if (!btn) continue;
+            btn.classList.remove('bg-fennec/20', 'text-fennec');
+            btn.classList.add('bg-white/5', 'text-gray-400');
+        }
+        const tfToId = {
+            '1h': 'chart-1h',
+            '24h': 'chart-24h',
+            '7d': 'chart-7d',
+            '30d': 'chart-30d',
+            all: 'chart-all'
+        };
+        const activeId = tfToId[String(tf || '').toLowerCase()];
+        const activeBtn = activeId ? document.getElementById(activeId) : null;
+        if (activeBtn) {
+            activeBtn.classList.remove('bg-white/5', 'text-gray-400');
+            activeBtn.classList.add('bg-fennec/20', 'text-fennec');
+        }
+
+        // Legacy support: inline onclick buttons (if present in other pages)
+        document.querySelectorAll('button[onclick*="setChartTimeframe"]').forEach(btn => {
+            btn.classList.remove('bg-fennec/20', 'text-fennec');
+            btn.classList.add('bg-white/5', 'text-gray-400');
+        });
+        const legacyActive = Array.from(document.querySelectorAll('button[onclick*="setChartTimeframe"]')).find(b =>
+            String(b.getAttribute('onclick') || '').includes(`'${tf}'`)
+        );
+        if (legacyActive) {
+            legacyActive.classList.remove('bg-white/5', 'text-gray-400');
+            legacyActive.classList.add('bg-fennec/20', 'text-fennec');
+        }
+    } catch (_) {}
 
     // IMPORTANT: Reload historical data for new timeframe FIRST, then update chart
-    loadHistoricalPrices()
+    __fennecDedupe(`loadHistoricalPrices:${String(tf || '').toLowerCase()}`, async () => {
+        await loadHistoricalPrices();
+        return true;
+    })
         .then(() => {
             // Update chart with new data
             updateChart();
             // Remove loading indicator
-            const loadingEl = document.getElementById('chartLoading');
-            if (loadingEl) loadingEl.remove();
+            try {
+                const root = document.querySelector('.chart-container') || document;
+                root.querySelectorAll('#chartLoading').forEach(el => el.remove());
+            } catch (_) {}
         })
         .catch(e => {
             console.error('Chart loading error:', e);
             // Still update chart with existing data
             updateChart();
-            const loadingEl = document.getElementById('chartLoading');
-            if (loadingEl) loadingEl.remove();
+            try {
+                const root = document.querySelector('.chart-container') || document;
+                root.querySelectorAll('#chartLoading').forEach(el => el.remove());
+            } catch (_) {}
         });
 }
 

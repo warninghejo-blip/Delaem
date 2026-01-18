@@ -3,7 +3,7 @@ import { BACKEND_URL, safeFetchJson } from './core.js';
 const userAddress = null;
 
 const AUDIT_FETCH_TIMEOUT_MS = 60000;
-const AUDIT_PREFETCH_TIMEOUT_MS = 15000;
+const AUDIT_PREFETCH_TIMEOUT_MS = 9000;
 
 async function fetchAuditData(abortSignal = null, silent = false, options = null) {
     let addr = String(window.userAddress || userAddress || '').trim();
@@ -35,10 +35,12 @@ async function fetchAuditData(abortSignal = null, silent = false, options = null
     const pubkey = String(window.userPubkey || '').trim();
     const __opts = options && typeof options === 'object' ? options : null;
     const __noCache = !!(__opts && (__opts.noCache || __opts.forceNoCache));
+    const __fast = __opts && typeof __opts.fast === 'boolean' ? __opts.fast : true;
     const __cacheBust = __noCache ? `&_ts=${Date.now()}` : '';
+    const __fastParam = __fast ? '&fast=1' : '';
     const url = pubkey
-        ? `${BACKEND_URL}?action=fractal_audit&address=${encodeURIComponent(addr)}&pubkey=${encodeURIComponent(pubkey)}${__cacheBust}`
-        : `${BACKEND_URL}?action=fractal_audit&address=${encodeURIComponent(addr)}${__cacheBust}`;
+        ? `${BACKEND_URL}?action=fractal_audit&address=${encodeURIComponent(addr)}&pubkey=${encodeURIComponent(pubkey)}${__fastParam}${__cacheBust}`
+        : `${BACKEND_URL}?action=fractal_audit&address=${encodeURIComponent(addr)}${__fastParam}${__cacheBust}`;
 
     let lastErr = null;
     for (let attempt = 0; attempt <= 2; attempt++) {
@@ -60,7 +62,19 @@ async function fetchAuditData(abortSignal = null, silent = false, options = null
                 cache: __noCache ? 'no-store' : attempt > 0 ? 'no-cache' : 'default',
                 headers
             });
-            if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+            if (!res.ok) {
+                if (res.status === 429 && attempt < 2) {
+                    try {
+                        const retryAfter = res.headers && res.headers.get ? res.headers.get('Retry-After') : null;
+                        const delayMs = retryAfter ? parseInt(retryAfter, 10) * 1000 : 0;
+                        const waitMs = Math.max(1500, delayMs || 0);
+                        clearTimeout(timeoutId);
+                        await new Promise(r => setTimeout(r, waitMs));
+                        continue;
+                    } catch (_) {}
+                }
+                throw new Error(`HTTP ${res.status} ${res.statusText}`);
+            }
 
             const workerRes = await res.json().catch(() => null);
             const apiData =
@@ -143,6 +157,41 @@ async function fetchAuditData(abortSignal = null, silent = false, options = null
             };
 
             try {
+                const cacheKey = `audit_v3_${addr}`;
+                const cachedRaw = localStorage.getItem(cacheKey);
+                const cached = cachedRaw ? JSON.parse(cachedRaw) : null;
+                const id = cached && cached.identity && typeof cached.identity === 'object' ? cached.identity : null;
+                const m = id && id.metrics && typeof id.metrics === 'object' ? id.metrics : null;
+                const st =
+                    m && m.inscriptionStats && typeof m.inscriptionStats === 'object' ? m.inscriptionStats : null;
+
+                const cachedTotalCollections = Number(st?.totalCollections || 0) || 0;
+                const cachedHasBoxes = !!(m?.hasFennecBoxes || m?.has_fennec_boxes);
+                const cachedBoxesCount = Number(m?.fennecBoxesCount ?? m?.fennec_boxes_count ?? 0) || 0;
+
+                if ((Number(auditInput?.stats?.totalCollections || 0) || 0) <= 0 && cachedTotalCollections > 0) {
+                    if (auditInput.stats && typeof auditInput.stats === 'object') {
+                        auditInput.stats.totalCollections = cachedTotalCollections;
+                    }
+                }
+
+                if (!auditInput.has_fennec_boxes && cachedHasBoxes) {
+                    auditInput.has_fennec_boxes = true;
+                    auditInput.hasFennecBoxes = true;
+                    const cnt = Math.max(1, Math.floor(cachedBoxesCount || 1));
+                    auditInput.fennec_boxes_count = cnt;
+                    auditInput.fennecBoxesCount = cnt;
+                }
+
+                if ((Number(auditInput?.stats?.ordinals || 0) || 0) <= 0) {
+                    const cachedOrd = Number(st?.ordinals || 0) || 0;
+                    if (cachedOrd > 0 && auditInput.stats && typeof auditInput.stats === 'object') {
+                        auditInput.stats.ordinals = cachedOrd;
+                    }
+                }
+            } catch (_) {}
+
+            try {
                 if (!auditInput.txCount || !auditInput.utxoCount || !auditInput.nativeBalance) {
                     const client = await fetchClientSideStats(addr, { timeoutMs: 2500, maxAgeMs: 30000 }).catch(
                         () => null
@@ -158,7 +207,14 @@ async function fetchAuditData(abortSignal = null, silent = false, options = null
 
             try {
                 const tc = Number(auditInput?.stats?.totalCollections || 0) || 0;
-                if (!tc) {
+                const __enableClientCollectionsFallback = (() => {
+                    try {
+                        return String(localStorage.getItem('fennec_enable_client_collections') || '').trim() === '1';
+                    } catch (_) {
+                        return false;
+                    }
+                })();
+                if (__enableClientCollectionsFallback && !tc) {
                     const client = await fetchClientSideCollections(addr, { timeoutMs: 3500, maxAgeMs: 60000 }).catch(
                         () => null
                     );
@@ -385,6 +441,8 @@ let currentAuditAbortController = null;
 let prefetchedFennecAudit = null;
 let prefetchedFennecAuditAddr = null;
 let prefetchedFennecAuditTs = 0;
+
+let __auditPrefetchTimer = null;
 
 let initAuditLoading = false;
 
@@ -717,7 +775,7 @@ async function initAudit() {
     if (initAuditLoading) return;
     try {
         const uiModeNow = String((window.__fennecAuditUi && window.__fennecAuditUi.mode) || 'idle');
-        if (auditLoading && uiModeNow !== 'opening' && uiModeNow !== 'scanning') return;
+        if (auditLoading && (uiModeNow === 'opening' || uiModeNow === 'scanning')) return;
     } catch (_) {
         if (auditLoading) return;
     }
@@ -1124,11 +1182,17 @@ async function initAudit() {
         }
 
         if (currentAddr && typeof prefetchFennecAudit === 'function') {
-            setTimeout(() => {
+            try {
+                if (__auditPrefetchTimer) clearTimeout(__auditPrefetchTimer);
+            } catch (_) {}
+            __auditPrefetchTimer = setTimeout(() => {
+                try {
+                    if (auditLoading) return;
+                } catch (_) {}
                 try {
                     prefetchFennecAudit(false);
                 } catch (_) {}
-            }, 0);
+            }, 2500);
         }
     } finally {
         initAuditLoading = false;
@@ -1187,10 +1251,26 @@ async function runAudit(forceRefresh = false) {
     currentAuditAbortController = new AbortController();
 
     try {
+        if (__auditPrefetchTimer) {
+            clearTimeout(__auditPrefetchTimer);
+            __auditPrefetchTimer = null;
+        }
+    } catch (_) {}
+
+    try {
         fetchClientSideStats(addrConnected).catch(() => null);
     } catch (_) {}
     try {
-        fetchClientSideCollections(addrConnected).catch(() => null);
+        const __enableClientCollectionsFallback = (() => {
+            try {
+                return String(localStorage.getItem('fennec_enable_client_collections') || '').trim() === '1';
+            } catch (_) {
+                return false;
+            }
+        })();
+        if (__enableClientCollectionsFallback) {
+            fetchClientSideCollections(addrConnected).catch(() => null);
+        }
     } catch (_) {}
 
     // ПРИНУДИТЕЛЬНО показываем лоадер в контейнере СРАЗУ
@@ -1310,7 +1390,10 @@ async function runAudit(forceRefresh = false) {
                         : null;
                 if (inFlight) {
                     console.log('runAudit: Using in-flight prefetch promise');
-                    const idFromPrefetch = await inFlight.catch(() => null);
+                    const idFromPrefetch = await Promise.race([
+                        inFlight.catch(() => null),
+                        new Promise(resolve => setTimeout(() => resolve(null), 12000))
+                    ]);
                     if (idFromPrefetch && typeof idFromPrefetch === 'object') {
                         auditIdentity = idFromPrefetch;
                         try {

@@ -9,7 +9,7 @@ let __provenanceSignerPublicJwk = null;
 export default {
     async fetch(request, env, ctx) {
         // КРИТИЧЕСКОЕ: CORS заголовки должны быть определены в самом начале
-        const __workerBuild = '2026-01-13-final';
+        const __workerBuild = '2026-01-18-chartfix-2';
         const __allowedOrigins = new Set([
             'https://fennecbtc.xyz',
             'https://www.fennecbtc.xyz',
@@ -931,12 +931,290 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         if (v === '7d') return 7 * 24 * 60 * 60 * 1000;
                         if (v === '30d') return 30 * 24 * 60 * 60 * 1000;
                         if (v === '90d') return 90 * 24 * 60 * 60 * 1000;
-                        if (v === 'all') return 90 * 24 * 60 * 60 * 1000;
+                        if (v === 'all') return 365 * 24 * 60 * 60 * 1000;
                         return 7 * 24 * 60 * 60 * 1000;
                     };
 
                     const nowMs = Date.now();
                     const cutoffMs = nowMs - __rangeMs(timeRange);
+
+                    let __swapV1Hint = '';
+
+                    try {
+                        const isFennecPair =
+                            (tick0Cmp === 'FENNEC' && (tick1Cmp === 'SFB___000' || tick1Cmp === 'SFB')) ||
+                            (tick1Cmp === 'FENNEC' && (tick0Cmp === 'SFB___000' || tick0Cmp === 'SFB'));
+                        if (isFennecPair) {
+                            const tr = String(timeRange || '').toLowerCase() === 'all' ? '90d' : String(timeRange);
+                            const baseNoV1 = String(SWAP_BASE || '').replace(/\/v1\/?$/i, '');
+                            const __attempts = [];
+                            const __pushAttempt = (host, status, code, len) => {
+                                try {
+                                    const h = String(host || '').trim();
+                                    const s = Number(status || 0) || 0;
+                                    const c = code !== undefined && code !== null ? Number(code) : NaN;
+                                    const l = Number(len || 0) || 0;
+                                    if (__attempts.length < 6) __attempts.push({ h, s, c, l });
+                                } catch (_) {}
+                            };
+
+                            const candidates = [];
+                            const queries = [
+                                `tick0=FENNEC&tick1=sFB___000&timeRange=${encodeURIComponent(tr)}`,
+                                `tick0=sFB___000&tick1=FENNEC&timeRange=${encodeURIComponent(tr)}`
+                            ];
+                            queries.push(
+                                `tick0=FENNEC&tick1=FB&timeRange=${encodeURIComponent(tr)}`,
+                                `tick0=FB&tick1=FENNEC&timeRange=${encodeURIComponent(tr)}`,
+                                `tick0=FENNEC&tick1=sFB&timeRange=${encodeURIComponent(tr)}`,
+                                `tick0=sFB&tick1=FENNEC&timeRange=${encodeURIComponent(tr)}`
+                            );
+                            for (const q of queries) {
+                                candidates.push(
+                                    ...[
+                                        `https://inswap.cc/fractal-api/swap-v1/price_line?${q}`,
+                                        `${baseNoV1}/fractal-api/swap-v1/price_line?${q}`,
+                                        `${SWAP_BASE}/brc20-swap/price_line?${q}`,
+                                        `${baseNoV1}/fractal-api/v1/brc20-swap/price_line?${q}`,
+                                        `${baseNoV1}/swap-v1/price_line?${q}`,
+                                        `${SWAP_BASE}/swap-v1/price_line?${q}`
+                                    ].filter(Boolean)
+                                );
+                            }
+
+                            const __swapPriceLineStartedAt = Date.now();
+                            for (const endpointUrl of candidates) {
+                                if (Date.now() - __swapPriceLineStartedAt > 6500) break;
+                                let endpointHost = '';
+                                let __needInvert = false;
+                                try {
+                                    const u0 = new URL(endpointUrl);
+                                    endpointHost = u0.hostname;
+                                    const q0 = String(u0.searchParams.get('tick0') || '').toUpperCase();
+                                    const q1 = String(u0.searchParams.get('tick1') || '').toUpperCase();
+                                    __needInvert = q0 && q1 && q0 !== 'FENNEC' && q1 === 'FENNEC';
+                                } catch (_) {}
+                                const headers0 = (() => {
+                                    if (endpointHost && endpointHost.toLowerCase().includes('inswap.cc')) {
+                                        const h = { ...upstreamHeaders };
+                                        try {
+                                            delete h.Authorization;
+                                        } catch (_) {}
+                                        return h;
+                                    }
+                                    return upstreamHeaders;
+                                })();
+                                const controller = new AbortController();
+                                const timeoutId = setTimeout(() => {
+                                    try {
+                                        controller.abort();
+                                    } catch (_) {}
+                                }, 2500);
+                                const res = await fetch(endpointUrl, {
+                                    method: 'GET',
+                                    headers: headers0,
+                                    signal: controller.signal
+                                })
+                                    .catch(() => null)
+                                    .finally(() => {
+                                        try {
+                                            clearTimeout(timeoutId);
+                                        } catch (_) {}
+                                    });
+                                if (!res) {
+                                    __pushAttempt(endpointHost || 'fetch_null', 0, null, 0);
+                                    continue;
+                                }
+                                const json = res.ok ? await res.json().catch(() => null) : null;
+                                const rawList = (() => {
+                                    if (!json || typeof json !== 'object') return [];
+                                    if (Array.isArray(json.data?.list)) return json.data.list;
+                                    if (Array.isArray(json.data?.data)) return json.data.data;
+                                    if (Array.isArray(json.data)) return json.data;
+                                    if (Array.isArray(json.list)) return json.list;
+                                    return [];
+                                })();
+                                __pushAttempt(endpointHost || 'unknown', res.status, json?.code, rawList.length);
+                                if (!res.ok) continue;
+                                if (!rawList.length) continue;
+
+                                const out = [];
+                                for (const it of rawList) {
+                                    const tsRaw = Number(it?.ts ?? it?.timestamp ?? 0) || 0;
+                                    const ts = tsRaw > 1000000000000 ? Math.floor(tsRaw / 1000) : Math.floor(tsRaw);
+                                    const priceNum0 = Number(it?.price ?? it?.close ?? 0) || 0;
+                                    if (!(ts > 0 && priceNum0 > 0)) continue;
+                                    let priceNum = __needInvert ? 1 / priceNum0 : priceNum0;
+                                    if (priceNum > 10) priceNum = 1 / priceNum;
+                                    if (!(priceNum > 0) || !Number.isFinite(priceNum)) continue;
+                                    out.push({ ts, price: String(priceNum) });
+                                }
+                                out.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+
+                                if (out.length) {
+                                    return sendJSON(
+                                        {
+                                            code: 0,
+                                            data: {
+                                                list: out,
+                                                source: `swap_v1_price_line:${endpointUrl}`,
+                                                build: __workerBuild
+                                            }
+                                        },
+                                        200,
+                                        120,
+                                        'public'
+                                    );
+                                }
+                            }
+
+                            try {
+                                __swapV1Hint = __attempts
+                                    .map(a => {
+                                        const host = String(a?.h || '').trim();
+                                        const st = Number(a?.s || 0) || 0;
+                                        const l = Number(a?.l || 0) || 0;
+                                        return `${host}:${st}:${l}`;
+                                    })
+                                    .slice(0, 4)
+                                    .join(',');
+                            } catch (_) {}
+                        }
+                    } catch (e) {
+                        void e;
+                    }
+
+                    // Основной источник исторического графика: UniSat Marketplace (Fractal) brc20_kline.
+                    // Он даёт стабильные точки по времени и НЕ зависит от глобального swap_history.
+                    // Возвращаем price в FB за 1 FENNEC.
+                    try {
+                        const isFennecPair =
+                            (tick0Cmp === 'FENNEC' && (tick1Cmp === 'SFB___000' || tick1Cmp === 'SFB')) ||
+                            (tick1Cmp === 'FENNEC' && (tick0Cmp === 'SFB___000' || tick0Cmp === 'SFB'));
+                        if (isFennecPair) {
+                            const haveKey = !!API_KEY;
+                            if (haveKey) requireUniSatKey();
+
+                            const stepMs = (() => {
+                                const v = String(timeRange || '').toLowerCase();
+                                if (v === '1h') return 60 * 1000; // 1m
+                                if (v === '24h') return 5 * 60 * 1000; // 5m
+                                if (v === '7d') return 60 * 60 * 1000; // 1h
+                                if (v === '30d') return 4 * 60 * 60 * 1000; // 4h
+                                if (v === '90d') return 12 * 60 * 60 * 1000; // 12h
+                                if (v === 'all') return 24 * 60 * 60 * 1000; // 1d (90d window)
+                                return 60 * 60 * 1000;
+                            })();
+
+                            const timeStart = cutoffMs;
+                            const timeEnd = nowMs;
+
+                            // Ограничение UniSat: (timeEnd-timeStart)/timeStep <= 2016
+                            // Если выбрали слишком мелкий step — увеличиваем.
+                            let effStepMs = stepMs;
+                            const maxPoints = 2016;
+                            const span = Math.max(0, timeEnd - timeStart);
+                            if (span > 0 && Math.floor(span / effStepMs) > maxPoints) {
+                                effStepMs = Math.ceil(span / maxPoints);
+                            }
+
+                            const klineUrl = 'https://open-api-fractal.unisat.io/v3/market/brc20/auction/brc20_kline';
+
+                            const tryPayloads = [
+                                {
+                                    units: 'ms',
+                                    body: { tick: 'FENNEC', timeStart, timeEnd, timeStep: effStepMs },
+                                    mapTs: x => x
+                                },
+                                {
+                                    units: 's',
+                                    body: {
+                                        tick: 'FENNEC',
+                                        timeStart: Math.floor(timeStart / 1000),
+                                        timeEnd: Math.floor(timeEnd / 1000),
+                                        timeStep: Math.max(1, Math.floor(effStepMs / 1000))
+                                    },
+                                    mapTs: x => x
+                                }
+                            ];
+
+                            for (const attempt of tryPayloads) {
+                                const headers = haveKey
+                                    ? { ...unisatApiHeaders, ...authHeaders(), 'Content-Type': 'application/json' }
+                                    : { ...unisatApiHeaders, 'Content-Type': 'application/json' };
+                                const controller = new AbortController();
+                                const timeoutId = setTimeout(() => {
+                                    try {
+                                        controller.abort();
+                                    } catch (_) {}
+                                }, 4500);
+                                const klineRes = await fetch(klineUrl, {
+                                    method: 'POST',
+                                    headers,
+                                    body: JSON.stringify(attempt.body),
+                                    signal: controller.signal
+                                })
+                                    .catch(() => null)
+                                    .finally(() => {
+                                        try {
+                                            clearTimeout(timeoutId);
+                                        } catch (_) {}
+                                    });
+
+                                if (!klineRes || !klineRes.ok) continue;
+                                const klineJson = await klineRes.json().catch(() => null);
+                                const klineCode = klineJson && typeof klineJson === 'object' ? klineJson.code : null;
+                                const klineCodeNum = klineCode !== null ? Number(klineCode) : NaN;
+                                if (
+                                    klineCode !== null &&
+                                    Number.isFinite(klineCodeNum) &&
+                                    klineCodeNum !== 0 &&
+                                    klineCodeNum !== 1
+                                )
+                                    continue;
+                                const arr = Array.isArray(klineJson?.data)
+                                    ? klineJson.data
+                                    : Array.isArray(klineJson?.data?.list)
+                                      ? klineJson.data.list
+                                      : Array.isArray(klineJson?.data?.data)
+                                        ? klineJson.data.data
+                                        : [];
+                                if (!arr.length) continue;
+
+                                const out = [];
+                                for (const p of arr) {
+                                    const tsRaw = Number(p?.timestamp ?? p?.ts ?? p?.time ?? 0) || 0;
+                                    const priceNum0 = Number(p?.price ?? p?.close ?? p?.curPrice ?? 0) || 0;
+                                    if (!(tsRaw > 0 && priceNum0 > 0)) continue;
+                                    const tsMs = tsRaw > 1000000000000 ? tsRaw : tsRaw * 1000;
+                                    const ts = Math.floor(tsMs / 1000);
+                                    if (!(ts > 0)) continue;
+                                    let priceNum = priceNum0;
+                                    if (priceNum > 10) priceNum = 1 / priceNum;
+                                    if (!(priceNum > 0) || !Number.isFinite(priceNum)) continue;
+                                    out.push({ ts, price: String(priceNum) });
+                                }
+                                out.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+                                if (out.length) {
+                                    return sendJSON(
+                                        {
+                                            code: 0,
+                                            data: {
+                                                list: out,
+                                                source: `brc20_kline_${attempt.units}_${haveKey ? 'auth' : 'noauth'}`,
+                                                build: __workerBuild
+                                            }
+                                        },
+                                        200,
+                                        120,
+                                        'public'
+                                    );
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        void e;
+                    }
 
                     const startedAt = Date.now();
                     const limit = 500;
@@ -967,10 +1245,45 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         if (Date.now() - startedAt > 8500) break;
 
                         let endpointUrl = `${SWAP_BASE}/brc20-swap/swap_history?start=${start}&limit=${limit}`;
-                        let res = await fetch(endpointUrl, { method: 'GET', headers: upstreamHeaders });
+                        let res = null;
+                        {
+                            const controller = new AbortController();
+                            const timeoutId = setTimeout(() => {
+                                try {
+                                    controller.abort();
+                                } catch (_) {}
+                            }, 2000);
+                            res = await fetch(endpointUrl, {
+                                method: 'GET',
+                                headers: upstreamHeaders,
+                                signal: controller.signal
+                            })
+                                .catch(() => null)
+                                .finally(() => {
+                                    try {
+                                        clearTimeout(timeoutId);
+                                    } catch (_) {}
+                                });
+                        }
                         if (!res.ok && res.status === 404) {
                             endpointUrl = `${SWAP_BASE}/indexer/brc20-swap/swap_history?start=${start}&limit=${limit}`;
-                            res = await fetch(endpointUrl, { method: 'GET', headers: upstreamHeaders });
+                            const controller = new AbortController();
+                            const timeoutId = setTimeout(() => {
+                                try {
+                                    controller.abort();
+                                } catch (_) {}
+                            }, 2000);
+                            res = await fetch(endpointUrl, {
+                                method: 'GET',
+                                headers: upstreamHeaders,
+                                signal: controller.signal
+                            })
+                                .catch(() => null)
+                                .finally(() => {
+                                    try {
+                                        clearTimeout(timeoutId);
+                                    } catch (_) {}
+                                });
                         }
                         const json = res.ok ? await res.json().catch(() => null) : null;
                         const list = Array.isArray(json?.data?.list) ? json.data.list : [];
@@ -1024,6 +1337,8 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 continue;
                             }
 
+                            if (price > 10) price = 1 / price;
+
                             if (!(price > 0)) continue;
                             outList.push({ ts, price: String(price) });
                         }
@@ -1057,11 +1372,24 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     }
 
                     outList.sort((a, b) => (a.ts || 0) - (b.ts || 0));
-                    return sendJSON({ code: 0, data: { list: outList } }, 200, 60, 'public');
+                    const src = __swapV1Hint ? `swap_history|swap_v1:${__swapV1Hint}` : 'swap_history';
+                    return sendJSON(
+                        {
+                            code: 0,
+                            data: {
+                                list: outList,
+                                source: src,
+                                build: __workerBuild
+                            }
+                        },
+                        200,
+                        60,
+                        'public'
+                    );
                 } catch (e) {
                     void e;
                 }
-                return sendJSON({ code: 0, data: { list: [] } }, 200);
+                return sendJSON({ code: 0, data: { list: [], build: __workerBuild } }, 200);
             }
 
             if (action === 'btc_balance') {
@@ -3228,7 +3556,8 @@ Request Context: ${JSON.stringify(context, null, 2)}
                 let lastUniSatRequest = 0;
                 // ОПТИМИЗАЦИЯ: Throttling для UniSat API (рекомендация: 1-5 req/s max)
                 // КРИТИЧЕСКОЕ: Увеличено для множества пользователей - меньше запросов = меньше 429
-                const UNISAT_THROTTLE_MS = 900; // 900ms = ~1.1 req/s (баланс скорости и 429)
+                const UNISAT_THROTTLE_MS = 2000;
+                let __unisatCooldownUntil = 0;
 
                 // КРИТИЧЕСКОЕ: очередь, чтобы UniSat-запросы не били параллельно и не ловили 429 burst'ом
                 let __unisatQueue = Promise.resolve();
@@ -3312,7 +3641,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
 
                     // Exponential backoff для 429 (рекомендация Unisat)
                     let retries = retryOn429 ? 3 : 0;
-                    let delay = 1000; // ОПТИМИЗАЦИЯ: Уменьшено до 1 секунды для ускорения загрузки
+                    let delay = 4000;
 
                     let __attemptNo = 0;
 
@@ -3340,6 +3669,17 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                     try {
                                         if (__attempt) __attempt.queue_wait_ms = Date.now() - queuedAt;
                                     } catch (_) {}
+
+                                    const now0 = Date.now();
+                                    if (now0 < __unisatCooldownUntil) {
+                                        const waitMs = __unisatCooldownUntil - now0;
+                                        try {
+                                            if (__attempt)
+                                                __attempt.throttle_wait_ms =
+                                                    (Number(__attempt.throttle_wait_ms || 0) || 0) + waitMs;
+                                        } catch (_) {}
+                                        await new Promise(r => setTimeout(r, waitMs));
+                                    }
 
                                     const now = Date.now();
                                     const timeSinceLastRequest = now - lastUniSatRequest;
@@ -3385,6 +3725,17 @@ Request Context: ${JSON.stringify(context, null, 2)}
 
                                 // Обработка 429 (Too Many Requests)
                                 if (status === 429) {
+                                    try {
+                                        const retryAfter = response?.headers?.get
+                                            ? response.headers.get('Retry-After')
+                                            : null;
+                                        const raMs = retryAfter ? parseInt(retryAfter, 10) * 1000 : 0;
+                                        const cooldownMs = Math.max(raMs || 0, 8000);
+                                        __unisatCooldownUntil = Math.max(
+                                            __unisatCooldownUntil,
+                                            Date.now() + cooldownMs
+                                        );
+                                    } catch (_) {}
                                     if (typeof p !== 'function') {
                                         if (cacheKey && cacheKey.includes('uniscan_summary')) {
                                             debugInfo.uniscan_summary_429_final = true;
@@ -5541,19 +5892,23 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 const endpoint = `${FRACTAL_BASE}/indexer/address/${encodeURIComponent(address)}/inscription-data?cursor=${cursor}&size=${pageSize}`;
                                 debugInfo[`total_collections_public_url_${page}`] = endpoint;
 
-                                const res = await safeFetch(
-                                    () =>
-                                        fetch(endpoint, {
-                                            method: 'GET',
-                                            headers: unisatApiHeaders
-                                        }),
-                                    {
-                                        isUniSat: false,
-                                        useCache: true,
-                                        cacheKey,
-                                        retryOn429: false
-                                    }
-                                );
+                                const res =
+                                    page === 0 && cursor === 0 && unisatInscriptionData
+                                        ? (debugInfo.total_collections_public_reuse = 'unisat_inscription_data') &&
+                                          unisatInscriptionData
+                                        : await safeFetch(
+                                              () =>
+                                                  fetch(endpoint, {
+                                                      method: 'GET',
+                                                      headers: unisatApiHeaders
+                                                  }),
+                                              {
+                                                  isUniSat: true,
+                                                  useCache: true,
+                                                  cacheKey,
+                                                  retryOn429: false
+                                              }
+                                          );
 
                                 debugInfo[`total_collections_public_res_${page}`] = res ? 'has_data' : 'null';
                                 const d0 =
@@ -5583,14 +5938,14 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                         sample?.collectionInscriptionId;
                                     debugInfo.total_collections_sample_collection = sample?.collection;
                                     debugInfo.total_collections_sample_parent = sample?.parent;
-                                    debugInfo.total_collections_sample_parentInscriptionId =
-                                        sample?.parentInscriptionId;
                                 }
 
                                 for (const it of list) {
                                     const parentObj = it?.parent && typeof it.parent === 'object' ? it.parent : null;
                                     const collectionObj =
                                         it?.collection && typeof it.collection === 'object' ? it.collection : null;
+                                    const detailObj = it?.detail && typeof it.detail === 'object' ? it.detail : null;
+
                                     const cid =
                                         asId(it?.collectionId) ||
                                         asId(it?.collection_id) ||
@@ -5604,15 +5959,52 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                                     collectionObj.collection_id ||
                                                     collectionObj.id)
                                         ) ||
+                                        asId(detailObj?.collectionId) ||
+                                        asId(detailObj?.collection_id) ||
+                                        asId(detailObj?.collectionInscriptionId) ||
+                                        asId(detailObj?.collection_inscription_id) ||
+                                        asId(detailObj?.parentInscriptionId) ||
+                                        asId(detailObj?.parent_inscription_id) ||
                                         asId(it?.parentInscriptionId) ||
                                         asId(
                                             parentObj &&
                                                 (parentObj.inscriptionId || parentObj.inscription_id || parentObj.id)
                                         ) ||
                                         asId(it?.parent);
-                                    if (cid) {
-                                        ids.add(cid);
-                                        const k = String(cid);
+
+                                    const looksLikeBoxes = (() => {
+                                        const s = v => {
+                                            if (!v) return '';
+                                            if (typeof v === 'string') return v;
+                                            try {
+                                                return JSON.stringify(v);
+                                            } catch (_) {
+                                                return '';
+                                            }
+                                        };
+                                        const hay = [
+                                            s(it?.metaprotocol),
+                                            s(it?.metadata),
+                                            s(it?.contentType),
+                                            s(it?.contentBody),
+                                            s(detailObj?.metaprotocol),
+                                            s(detailObj?.metadata),
+                                            s(detailObj?.contentType),
+                                            s(detailObj?.contentBody)
+                                        ]
+                                            .filter(Boolean)
+                                            .join(' ')
+                                            .toLowerCase();
+                                        if (!hay) return false;
+                                        if (hay.includes('fennec_boxes')) return true;
+                                        if (hay.includes('fennec') && hay.includes('box')) return true;
+                                        return false;
+                                    })();
+
+                                    const cidFinal = cid || (looksLikeBoxes ? 'fennec_boxes' : '');
+                                    if (cidFinal) {
+                                        ids.add(cidFinal);
+                                        const k = String(cidFinal);
                                         per[k] = (Number(per[k] || 0) || 0) + 1;
                                     }
                                 }
@@ -5680,18 +6072,6 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         ordinalsCount = 0;
                         ordinalsByCollection = null;
                         debugInfo.ordinals_count_source = 'collections_none_or_unknown';
-                    }
-
-                    if (
-                        ordinalsCount === 0 &&
-                        typeof totalCollections === 'number' &&
-                        Number.isFinite(totalCollections) &&
-                        totalCollections > 0 &&
-                        typeof totalInscriptionsCount === 'number' &&
-                        Number.isFinite(totalInscriptionsCount) &&
-                        totalInscriptionsCount > 0
-                    ) {
-                        debugInfo.ordinals_count_source = 'fallback_total_inscriptions_count_skipped';
                     }
 
                     if (ordinalsCount === 0) {
@@ -7078,6 +7458,33 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         const targetCollectionIdNorm = normKey(targetCollectionId);
                         const asId = v => (typeof v === 'string' ? v.trim() : typeof v === 'number' ? String(v) : '');
 
+                        try {
+                            if (
+                                !hasFennecBoxes &&
+                                ordinalsCollectionsById &&
+                                typeof ordinalsCollectionsById === 'object'
+                            ) {
+                                for (const [k, v] of Object.entries(ordinalsCollectionsById)) {
+                                    const kn = normKey(k);
+                                    if (!kn) continue;
+                                    if (
+                                        kn === targetCollectionIdNorm ||
+                                        (kn.includes('fennec') && kn.includes('box'))
+                                    ) {
+                                        const cnt = Number(v);
+                                        hasFennecBoxes = true;
+                                        fennecBoxesCount = Number.isFinite(cnt) && cnt > 0 ? Math.floor(cnt) : 1;
+                                        debugInfo.fennec_boxes_source =
+                                            'collection_inscriptions_by_collection_fallback';
+                                        debugInfo.fennec_boxes_matched_field = k;
+                                        break;
+                                    }
+                                }
+                            }
+                        } catch (_) {
+                            void _;
+                        }
+
                         // Приоритет: если уже загрузили collection_summary ранее, используем его результат (без повторного запроса)
                         if (collectionSummaryAgg && collectionSummaryAgg.sawAny) {
                             if (collectionSummaryAgg.hasFennecBoxes) {
@@ -7379,21 +7786,40 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 while (page < (__fastMode ? 2 : 5) && !hasFennecBoxes) {
                                     const endpoint = `${FRACTAL_BASE}/indexer/address/${addrEnc}/inscription-data?cursor=${cursor}&size=${pageSize}`;
                                     const cacheKey = `fennec_boxes_inscription_data_${address}_${cursor}_${pageSize}`;
-                                    const res = await safeFetch(
-                                        () =>
-                                            fetch(endpoint, {
-                                                method: 'GET',
-                                                headers: unisatApiHeaders
-                                            }),
-                                        {
-                                            isUniSat: true,
-                                            useCache: true,
-                                            cacheKey,
-                                            retryOn429: !__fastMode
-                                        }
-                                    );
 
-                                    const list = Array.isArray(res?.data?.inscription) ? res.data.inscription : [];
+                                    const res =
+                                        page === 0 && cursor === 0 && unisatInscriptionData
+                                            ? (debugInfo.fennec_boxes_public_reuse = 'unisat_inscription_data') &&
+                                              unisatInscriptionData
+                                            : await safeFetch(
+                                                  () =>
+                                                      fetch(endpoint, {
+                                                          method: 'GET',
+                                                          headers: unisatApiHeaders
+                                                      }),
+                                                  {
+                                                      isUniSat: true,
+                                                      useCache: true,
+                                                      cacheKey,
+                                                      retryOn429: !__fastMode
+                                                  }
+                                              );
+
+                                    const d0 =
+                                        res && typeof res === 'object'
+                                            ? res.data !== undefined
+                                                ? res.data
+                                                : res
+                                            : null;
+                                    const d1 = d0 && d0.data && typeof d0.data === 'object' ? d0.data : null;
+                                    const list =
+                                        (Array.isArray(d0?.inscription) ? d0.inscription : null) ||
+                                        (Array.isArray(d0?.inscriptions) ? d0.inscriptions : null) ||
+                                        (Array.isArray(d0?.list) ? d0.list : null) ||
+                                        (Array.isArray(d1?.inscription) ? d1.inscription : null) ||
+                                        (Array.isArray(d1?.inscriptions) ? d1.inscriptions : null) ||
+                                        (Array.isArray(d1?.list) ? d1.list : null) ||
+                                        [];
                                     if (!list.length) break;
 
                                     for (const it of list) {
