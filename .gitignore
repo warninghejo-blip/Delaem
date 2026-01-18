@@ -8,6 +8,9 @@ pages_upload/
 
 backup/
 
+pre_filter_repo_backup.bundle
+git-filter-repo-replacements.txt
+
 .vercel/
 eslint_fix_output.txt
 htmlhint_output.txt
