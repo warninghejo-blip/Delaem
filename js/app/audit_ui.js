@@ -2,7 +2,7 @@ import { BACKEND_URL, safeFetchJson } from './core.js';
 
 const userAddress = null;
 
-const AUDIT_TIMEOUT_MS = 5 * 60 * 1000;
+const AUDIT_TIMEOUT_MS = 15000;
 
 async function fetchAuditData(abortSignal = null, silent = false, options = null) {
     let addr = String(window.userAddress || userAddress || '').trim();
@@ -334,8 +334,6 @@ async function fetchClientSideCollections(address, options = null) {
 const FENNEC_ID_EPOCH = '2026-01-02';
 const fennecIdKeyV2 = addr => `fennec_id_child_v3_${String(addr || '').trim()}`;
 const fennecMintedCardsKey = () => `fennec_minted_cards_v3_${FENNEC_ID_EPOCH}`;
-
-const AUDIT_TIMEOUT_MS = 15000;
 
 const __FENNEC_AUDIT_CACHE_VERSION = '2026-01-18-1';
 
