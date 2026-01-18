@@ -13,36 +13,7 @@ export function showSection(id) {
         sec.style.display = 'none';
     });
 
-    // Special handling for audit section - restore from cache
     if (id === 'audit') {
-        const currentAddr = window.userAddress || null;
-        if (currentAddr && !window.auditLoading) {
-            const cacheKey = `audit_v3_${currentAddr}`;
-            const cached = localStorage.getItem(cacheKey);
-            if (cached && !window.auditIdentity) {
-                try {
-                    const cachedData = JSON.parse(cached);
-                    if (Date.now() - cachedData.timestamp < 7 * 24 * 60 * 60 * 1000) {
-                        console.log('Restoring audit from cache');
-                        window.auditIdentity = cachedData.identity;
-                        try {
-                            const a = String(currentAddr || '').trim();
-                            if (a && window.auditIdentity && typeof window.auditIdentity === 'object') {
-                                window.auditIdentity.metrics =
-                                    window.auditIdentity.metrics && typeof window.auditIdentity.metrics === 'object'
-                                        ? window.auditIdentity.metrics
-                                        : {};
-                                window.auditIdentity.metrics.address = String(
-                                    window.auditIdentity.metrics.address || a
-                                ).trim();
-                            }
-                        } catch (_) {}
-                    }
-                } catch (e) {
-                    console.warn('Failed to restore from cache:', e);
-                }
-            }
-        }
         if (typeof window.initAudit === 'function' && !window.auditLoading) {
             setTimeout(() => {
                 try {

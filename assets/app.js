@@ -8217,10 +8217,11 @@ async function __legacy_runAudit(forceRefresh = false) {
         } catch (_) {}
         try {
             if (hasContainer) {
+                const safeErrorMsg = __escapeHtml(e && e.message ? e.message : '') || 'Failed to load data.';
                 container.innerHTML = `
                                                                                                     <div class="w-full max-w-md bg-red-900/20 border border-red-500/50 p-4 rounded-xl text-red-200">
                                                                                                         <p class="font-bold mb-2">Loading Error</p>
-                                                                                                        <p class="text-sm mb-4">${e.message || 'Failed to load data.'}</p>
+                                                                                                        <p class="text-sm mb-4">${safeErrorMsg}</p>
                                                                                                         <button onclick="window.runAudit(true)" class="w-full px-4 py-3 bg-fennec text-black font-bold rounded hover:bg-orange-600 transition">
                                                                                                             Try Again
                                                                                                         </button>
