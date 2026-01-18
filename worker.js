@@ -412,7 +412,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                 const u = v.toUpperCase();
                 if (u === 'SFB' || u === 'SFB___000') return 'sFB___000';
                 if (u === 'SBTC' || u === 'SBTC___000') return 'sBTC___000';
-                return u;
+                return v;
             };
 
             // ИСПРАВЛЕНИЕ: Строгая функция санитизации timestamp - убийца будущего
@@ -920,6 +920,8 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     };
                     const tick0 = __canonSwapTick(url.searchParams.get('tick0') || 'sFB___000');
                     const tick1 = __canonSwapTick(url.searchParams.get('tick1') || 'FENNEC');
+                    const tick0Cmp = String(tick0 || '').toUpperCase();
+                    const tick1Cmp = String(tick1 || '').toUpperCase();
                     const timeRange = String(url.searchParams.get('timeRange') || '7d').trim();
 
                     const __rangeMs = tr => {
@@ -1004,16 +1006,18 @@ Request Context: ${JSON.stringify(context, null, 2)}
 
                             const tin = __canonSwapTick(it?.tickIn);
                             const tout = __canonSwapTick(it?.tickOut);
+                            const tinCmp = String(tin || '').toUpperCase();
+                            const toutCmp = String(tout || '').toUpperCase();
                             const aIn = Number(it?.amountIn || 0) || 0;
                             const aOut = Number(it?.amountOut || 0) || 0;
                             if (!tin || !tout || aIn <= 0 || aOut <= 0) continue;
 
                             // Хотим price = FB per FENNEC
                             let price = 0;
-                            if (tin === tick1 && tout === tick0) {
+                            if (tinCmp === tick1Cmp && toutCmp === tick0Cmp) {
                                 // FENNEC -> FB
                                 price = aOut / aIn;
-                            } else if (tin === tick0 && tout === tick1) {
+                            } else if (tinCmp === tick0Cmp && toutCmp === tick1Cmp) {
                                 // FB -> FENNEC
                                 price = aIn / aOut;
                             } else {
