@@ -1,6 +1,19 @@
 import * as btc from '@scure/btc-signer';
 import { hex } from '@scure/base';
 
+// Global Stealth Headers для обхода rate limiting
+const STEALTH_HEADERS = {
+    'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    Accept: 'application/json, text/plain, */*',
+    Connection: 'keep-alive',
+    'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+    'Sec-Ch-Ua-Mobile': '?0',
+    'Sec-Ch-Ua-Platform': '"Windows"',
+    Referer: 'https://fractal.unisat.io/',
+    Origin: 'https://fractal.unisat.io'
+};
+
 let __provenanceSigner = null;
 let __provenanceSignerKeyId = null;
 let __provenanceSignerJwkString = null;
@@ -463,16 +476,14 @@ Request Context: ${JSON.stringify(context, null, 2)}
 
             const upstreamHeaders = {
                 'Content-Type': 'application/json',
-                Accept: 'application/json, text/plain, */*',
-                'User-Agent':
-                    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                ...STEALTH_HEADERS
             };
 
             if (API_KEY) upstreamHeaders.Authorization = `Bearer ${API_KEY}`;
 
             const unisatApiHeaders = {
                 ...upstreamHeaders,
-                Accept: 'application/json, text/plain, */*'
+                ...STEALTH_HEADERS
             };
 
             const requireUniSatKey = () => {
@@ -4850,15 +4861,15 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     }
 
                     // ═══════════════════════════════════════════════════════════════════════════
-                    // COOLDOWN: 1 second break before heavy assets
+                    // COOLDOWN: 500ms break after Genesis
                     // ═══════════════════════════════════════════════════════════════════════════
-                    console.log('[Audit] Cooldown: 1s');
-                    await new Promise(r => setTimeout(r, 1000));
+                    console.log('[Audit] Cooldown: 500ms');
+                    await new Promise(r => setTimeout(r, 500));
 
                     // ═══════════════════════════════════════════════════════════════════════════
-                    // STAGE 3: Assets (Runes, Inscriptions, Abandon)
+                    // STAGE 3: Assets (Runes, Inswap Balance, Inscriptions, Abandon)
                     // ═══════════════════════════════════════════════════════════════════════════
-                    console.log('[Audit] Stage 3: Assets (Runes + Inscriptions)');
+                    console.log('[Audit] Stage 3: Assets (Runes + Inswap + Inscriptions)');
 
                     const [unisatRunes, unisatInscriptionData, unisatAbandonNftUtxo] = await Promise.all([
                         needRunesFallback
@@ -4869,10 +4880,10 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     ]);
 
                     // ═══════════════════════════════════════════════════════════════════════════
-                    // COOLDOWN: 1.5 second break before market data
+                    // COOLDOWN: 1 second break before market data
                     // ═══════════════════════════════════════════════════════════════════════════
-                    console.log('[Audit] Cooldown: 1.5s');
-                    await new Promise(r => setTimeout(r, 1500));
+                    console.log('[Audit] Cooldown: 1000ms');
+                    await new Promise(r => setTimeout(r, 1000));
 
                     // ═══════════════════════════════════════════════════════════════════════════
                     // STAGE 4: Market & Collections (SEQUENTIAL to avoid burst 429)
