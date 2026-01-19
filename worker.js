@@ -3765,7 +3765,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                 const __unisatThrottleBaseMs = __fastMode ? 2800 : 2500;
                 let __unisatThrottleMs = __unisatThrottleBaseMs;
                 let __unisat429Streak = 0;
-                let __unisatCooldownUntil = 0;
+                const __unisatCooldownUntil = 0;
 
                 // КРИТИЧЕСКОЕ: очередь, чтобы UniSat-запросы не били параллельно и не ловили 429 burst'ом
                 let __unisatQueue = Promise.resolve();
@@ -3954,29 +3954,6 @@ Request Context: ${JSON.stringify(context, null, 2)}
 
                                 // Обработка 429 (Too Many Requests)
                                 if (status === 429) {
-                                    try {
-                                        if (isUniSat) {
-                                            __unisat429Streak = Math.min((Number(__unisat429Streak || 0) || 0) + 1, 10);
-                                            const retryAfter = response?.headers?.get
-                                                ? response.headers.get('Retry-After')
-                                                : null;
-                                            const raMsRaw = retryAfter ? parseInt(retryAfter, 10) * 1000 : 0;
-                                            const raMs = Number.isFinite(raMsRaw) ? raMsRaw : 0;
-                                            const penaltyMs = Math.min(1500 * __unisat429Streak, 15000);
-                                            __unisatThrottleMs = Math.min(
-                                                Math.max(__unisatThrottleMs, __unisatThrottleBaseMs) + penaltyMs,
-                                                12000
-                                            );
-                                            const cooldownMs =
-                                                raMs > 0
-                                                    ? Math.min(Math.max(raMs, __unisatThrottleMs), 60000)
-                                                    : Math.min(Math.max(5000, __unisatThrottleMs), 60000);
-                                            __unisatCooldownUntil = Math.max(
-                                                __unisatCooldownUntil,
-                                                Date.now() + cooldownMs
-                                            );
-                                        }
-                                    } catch (_) {}
                                     if (typeof p !== 'function') {
                                         if (cacheKey && cacheKey.includes('uniscan_summary')) {
                                             debugInfo.uniscan_summary_429_final = true;
@@ -3989,6 +3966,46 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                         return null;
                                     }
 
+                                    if (retries > 0 && isUniSat) {
+                                        // KEY HOPPING: Мгновенная смена ключа вместо долгого ожидания
+                                        const currentKey = upstreamHeaders.Authorization || '';
+                                        const newKey = __pickUniSatKey();
+
+                                        // Проверяем, что ключ действительно новый
+                                        if (newKey && (!currentKey || !currentKey.includes(newKey))) {
+                                            console.log(
+                                                `[KeyHop] 429 Hit. Switching from ...${currentKey.slice(-4)} to ...${newKey.slice(-4)}`
+                                            );
+
+                                            // Применяем новый ключ
+                                            upstreamHeaders.Authorization = `Bearer ${newKey}`;
+                                            if (typeof unisatApiHeaders !== 'undefined') {
+                                                unisatApiHeaders.Authorization = `Bearer ${newKey}`;
+                                            }
+
+                                            try {
+                                                if (__attempt) {
+                                                    __attempt.key_hopped = true;
+                                                    __attempt.new_key_last4 = newKey.slice(-4);
+                                                    __attempt.wait_before_retry_ms = 0;
+                                                    __attempt.retries_left_after = retries - 1;
+                                                }
+                                            } catch (_) {}
+
+                                            // CRITICAL: NO DELAY для свежего ключа
+                                            delay = 0;
+
+                                            console.log('[KeyHop] Retrying immediately with new key.');
+                                            retries--;
+                                            continue;
+                                        } else {
+                                            // Нет свежих ключей - только тогда ждем
+                                            console.warn('[KeyHop] No fresh keys available/exhausted. Waiting.');
+                                            delay = 2000;
+                                        }
+                                    }
+
+                                    // Стандартное ожидание если не UniSat или ключи закончились
                                     if (retries > 0) {
                                         const retryAfter = response?.headers?.get
                                             ? response.headers.get('Retry-After')
@@ -3996,6 +4013,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                         const raMsRaw = retryAfter ? parseInt(retryAfter, 10) * 1000 : 0;
                                         const raMs = Number.isFinite(raMsRaw) ? raMsRaw : 0;
                                         if (raMs > 0) delay = Math.min(raMs, __maxDelay);
+
                                         try {
                                             if (__attempt) {
                                                 __attempt.retry_after = retryAfter || '';
