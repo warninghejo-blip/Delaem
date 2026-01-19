@@ -127,7 +127,7 @@ function build() {
 
     // Step 4: Copy additional files (_headers, etc.)
     console.log('📋 Copying config files...');
-    const configFiles = ['_headers', 'vercel.json', 'wrangler.toml'];
+    const configFiles = ['_headers', 'vercel.json'];
     let copiedConfig = 0;
     for (const file of configFiles) {
         const src = path.join(rootDir, file);
