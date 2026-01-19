@@ -985,12 +985,20 @@ async function initAudit() {
                     return;
                 }
             } catch (_) {}
+            const isLite = window.__fennecLiteMode || false;
+            const cardShadow = isLite
+                ? 'box-shadow: 0 4px 12px rgba(0,0,0,0.4);'
+                : 'box-shadow: inset 0 0 40px rgba(255,160,0,0.15), 0 0 60px rgba(255,160,0,0.18);';
+            const imgFilter = isLite ? '' : 'filter: drop-shadow(0 0 40px rgba(255,160,0,0.35));';
+            const sweepHtml = isLite
+                ? ''
+                : '<div style="position: absolute; top: 0; left: -25%; width: 40%; height: 100%; background: linear-gradient(90deg, transparent 0%, rgba(255,160,0,0) 20%, rgba(255,160,0,0.18) 35%, rgba(255,160,0,0.95) 50%, rgba(255,160,0,0.18) 65%, rgba(255,160,0,0) 80%, transparent 100%); animation: openSweep 2.5s ease-in-out infinite;"></div>';
             container.innerHTML = `
                                             <div class="w-full flex items-start justify-center" style="min-height: 560px;">
                                                 <div class="flex flex-col items-center justify-center" style="max-width: 360px; width: 100%; padding: 0px 20px; gap: 32px;">
-                                                    <div style="position: relative; width: 360px; height: 520px; overflow: hidden; border-radius: 32px; border: 4px solid rgba(255,160,0,0.45); box-shadow: inset 0 0 40px rgba(255,160,0,0.15), 0 0 60px rgba(255,160,0,0.18); display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.6);">
-                                                        <img src="/img/FENNECID.png" style="width: 110%; height: 110%; object-fit: cover; object-position: center; filter: drop-shadow(0 0 40px rgba(255,160,0,0.35));" onerror="this.style.display='none';" />
-                                                        <div style="position: absolute; top: 0; left: -25%; width: 40%; height: 100%; background: linear-gradient(90deg, transparent 0%, rgba(255,160,0,0) 20%, rgba(255,160,0,0.18) 35%, rgba(255,160,0,0.95) 50%, rgba(255,160,0,0.18) 65%, rgba(255,160,0,0) 80%, transparent 100%); animation: openSweep 2.5s ease-in-out infinite;"></div>
+                                                    <div style="position: relative; width: 360px; height: 520px; overflow: hidden; border-radius: 32px; border: 4px solid rgba(255,160,0,0.45); ${cardShadow} display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.6);">
+                                                        <img src="/img/FENNECID.png" style="width: 110%; height: 110%; object-fit: cover; object-position: center; ${imgFilter}" onerror="this.style.display='none';" />
+                                                        ${sweepHtml}
                                                     </div>
                                                     <div style="width: 100%; max-width: 320px;">
                                                         <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; margin-bottom: 12px;">
@@ -1053,12 +1061,20 @@ async function initAudit() {
                     return;
                 }
             } catch (_) {}
+            const isLite = window.__fennecLiteMode || false;
+            const cardShadow = isLite
+                ? 'box-shadow: 0 4px 12px rgba(0,0,0,0.4);'
+                : 'box-shadow: inset 0 0 40px rgba(255,107,53,0.15), 0 0 60px rgba(255,107,53,0.25);';
+            const imgFilter = isLite ? '' : 'filter: drop-shadow(0 0 40px rgba(255,107,53,0.4));';
+            const sweepHtml = isLite
+                ? ''
+                : '<div id="scanSweep" style="position: absolute; top: 0; left: -25%; width: 40%; height: 100%; background: linear-gradient(90deg, transparent 0%, rgba(255,107,53,0) 20%, rgba(255,107,53,0.18) 35%, rgba(255,107,53,0.92) 50%, rgba(255,107,53,0.18) 65%, rgba(255,107,53,0) 80%, transparent 100%); animation: scanSweep 2.5s ease-in-out infinite;"></div>';
             container.innerHTML = `
                                             <div class="w-full flex items-start justify-center" style="min-height: 560px;">
                                                 <div class="flex flex-col items-center justify-center" style="max-width: 360px; width: 100%; padding: 0px 20px; gap: 32px;">
-                                                    <div style="position: relative; width: 360px; height: 520px; overflow: hidden; border-radius: 32px; border: 4px solid rgba(255,107,53,0.35); box-shadow: inset 0 0 40px rgba(255,107,53,0.15), 0 0 60px rgba(255,107,53,0.25); display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.6);">
-                                                        <img src="/img/FENNECID.png" style="width: 110%; height: 110%; object-fit: cover; object-position: center; filter: drop-shadow(0 0 40px rgba(255,107,53,0.4));" onerror="this.style.display='none';" />
-                                                        <div id="scanSweep" style="position: absolute; top: 0; left: -25%; width: 40%; height: 100%; background: linear-gradient(90deg, transparent 0%, rgba(255,107,53,0) 20%, rgba(255,107,53,0.18) 35%, rgba(255,107,53,0.92) 50%, rgba(255,107,53,0.18) 65%, rgba(255,107,53,0) 80%, transparent 100%); animation: scanSweep 2.5s ease-in-out infinite;"></div>
+                                                    <div style="position: relative; width: 360px; height: 520px; overflow: hidden; border-radius: 32px; border: 4px solid rgba(255,107,53,0.35); ${cardShadow} display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.6);">
+                                                        <img src="/img/FENNECID.png" style="width: 110%; height: 110%; object-fit: cover; object-position: center; ${imgFilter}" onerror="this.style.display='none';" />
+                                                        ${sweepHtml}
                                                     </div>
                                                     <div style="width: 100%; max-width: 320px;">
                                                         <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; margin-bottom: 12px;">
@@ -1234,7 +1250,7 @@ async function initAudit() {
                                                                                                 <div id="fennecIdIframeContainer" class="relative" style="width:360px;height:520px;min-width:360px;min-height:520px;background:transparent;border-radius:32px;overflow:visible;">
                                                                                                     <div id="fennecIdIframeSlot" class="absolute inset-0 z-0">
                                                                                                         <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">
-                                                                                                            <div style="position: relative; width: 300px; height: 420px; overflow: hidden; border-radius: 24px; border: 4px solid rgba(255,107,53,0.35); box-shadow: inset 0 0 40px rgba(255,107,53,0.15), 0 0 60px rgba(255,107,53,0.25); display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.6);">
+                                                                                                            <div style="position: relative; width: 360px; height: 520px; overflow: hidden; border-radius: 32px; border: 4px solid rgba(255,107,53,0.35); box-shadow: inset 0 0 40px rgba(255,107,53,0.15), 0 0 60px rgba(255,107,53,0.25); display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.6);">
                                                                                                                 <img src="/img/FENNECID.png" style="width: 110%; height: 110%; object-fit: cover; object-position: center; filter: drop-shadow(0 0 40px rgba(255,107,53,0.30));" onerror="this.style.display='none';" />
                                                                                                             </div>
                                                                                                         </div>
@@ -1274,8 +1290,28 @@ async function initAudit() {
 
 // Run the audit
 async function runAudit(forceRefresh = false) {
+    // ПРОВЕРКА 1: Если аудит уже идет — игнорируем перезапуск (предотвращаем самосаботаж)
     if (auditLoading) {
-        console.log('Audit already running');
+        console.log('Audit already in progress, ignoring restart request.');
+        // Опционально: убедиться, что лоадер виден
+        try {
+            const container = document.getElementById('auditContainer');
+            if (container && !container.innerHTML.includes('SCANNING IDENTITY')) {
+                // если лоадер скрыт, можно показать его снова (но обычно он уже виден)
+            }
+        } catch (_) {}
+        return;
+    }
+
+    // ПРОВЕРКА 2: 2-минутный кэш — если аудит был < 2 минут назад и не forceRefresh, используем кэш
+    const now = Date.now();
+    const lastSuccess = Number(window.lastAuditSuccessTime || 0) || 0;
+    if (!forceRefresh && auditIdentity && lastSuccess > 0 && now - lastSuccess < 120000) {
+        console.log('Using fresh cached audit (< 2 min), no server request.');
+        // UI уже должен показывать данные; если нет — можно обновить
+        try {
+            if (typeof initAudit === 'function') __fennecInitAuditSafe();
+        } catch (_) {}
         return;
     }
     const addrConnected = String(window.userAddress || userAddress || '').trim();
@@ -1320,7 +1356,8 @@ async function runAudit(forceRefresh = false) {
 
     auditLoading = true;
     const requestId = ++currentAuditRequestId;
-    if (currentAuditAbortController) currentAuditAbortController.abort();
+    // НЕ АБОРТИРУЕМ текущий процесс — пусть завершается сам
+    // if (currentAuditAbortController) currentAuditAbortController.abort(); // УБРАНО
     currentAuditAbortController = new AbortController();
     try {
         window.currentAuditAbortController = currentAuditAbortController;
@@ -1368,7 +1405,7 @@ async function runAudit(forceRefresh = false) {
         container.innerHTML = `
                                             <div class="w-full flex items-start justify-center" style="min-height: 560px;">
                                                 <div class="flex flex-col items-center justify-center" style="max-width: 360px; width: 100%; padding: 0px 20px; gap: 32px;">
-                                                    <div style="position: relative; width: 300px; height: 420px; overflow: hidden; border-radius: 24px; border: 4px solid rgba(255,107,53,0.35); box-shadow: inset 0 0 40px rgba(255,107,53,0.15), 0 0 60px rgba(255,107,53,0.25); display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.6);">
+                                                    <div style="position: relative; width: 360px; height: 520px; overflow: hidden; border-radius: 32px; border: 4px solid rgba(255,107,53,0.35); box-shadow: inset 0 0 40px rgba(255,107,53,0.15), 0 0 60px rgba(255,107,53,0.25); display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.6);">
                                                         <img src="/img/FENNECID.png" style="width: 110%; height: 110%; object-fit: cover; object-position: center; filter: drop-shadow(0 0 40px rgba(255,107,53,0.4));" onerror="this.style.display='none';" />
                                                         <div id="scanSweep" style="position: absolute; top: 0; left: -25%; width: 40%; height: 100%; background: linear-gradient(90deg, transparent 0%, rgba(255,107,53,0) 20%, rgba(255,107,53,0.18) 35%, rgba(255,107,53,0.92) 50%, rgba(255,107,53,0.18) 65%, rgba(255,107,53,0) 80%, transparent 100%); animation: scanSweep 2.5s ease-in-out infinite;"></div>
                                                     </div>
@@ -1669,6 +1706,11 @@ async function runAudit(forceRefresh = false) {
             }
         } catch (_) {}
         auditIdentity = identity;
+
+        // Обновляем время последнего успешного аудита для 2-минутного кэша
+        try {
+            window.lastAuditSuccessTime = Date.now();
+        } catch (_) {}
 
         try {
             if (__isValidAuditIdentity(identity, addr)) {
