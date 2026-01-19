@@ -4724,10 +4724,12 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     console.log('[Audit] Stage 2: Genesis Transaction');
 
                     const txCountForOffset = txCount;
+                    const firstTxTsHint = 0; // Not used in new architecture
                     let genesisTxData = null;
+                    let genesisTxPromise = null;
 
                     if (!__fastMode && txCountForOffset > 0) {
-                        const genesisTxPromise = (async () => {
+                        genesisTxPromise = (async () => {
                             try {
                                 const GENESIS_TIMEOUT_MS = __fastMode ? 3500 : 15000;
                                 const controller = new AbortController();
@@ -4952,6 +4954,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     }
 
                     // 2. Assign Stage results to legacy variable names for downstream compatibility
+                    const unisatBalance = null; // Not fetched (using Mempool API instead)
+                    const unisatBrc20Summary = brc20Summary; // From Stage 1
+                    const unisatHistory = null; // Not fetched in new staged approach
                     const historyData = null; // Not fetched in new staged approach
                     const runesBalanceList = unisatRunes;
                     const brc20Data = brc20Summary;
