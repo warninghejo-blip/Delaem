@@ -5784,7 +5784,12 @@ function calculateFennecIdentity(data) {
 }
 
 // Fetch Fennec ID data (v5 - Exact Counts from API)
-async function __legacy_fetchAuditData(abortSignal = null, silent = false) {
+async function __legacy_fetchAuditData(abortSignal = null, silent = false, options = null) {
+    try {
+        if (typeof window.fetchAuditData === 'function' && window.fetchAuditData !== __legacy_fetchAuditData) {
+            return await window.fetchAuditData(abortSignal, silent, options);
+        }
+    } catch (_) {}
     let addr = String(userAddress || window.userAddress || '').trim();
     if (!addr) {
         const shouldConnect = confirm('Please connect your wallet first. Would you like to connect now?');
@@ -5813,13 +5818,19 @@ async function __legacy_fetchAuditData(abortSignal = null, silent = false) {
             abortError.name = 'AbortError';
             throw abortError;
         }
+        const __opts = options && typeof options === 'object' ? options : null;
+        const __noCache = !!(__opts && (__opts.noCache || __opts.forceNoCache));
+        const __fast = __opts && typeof __opts.fast === 'boolean' ? __opts.fast : true;
+        const __cacheBust = __noCache ? `&_ts=${Date.now()}` : '';
+        const __fastParam = __fast ? '&fast=1' : '';
+
         // Call the updated Worker endpoint
         // ИСПРАВЛЕНИЕ: Добавляем pubkey для запросов к InSwap
         const pubkey = userPubkey || '';
         // ИСПРАВЛЕНИЕ: Убрана подпись пользователя - не требуется для API запросов
         const url = pubkey
-            ? `${BACKEND_URL}?action=fractal_audit&address=${addr}&pubkey=${pubkey}`
-            : `${BACKEND_URL}?action=fractal_audit&address=${addr}`;
+            ? `${BACKEND_URL}?action=fractal_audit&address=${addr}&pubkey=${pubkey}${__fastParam}${__cacheBust}`
+            : `${BACKEND_URL}?action=fractal_audit&address=${addr}${__fastParam}${__cacheBust}`;
 
         let workerRes = null;
         let retryCount = 0;
@@ -5848,7 +5859,7 @@ async function __legacy_fetchAuditData(abortSignal = null, silent = false) {
 
                 const response = await fetch(url, {
                     signal: localController.signal,
-                    cache: retryCount > 0 ? 'no-cache' : 'default',
+                    cache: __noCache ? 'no-store' : retryCount > 0 ? 'no-cache' : 'default',
                     headers: {
                         Accept: 'application/json'
                     }
@@ -6340,6 +6351,11 @@ async function __legacy_fetchAuditData(abortSignal = null, silent = false) {
 // Initialize Audit UI
 window.initAuditLoading = false;
 async function __legacy_initAudit() {
+    try {
+        if (typeof window.initAudit === 'function' && window.initAudit !== __legacy_initAudit) {
+            return await window.initAudit();
+        }
+    } catch (_) {}
     const container = document.getElementById('auditContainer');
     if (!container) return;
 
@@ -7799,6 +7815,11 @@ window.openLastMintedCard = function () {
 
 // Run the audit
 async function __legacy_runAudit(forceRefresh = false) {
+    try {
+        if (typeof window.runAudit === 'function' && window.runAudit !== __legacy_runAudit) {
+            return await window.runAudit(forceRefresh);
+        }
+    } catch (_) {}
     if (window.auditLoading) {
         console.log('Audit already running');
         return;

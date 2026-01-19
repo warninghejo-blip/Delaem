@@ -676,6 +676,9 @@ async function prefetchFennecAudit(silent = true) {
         window.__fennecPrefetchAudit.addr = addr;
         window.__fennecPrefetchAudit.promise = (async () => {
             const controller = new AbortController();
+            try {
+                window.__fennecPrefetchAudit.controller = controller;
+            } catch (_) {}
             const timeout = setTimeout(() => controller.abort(), AUDIT_PREFETCH_TIMEOUT_MS);
             try {
                 const data = await window.fetchAuditData(controller.signal, true).catch(() => null);
@@ -714,11 +717,17 @@ async function prefetchFennecAudit(silent = true) {
                 return identity;
             } finally {
                 clearTimeout(timeout);
+                try {
+                    if (window.__fennecPrefetchAudit && typeof window.__fennecPrefetchAudit === 'object') {
+                        window.__fennecPrefetchAudit.controller = null;
+                    }
+                } catch (_) {}
             }
         })().finally(() => {
             try {
                 window.__fennecPrefetchAudit.promise = null;
                 window.__fennecPrefetchAudit.addr = '';
+                window.__fennecPrefetchAudit.controller = null;
             } catch (_) {}
         });
 
@@ -775,7 +784,14 @@ async function initAudit() {
     if (initAuditLoading) return;
     try {
         const uiModeNow = String((window.__fennecAuditUi && window.__fennecAuditUi.mode) || 'idle');
-        if (auditLoading && (uiModeNow === 'opening' || uiModeNow === 'scanning')) return;
+        if (uiModeNow === 'opening' || uiModeNow === 'scanning') {
+            try {
+                if (container.querySelector('#scanProgress') || container.querySelector('#openProgress')) return;
+            } catch (_) {
+                return;
+            }
+            if (auditLoading) return;
+        }
     } catch (_) {
         if (auditLoading) return;
     }
@@ -1249,11 +1265,27 @@ async function runAudit(forceRefresh = false) {
     const requestId = ++currentAuditRequestId;
     if (currentAuditAbortController) currentAuditAbortController.abort();
     currentAuditAbortController = new AbortController();
+    try {
+        window.currentAuditAbortController = currentAuditAbortController;
+    } catch (_) {}
 
     try {
         if (__auditPrefetchTimer) {
             clearTimeout(__auditPrefetchTimer);
             __auditPrefetchTimer = null;
+        }
+    } catch (_) {}
+
+    try {
+        const p =
+            window.__fennecPrefetchAudit && typeof window.__fennecPrefetchAudit === 'object'
+                ? window.__fennecPrefetchAudit
+                : null;
+        if (p && p.controller && typeof p.controller.abort === 'function') {
+            p.controller.abort();
+        }
+        if (p) {
+            p.controller = null;
         }
     } catch (_) {}
 
@@ -1392,7 +1424,7 @@ async function runAudit(forceRefresh = false) {
                     console.log('runAudit: Using in-flight prefetch promise');
                     const idFromPrefetch = await Promise.race([
                         inFlight.catch(() => null),
-                        new Promise(resolve => setTimeout(() => resolve(null), 12000))
+                        new Promise(resolve => setTimeout(() => resolve(null), 1500))
                     ]);
                     if (idFromPrefetch && typeof idFromPrefetch === 'object') {
                         auditIdentity = idFromPrefetch;
@@ -1643,9 +1675,7 @@ async function runAudit(forceRefresh = false) {
 
         if (e && e.name === 'AbortError') {
             try {
-                if (window.__fennecAuditUi && typeof window.__fennecAuditUi === 'object') {
-                    if (String(window.__fennecAuditUi.mode || '') === 'scanning') window.__fennecAuditUi.mode = 'idle';
-                }
+                if (typeof initAudit === 'function') __fennecInitAuditSafe();
             } catch (_) {}
             return;
         }

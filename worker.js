@@ -944,7 +944,11 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         const isFennecPair =
                             (tick0Cmp === 'FENNEC' && (tick1Cmp === 'SFB___000' || tick1Cmp === 'SFB')) ||
                             (tick1Cmp === 'FENNEC' && (tick0Cmp === 'SFB___000' || tick0Cmp === 'SFB'));
-                        if (isFennecPair) {
+                        const __preferKline = (() => {
+                            const v = String(timeRange || '').toLowerCase();
+                            return v === '1h' || v === '24h';
+                        })();
+                        if (isFennecPair && !__preferKline) {
                             const tr = String(timeRange || '').toLowerCase() === 'all' ? '90d' : String(timeRange);
                             const baseNoV1 = String(SWAP_BASE || '').replace(/\/v1\/?$/i, '');
                             const __attempts = [];
@@ -3556,7 +3560,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                 let lastUniSatRequest = 0;
                 // ОПТИМИЗАЦИЯ: Throttling для UniSat API (рекомендация: 1-5 req/s max)
                 // КРИТИЧЕСКОЕ: Увеличено для множества пользователей - меньше запросов = меньше 429
-                const UNISAT_THROTTLE_MS = 2000;
+                const UNISAT_THROTTLE_MS = __fastMode ? 2800 : 2000;
                 let __unisatCooldownUntil = 0;
 
                 // КРИТИЧЕСКОЕ: очередь, чтобы UniSat-запросы не били параллельно и не ловили 429 burst'ом
@@ -4380,21 +4384,25 @@ Request Context: ${JSON.stringify(context, null, 2)}
 
                     // needRunesFallback уже объявлена выше (всегда true)
                     // ОПТИМИЗАЦИЯ: Удален unisatBalance и unisatSummary - данные берутся из других источников
-                    const [
-                        unisatBrc20Summary,
-                        unisatHistory,
-                        unisatRunes,
-                        unisatInscriptionData,
-                        unisatAbandonNftUtxo
-                    ] = await Promise.all([
-                        withTimeout(unisatBrc20SummaryPromise, UNISAT_AUDIT_TIMEOUT_MS),
-                        withTimeout(unisatHistoryPromise, UNISAT_AUDIT_TIMEOUT_MS),
-                        needRunesFallback
-                            ? withTimeout(unisatRunesPromise, UNISAT_AUDIT_TIMEOUT_MS)
-                            : Promise.resolve(null),
-                        withTimeout(unisatInscriptionDataPromise, UNISAT_AUDIT_TIMEOUT_MS),
-                        withTimeout(unisatAbandonNftUtxoPromise, UNISAT_AUDIT_TIMEOUT_MS)
-                    ]);
+                    console.log('📊 [1-5/7] Loading UniSat APIs (queued/sequential to reduce 429)...');
+
+                    const unisatBrc20Summary = await withTimeout(unisatBrc20SummaryPromise, UNISAT_AUDIT_TIMEOUT_MS);
+                    await new Promise(r => setTimeout(r, 80));
+                    const unisatHistory = await withTimeout(unisatHistoryPromise, UNISAT_AUDIT_TIMEOUT_MS);
+                    await new Promise(r => setTimeout(r, 80));
+                    const unisatRunes = needRunesFallback
+                        ? await withTimeout(unisatRunesPromise, UNISAT_AUDIT_TIMEOUT_MS)
+                        : null;
+                    await new Promise(r => setTimeout(r, 80));
+                    const unisatInscriptionData = await withTimeout(
+                        unisatInscriptionDataPromise,
+                        UNISAT_AUDIT_TIMEOUT_MS
+                    );
+                    await new Promise(r => setTimeout(r, 80));
+                    const unisatAbandonNftUtxo = await withTimeout(
+                        unisatAbandonNftUtxoPromise,
+                        UNISAT_AUDIT_TIMEOUT_MS
+                    );
                     const unisatBalance = null; // Удален запрос - используем только Mempool API
                     const unisatSummary = null; // Удален запрос (404 за 4.2 секунды)
                     await new Promise(r => setTimeout(r, 120));
@@ -4572,7 +4580,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     // ИСПРАВЛЕНИЕ: Если txCountForOffset = 0, пробуем start=0&limit=100
                     // ОПТИМИЗАЦИЯ: Не дергаем /history если уже есть валидный firstTxTsHint
                     // и не делаем запрос если txCount неизвестен/0.
-                    if (firstTxTsHint === 0 && (txCountForOffset > 0 || txCount > 0)) {
+                    if (!__fastMode && firstTxTsHint === 0 && (txCountForOffset > 0 || txCount > 0)) {
                         genesisTxPromise = (async () => {
                             try {
                                 const GENESIS_TIMEOUT_MS = __fastMode ? 3500 : 9000;
@@ -4637,71 +4645,42 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 };
 
                                 const fetchOne = async (off, label) => {
-                                    // ИСПРАВЛЕНИЕ: Для первой транзакции используем cursor = total - 1, size = 1
-                                    const urls = [
-                                        `${FRACTAL_BASE}/indexer/address/${address}/history?cursor=${off}&size=1`
-                                    ];
-                                    for (let i = 0; i < urls.length; i++) {
-                                        const u = urls[i];
-                                        const __t = __auditTraceEnabled && {
-                                            id: ++__auditTraceSeq,
-                                            label: `unisat_history_genesis_${label}`,
-                                            url: u,
-                                            started_at: Date.now(),
-                                            attempt: i + 1
-                                        };
-                                        try {
-                                            const res = await fetch(u, {
+                                    const u = `${FRACTAL_BASE}/indexer/address/${address}/history?cursor=${off}&size=1`;
+                                    const cacheKey = `unisat_history_genesis_${address}_${off}_${label}`;
+                                    const json = await safeFetch(
+                                        () =>
+                                            fetch(u, {
                                                 headers: upstreamHeaders,
                                                 signal: controller.signal
-                                            });
-                                            try {
-                                                if (__t) {
-                                                    __t.status = res.status;
-                                                    __t.ok = !!res.ok;
-                                                    __t.total_ms = Date.now() - Number(__t.started_at || Date.now());
-                                                    __auditTracePush(__t);
-                                                }
-                                            } catch (_) {}
-                                            if (!res.ok) continue;
-                                            const json = await res.json().catch(() => null);
-                                            const tx = pickTxFromResponse(json, false);
-                                            if (!tx) continue;
-                                            const ts = extractTs(tx);
-                                            if (!isValidTs(ts)) continue;
-                                            return {
-                                                tx,
-                                                ts,
-                                                url: u,
-                                                label,
-                                                paramStyle: 'cursor_size'
-                                            };
-                                        } catch (_) {
-                                            try {
-                                                if (__t) {
-                                                    __t.ok = false;
-                                                    __t.error = 'fetch_failed';
-                                                    __t.total_ms = Date.now() - Number(__t.started_at || Date.now());
-                                                    __auditTracePush(__t);
-                                                }
-                                            } catch (_) {}
-                                            continue;
+                                            }),
+                                        {
+                                            isUniSat: true,
+                                            useCache: true,
+                                            cacheKey,
+                                            retryOn429: false,
+                                            traceLabel: `unisat_history_genesis_${label}`,
+                                            traceUrl: u
                                         }
-                                    }
-                                    return null;
+                                    );
+                                    const tx = pickTxFromResponse(json, false);
+                                    if (!tx) return null;
+                                    const ts = extractTs(tx);
+                                    if (!isValidTs(ts)) return null;
+                                    return {
+                                        tx,
+                                        ts,
+                                        url: u,
+                                        label,
+                                        paramStyle: 'cursor_size'
+                                    };
                                 };
 
                                 const offOld = cursor;
-                                const [cOld, cZero] = await Promise.all([
-                                    fetchOne(offOld, 'offset'),
-                                    fetchOne(0, 'zero')
-                                ]);
+                                let chosen = await fetchOne(offOld, 'offset');
+                                if (!chosen && offOld !== 0) {
+                                    chosen = await fetchOne(0, 'zero');
+                                }
                                 clearTimeout(timeoutId);
-
-                                const chosen = (() => {
-                                    if (cOld && cZero) return cOld.ts <= cZero.ts ? cOld : cZero;
-                                    return cOld || cZero || null;
-                                })();
 
                                 if (chosen) {
                                     debugInfo.genesis_tx_found = true;
@@ -5305,7 +5284,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     // Параллельно детектим владение fennec_boxes и выставляем точный fennecBoxesCount.
                     // ИСПРАВЛЕНИЕ: Убрано условие !(InscriptionsList) - всегда пытаемся загрузить для ordinals_count
                     let collectionSummaryAgg = null;
-                    if (API_KEY) {
+                    if (API_KEY && !__fastMode) {
                         try {
                             const summaryUrl =
                                 'https://open-api-fractal.unisat.io/v3/market/collection/auction/collection_summary';
@@ -5704,7 +5683,8 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             Number.isFinite(totalCollections) &&
                             totalCollections > 0
                         ) &&
-                        API_KEY
+                        API_KEY &&
+                        !__fastMode
                     ) {
                         try {
                             requireUniSatKey();
@@ -5802,6 +5782,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             totalCollections > 0
                         ) &&
                         API_KEY &&
+                        !__fastMode &&
                         !(collectionSummaryAgg && collectionSummaryAgg.sawAny)
                     ) {
                         try {
@@ -6072,6 +6053,16 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         ordinalsCount = 0;
                         ordinalsByCollection = null;
                         debugInfo.ordinals_count_source = 'collections_none_or_unknown';
+                    }
+
+                    // Если коллекций нет (parent пустой), но есть total inscriptions, считаем их standalone ordinals.
+                    if (ordinalsCount === 0) {
+                        const totalIns = Number(totalInscriptionsCount || 0) || 0;
+                        if (totalIns > 0) {
+                            ordinalsCount = Math.max(0, Math.floor(totalIns));
+                            debugInfo.ordinals_count_source = 'inscription_data_total_standalone';
+                            if (!ordinalsByCollection) ordinalsByCollection = {};
+                        }
                     }
 
                     if (ordinalsCount === 0) {
@@ -7650,7 +7641,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
 
                         // Основной источник: UniSat Collection Indexer по адресу (это владение, не аукцион)
                         // ОПТИМИЗАЦИЯ: Только production URL, умный ретрай для Fennec Boxes
-                        if (!hasFennecBoxes) {
+                        if (!hasFennecBoxes && !__fastMode) {
                             try {
                                 if (API_KEY) requireUniSatKey();
                                 const addrEnc = encodeURIComponent(address);

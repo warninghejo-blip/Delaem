@@ -141,6 +141,56 @@
         return { inner: v ? v.innerHTML : null, title: doc.title || '' };
     }
 
+    function __cleanupOnRouteChange() {
+        try {
+            if (typeof window.stopPublicTickerUpdates === 'function') window.stopPublicTickerUpdates();
+        } catch (_) {}
+
+        try {
+            if (window.__scanProgressInterval) {
+                clearInterval(window.__scanProgressInterval);
+                window.__scanProgressInterval = null;
+            }
+        } catch (_) {}
+
+        try {
+            if (window.__openProgressInterval) {
+                clearInterval(window.__openProgressInterval);
+                window.__openProgressInterval = null;
+            }
+        } catch (_) {}
+
+        try {
+            if (window.currentAuditAbortController && typeof window.currentAuditAbortController.abort === 'function') {
+                window.currentAuditAbortController.abort();
+            }
+        } catch (_) {}
+
+        try {
+            const p =
+                window.__fennecPrefetchAudit && typeof window.__fennecPrefetchAudit === 'object'
+                    ? window.__fennecPrefetchAudit
+                    : null;
+            if (p && p.controller && typeof p.controller.abort === 'function') p.controller.abort();
+        } catch (_) {}
+    }
+
+    function __stripScripts(html) {
+        try {
+            const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
+            try {
+                doc.querySelectorAll('script').forEach(s => s.remove());
+            } catch (_) {}
+            return String(
+                doc.documentElement && doc.documentElement.innerHTML
+                    ? doc.documentElement.innerHTML
+                    : String(html || '')
+            );
+        } catch (_) {
+            return String(html || '');
+        }
+    }
+
     async function __swapTo(targetUrl) {
         const view = __getView();
         if (!view) return;
@@ -149,6 +199,7 @@
         window.__fennecRouting = true;
 
         try {
+            __cleanupOnRouteChange();
             try {
                 view.classList.add(FADE_CLASS);
             } catch (_) {}
@@ -157,7 +208,7 @@
 
             const pathname = __resolvePathname(targetUrl.pathname);
             const html = await __fetchHtml(pathname, targetUrl.search);
-            const extracted = __extractViewInner(html);
+            const extracted = __extractViewInner(__stripScripts(html));
 
             if (extracted.inner == null) {
                 window.location.href = pathname + (targetUrl.search || '') + (targetUrl.hash || '');

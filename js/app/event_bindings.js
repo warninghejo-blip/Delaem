@@ -96,6 +96,10 @@ export function initializeEventBindings() {
     chartTimeframeButtons.forEach(({ id, timeframe }) => {
         const btn = document.getElementById(id);
         if (btn) {
+            try {
+                if (btn.__fennecBound) return;
+                btn.__fennecBound = true;
+            } catch (_) {}
             __bindOnce(btn, 'click', () => {
                 if (typeof window.setChartTimeframe === 'function') {
                     window.setChartTimeframe(timeframe);

@@ -248,11 +248,11 @@ async function loadHistoricalPrices() {
         if (__chartDebug) console.log('Loading history from InSwap...', chartTimeframe);
 
         const timeRange = chartTimeframe;
-        const __url = `${BACKEND_URL}?action=price_line&tick0=sFB___000&tick1=FENNEC&timeRange=${timeRange}&_ts=${Date.now()}`;
+        const __url = `${BACKEND_URL}?action=price_line&tick0=sFB___000&tick1=FENNEC&timeRange=${encodeURIComponent(timeRange)}`;
         const json = await safeFetchJson(__url, {
             timeoutMs: 25000,
             retries: 0,
-            cache: 'no-store',
+            cache: 'default',
             headers: { Accept: 'application/json' }
         });
         if (!json) throw new Error('Failed to load price history');
