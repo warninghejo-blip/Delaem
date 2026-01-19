@@ -35,12 +35,12 @@ async function fetchAuditData(abortSignal = null, silent = false, options = null
     const pubkey = String(window.userPubkey || '').trim();
     const __opts = options && typeof options === 'object' ? options : null;
     const __noCache = !!(__opts && (__opts.noCache || __opts.forceNoCache));
-    const __fast = __opts && typeof __opts.fast === 'boolean' ? __opts.fast : true;
+    const __fast = false;
     const __cacheBust = __noCache ? `&_ts=${Date.now()}` : '';
-    const __fastParam = __fast ? '&fast=1' : '';
+    const __fastParam = '';
     const url = pubkey
-        ? `${BACKEND_URL}?action=fractal_audit&address=${encodeURIComponent(addr)}&pubkey=${encodeURIComponent(pubkey)}${__fastParam}${__cacheBust}`
-        : `${BACKEND_URL}?action=fractal_audit&address=${encodeURIComponent(addr)}${__fastParam}${__cacheBust}`;
+        ? `${BACKEND_URL}?action=fractal_audit&address=${encodeURIComponent(addr)}&pubkey=${encodeURIComponent(pubkey)}${__cacheBust}`
+        : `${BACKEND_URL}?action=fractal_audit&address=${encodeURIComponent(addr)}${__cacheBust}`;
 
     let lastErr = null;
     for (let attempt = 0; attempt <= 2; attempt++) {
@@ -83,6 +83,10 @@ async function fetchAuditData(abortSignal = null, silent = false, options = null
                         ? workerRes.data
                         : workerRes
                     : {};
+
+            if (apiData && typeof apiData === 'object' && apiData._error) {
+                throw new Error(String(apiData._error || 'Oracle error'));
+            }
 
             if (workerRes && typeof workerRes === 'object') {
                 if (workerRes.error) throw new Error(String(workerRes.error || 'Oracle error'));
@@ -185,7 +189,12 @@ async function fetchAuditData(abortSignal = null, silent = false, options = null
 
                 if ((Number(auditInput?.stats?.ordinals || 0) || 0) <= 0) {
                     const cachedOrd = Number(st?.ordinals || 0) || 0;
-                    if (cachedOrd > 0 && auditInput.stats && typeof auditInput.stats === 'object') {
+                    if (
+                        cachedOrd > 0 &&
+                        cachedTotalCollections > 0 &&
+                        auditInput.stats &&
+                        typeof auditInput.stats === 'object'
+                    ) {
                         auditInput.stats.ordinals = cachedOrd;
                     }
                 }
@@ -483,6 +492,41 @@ function __escapeHtml(s) {
         .replace(/'/g, '&#039;');
 }
 
+function __isValidAuditIdentity(identity, addr) {
+    try {
+        if (!identity || typeof identity !== 'object') return false;
+        const a = identity.archetype;
+        if (!a || typeof a !== 'object') return false;
+        const hasKey = !!String(a.baseKey || '').trim();
+        const hasTitle = !!String(a.title || '').trim();
+        if (!hasKey && !hasTitle) return false;
+        const address = String(addr || '').trim();
+        if (address) {
+            const m = identity.metrics && typeof identity.metrics === 'object' ? identity.metrics : null;
+            const ma = m ? String(m.address || '').trim() : '';
+            if (ma && ma !== address) return false;
+        }
+
+        try {
+            const m = identity.metrics && typeof identity.metrics === 'object' ? identity.metrics : null;
+            const txCount = Number(m?.txCount ?? m?.tx_count ?? 0) || 0;
+            const daysAlive = Number(m?.daysAlive ?? m?.days_alive ?? 0) || 0;
+            const firstTxTs = Number(m?.first_tx_ts ?? m?.firstTxTs ?? 0) || 0;
+            if (txCount > 0 && (daysAlive <= 0 || firstTxTs <= 0)) return false;
+
+            const st = m?.inscriptionStats && typeof m.inscriptionStats === 'object' ? m.inscriptionStats : null;
+            const ord = Number(st?.ordinals ?? st?.ordinals_count ?? 0) || 0;
+            const tc = Number(st?.totalCollections ?? st?.total_collections ?? 0) || 0;
+            if (ord > 0 && tc <= 0) return false;
+        } catch (_) {
+            void _;
+        }
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
+
 try {
     Object.defineProperty(window, 'initAuditLoading', {
         get: () => initAuditLoading,
@@ -644,10 +688,13 @@ async function prefetchFennecAudit(silent = true) {
         if (cached) {
             const cachedData = JSON.parse(cached);
             if (cachedData && cachedData.identity && now - Number(cachedData.timestamp || 0) < 5 * 60 * 1000) {
-                prefetchedFennecAudit = cachedData.identity;
-                prefetchedFennecAuditAddr = addr;
-                prefetchedFennecAuditTs = now;
-                return prefetchedFennecAudit;
+                const id = cachedData.identity;
+                if (__isValidAuditIdentity(id, addr)) {
+                    prefetchedFennecAudit = id;
+                    prefetchedFennecAuditAddr = addr;
+                    prefetchedFennecAuditTs = now;
+                    return prefetchedFennecAudit;
+                }
             }
         }
     } catch (_) {}
@@ -705,6 +752,16 @@ async function prefetchFennecAudit(silent = true) {
 
                 identity.metrics = identity.metrics && typeof identity.metrics === 'object' ? identity.metrics : {};
                 identity.metrics.address = addr;
+
+                if (!__isValidAuditIdentity(identity, addr)) {
+                    try {
+                        if (window.__fennecPrefetchAudit && typeof window.__fennecPrefetchAudit === 'object') {
+                            window.__fennecPrefetchAudit.failTs = Date.now();
+                            window.__fennecPrefetchAudit.failAddr = addr;
+                        }
+                    } catch (_) {}
+                    return null;
+                }
 
                 prefetchedFennecAudit = identity;
                 prefetchedFennecAuditAddr = addr;
@@ -1426,7 +1483,7 @@ async function runAudit(forceRefresh = false) {
                         inFlight.catch(() => null),
                         new Promise(resolve => setTimeout(() => resolve(null), 1500))
                     ]);
-                    if (idFromPrefetch && typeof idFromPrefetch === 'object') {
+                    if (__isValidAuditIdentity(idFromPrefetch, addr)) {
                         auditIdentity = idFromPrefetch;
                         try {
                             auditIdentity.metrics =
@@ -1467,6 +1524,8 @@ async function runAudit(forceRefresh = false) {
                     Date.now() - prefetchedFennecAuditTs < 300000
                 ) {
                     console.log('runAudit: Using prefetched audit data');
+                    if (!__isValidAuditIdentity(prefetchedFennecAudit, addr))
+                        throw new Error('Invalid cached identity');
                     auditIdentity = prefetchedFennecAudit;
                     try {
                         auditIdentity.metrics =
@@ -1506,6 +1565,8 @@ async function runAudit(forceRefresh = false) {
                     const cachedData = JSON.parse(cached);
                     if (Date.now() - cachedData.timestamp < 5 * 60 * 1000) {
                         console.log('Using cached audit data');
+                        if (!__isValidAuditIdentity(cachedData.identity, addr))
+                            throw new Error('Invalid cached identity');
                         auditIdentity = cachedData.identity;
                         try {
                             if (auditIdentity && typeof auditIdentity === 'object') {
@@ -1609,13 +1670,17 @@ async function runAudit(forceRefresh = false) {
         } catch (_) {}
         auditIdentity = identity;
 
-        localStorage.setItem(
-            `audit_v3_${addr}`,
-            JSON.stringify({
-                identity: identity,
-                timestamp: Date.now()
-            })
-        );
+        try {
+            if (__isValidAuditIdentity(identity, addr)) {
+                localStorage.setItem(
+                    `audit_v3_${addr}`,
+                    JSON.stringify({
+                        identity: identity,
+                        timestamp: Date.now()
+                    })
+                );
+            }
+        } catch (_) {}
 
         auditLoading = false;
         try {

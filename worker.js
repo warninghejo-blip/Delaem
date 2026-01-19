@@ -191,7 +191,25 @@ export default {
                 void _;
             }
 
-            const API_KEY = env?.UNISAT_API_KEY || env?.API_KEY || '';
+            const __unisatKeysRaw = [
+                env?.UNISAT_API_KEY,
+                env?.UNISAT_API_KEY_2,
+                env?.UNISAT_API_KEY_3,
+                env?.UNISAT_API_KEY_4,
+                env?.API_KEY
+            ]
+                .map(k => String(k || '').trim())
+                .filter(Boolean);
+            const __unisatKeys = Array.from(new Set(__unisatKeysRaw));
+            let __unisatKeyIdx = 0;
+            const __pickUniSatKey = () => {
+                if (!__unisatKeys.length) return '';
+                const k = String(__unisatKeys[__unisatKeyIdx % __unisatKeys.length] || '').trim();
+                __unisatKeyIdx = (__unisatKeyIdx + 1) % __unisatKeys.length;
+                return k;
+            };
+
+            const API_KEY = __unisatKeys[0] || '';
             const CMC_API_KEY = env?.CMC_API_KEY || env?.CMC_PRO_API_KEY || '';
             const GOOGLE_API_KEY = String(env?.GOOGLE_API_KEY || env?.GEMINI_API_KEY || '').trim();
 
@@ -456,14 +474,15 @@ Request Context: ${JSON.stringify(context, null, 2)}
             };
 
             const requireUniSatKey = () => {
-                if (!API_KEY) {
+                if (!__unisatKeys.length) {
                     throw new Error('UNISAT_API_KEY is not configured on the server.');
                 }
             };
 
             const authHeaders = () => {
                 requireUniSatKey();
-                return { Authorization: `Bearer ${API_KEY}` };
+                const k = __pickUniSatKey();
+                return k ? { Authorization: `Bearer ${k}` } : {};
             };
 
             if (incomingPubKey) upstreamHeaders['x-public-key'] = incomingPubKey;
@@ -3497,11 +3516,10 @@ Request Context: ${JSON.stringify(context, null, 2)}
                 const address = url.searchParams.get('address');
                 if (!address) return sendJSON({ error: 'Address required' }, 400);
 
-                const __fastMode = url.searchParams.get('fast') === '1';
+                const __fastMode = false;
 
                 // Cache API (Cloudflare) — АГРЕССИВНОЕ кэширование для снижения 429 ошибок
                 // КРИТИЧЕСКОЕ: Кэшируем по адресу (без pubkey и других параметров) для переиспользования между пользователями
-                const cache = caches.default;
                 // Нормализуем URL для кэша (убираем pubkey и другие неважные параметры)
                 const cacheKeyUrl = new URL(request.url);
                 cacheKeyUrl.searchParams.delete('pubkey'); // pubkey не влияет на результат для кэша
@@ -3510,10 +3528,12 @@ Request Context: ${JSON.stringify(context, null, 2)}
                 cacheKeyUrl.searchParams.delete('ts');
                 cacheKeyUrl.searchParams.delete('_');
                 cacheKeyUrl.searchParams.delete('debug');
-                cacheKeyUrl.searchParams.set('v', '8');
+                cacheKeyUrl.searchParams.set('v', '9');
                 const cacheKey = new Request(cacheKeyUrl.toString(), { method: 'GET' });
 
-                const cachedResponse = !__debugEnabled ? await cache.match(cacheKey) : null;
+                const cache = typeof caches !== 'undefined' && caches?.default ? caches.default : null;
+
+                const cachedResponse = !__debugEnabled && cache ? await cache.match(cacheKey) : null;
                 if (cachedResponse) {
                     console.log(
                         `✅ Serving fractal_audit from Cloudflare cache for address ${address?.substring(0, 10)}... ` +
@@ -3560,7 +3580,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                 let lastUniSatRequest = 0;
                 // ОПТИМИЗАЦИЯ: Throttling для UniSat API (рекомендация: 1-5 req/s max)
                 // КРИТИЧЕСКОЕ: Увеличено для множества пользователей - меньше запросов = меньше 429
-                const UNISAT_THROTTLE_MS = __fastMode ? 2800 : 2000;
+                const __unisatThrottleBaseMs = __fastMode ? 2800 : 2500;
+                let __unisatThrottleMs = __unisatThrottleBaseMs;
+                let __unisat429Streak = 0;
                 let __unisatCooldownUntil = 0;
 
                 // КРИТИЧЕСКОЕ: очередь, чтобы UniSat-запросы не били параллельно и не ловили 429 burst'ом
@@ -3600,6 +3622,8 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         cacheKey = null,
                         isUniSat = false,
                         retryOn429 = false,
+                        maxRetries = null,
+                        maxDelayMs = null,
                         traceLabel = null,
                         traceUrl = null
                     } = options;
@@ -3644,8 +3668,19 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     }
 
                     // Exponential backoff для 429 (рекомендация Unisat)
-                    let retries = retryOn429 ? 3 : 0;
-                    let delay = 4000;
+                    const __maxDelay = (() => {
+                        const v = Number(maxDelayMs);
+                        return Number.isFinite(v) && v > 0 ? Math.floor(v) : 15000;
+                    })();
+
+                    const __maxRetries = (() => {
+                        const v = Number(maxRetries);
+                        if (Number.isFinite(v) && v >= 0) return Math.floor(v);
+                        return retryOn429 ? 2 : 0;
+                    })();
+
+                    let retries = __maxRetries;
+                    let delay = 2000;
 
                     let __attemptNo = 0;
 
@@ -3671,6 +3706,14 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 const queuedAt = Date.now();
                                 response = await __runUniSatQueued(async () => {
                                     try {
+                                        const k = __pickUniSatKey();
+                                        if (k) {
+                                            upstreamHeaders.Authorization = `Bearer ${k}`;
+                                            unisatApiHeaders.Authorization = `Bearer ${k}`;
+                                        }
+                                    } catch (_) {}
+
+                                    try {
                                         if (__attempt) __attempt.queue_wait_ms = Date.now() - queuedAt;
                                     } catch (_) {}
 
@@ -3687,13 +3730,13 @@ Request Context: ${JSON.stringify(context, null, 2)}
 
                                     const now = Date.now();
                                     const timeSinceLastRequest = now - lastUniSatRequest;
-                                    if (timeSinceLastRequest < UNISAT_THROTTLE_MS) {
+                                    if (timeSinceLastRequest < __unisatThrottleMs) {
                                         try {
                                             if (__attempt)
-                                                __attempt.throttle_wait_ms = UNISAT_THROTTLE_MS - timeSinceLastRequest;
+                                                __attempt.throttle_wait_ms = __unisatThrottleMs - timeSinceLastRequest;
                                         } catch (_) {}
                                         await new Promise(r =>
-                                            setTimeout(r, UNISAT_THROTTLE_MS - timeSinceLastRequest)
+                                            setTimeout(r, __unisatThrottleMs - timeSinceLastRequest)
                                         );
                                     }
                                     lastUniSatRequest = Date.now();
@@ -3730,15 +3773,27 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 // Обработка 429 (Too Many Requests)
                                 if (status === 429) {
                                     try {
-                                        const retryAfter = response?.headers?.get
-                                            ? response.headers.get('Retry-After')
-                                            : null;
-                                        const raMs = retryAfter ? parseInt(retryAfter, 10) * 1000 : 0;
-                                        const cooldownMs = Math.max(raMs || 0, 8000);
-                                        __unisatCooldownUntil = Math.max(
-                                            __unisatCooldownUntil,
-                                            Date.now() + cooldownMs
-                                        );
+                                        if (isUniSat) {
+                                            __unisat429Streak = Math.min((Number(__unisat429Streak || 0) || 0) + 1, 10);
+                                            const retryAfter = response?.headers?.get
+                                                ? response.headers.get('Retry-After')
+                                                : null;
+                                            const raMsRaw = retryAfter ? parseInt(retryAfter, 10) * 1000 : 0;
+                                            const raMs = Number.isFinite(raMsRaw) ? raMsRaw : 0;
+                                            const penaltyMs = Math.min(1500 * __unisat429Streak, 15000);
+                                            __unisatThrottleMs = Math.min(
+                                                Math.max(__unisatThrottleMs, __unisatThrottleBaseMs) + penaltyMs,
+                                                12000
+                                            );
+                                            const cooldownMs =
+                                                raMs > 0
+                                                    ? Math.min(Math.max(raMs, __unisatThrottleMs), 60000)
+                                                    : Math.min(Math.max(5000, __unisatThrottleMs), 60000);
+                                            __unisatCooldownUntil = Math.max(
+                                                __unisatCooldownUntil,
+                                                Date.now() + cooldownMs
+                                            );
+                                        }
                                     } catch (_) {}
                                     if (typeof p !== 'function') {
                                         if (cacheKey && cacheKey.includes('uniscan_summary')) {
@@ -3752,7 +3807,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                         const retryAfter = response?.headers?.get
                                             ? response.headers.get('Retry-After')
                                             : null;
-                                        delay = retryAfter ? parseInt(retryAfter) * 1000 : delay;
+                                        const raMsRaw = retryAfter ? parseInt(retryAfter, 10) * 1000 : 0;
+                                        const raMs = Number.isFinite(raMsRaw) ? raMsRaw : 0;
+                                        if (raMs > 0) delay = Math.min(raMs, __maxDelay);
                                         try {
                                             if (__attempt) {
                                                 __attempt.retry_after = retryAfter || '';
@@ -3762,7 +3819,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                         } catch (_) {}
 
                                         await new Promise(r => setTimeout(r, delay));
-                                        delay = Math.min(delay * 2, 30000);
+                                        delay = Math.min(delay * 2, __maxDelay);
                                         retries--;
                                         continue;
                                     }
@@ -3792,6 +3849,15 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             } catch (_) {}
                             const data = await response.json().catch(() => null);
                             try {
+                                if (isUniSat) {
+                                    __unisat429Streak = 0;
+                                    __unisatThrottleMs = Math.max(
+                                        __unisatThrottleBaseMs,
+                                        Math.floor(Number(__unisatThrottleMs || __unisatThrottleBaseMs) * 0.9)
+                                    );
+                                }
+                            } catch (_) {}
+                            try {
                                 if (__attempt) {
                                     __attempt.json_ms = Date.now() - Number(__attempt.json_started_at || Date.now());
                                 }
@@ -3819,7 +3885,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
 
                             if (retries > 0 && retryOn429) {
                                 await new Promise(r => setTimeout(r, delay));
-                                delay = Math.min(delay * 2, 30000);
+                                delay = Math.min(delay * 2, __maxDelay);
                                 retries--;
                                 continue;
                             }
@@ -3893,125 +3959,133 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     // const unisatBalancePromise = Promise.resolve(null);
 
                     // 2. UniSat BRC-20 Summary API - все BRC-20 токены разом
-                    const unisatBrc20SummaryPromise = (async () => {
-                        const result = await safeFetch(
+                    const unisatBrc20SummaryPromise = () =>
+                        (async () => {
+                            const result = await safeFetch(
+                                () =>
+                                    fetch(
+                                        `${FRACTAL_BASE}/indexer/address/${address}/brc20/summary?start=0&limit=500&exclude_zero=true`,
+                                        { headers: upstreamHeaders }
+                                    ),
+                                {
+                                    isUniSat: true,
+                                    useCache: true,
+                                    cacheKey: `unisat_brc20_${address}`,
+                                    retryOn429: !__fastMode,
+                                    traceLabel: 'unisat_brc20_summary',
+                                    traceUrl: `${FRACTAL_BASE}/indexer/address/${address}/brc20/summary?start=0&limit=500&exclude_zero=true`
+                                }
+                            );
+                            if (result) {
+                                debugInfo.brc20_api_used = 'brc20_summary';
+                            }
+                            return result;
+                        })();
+
+                    // 3. UniSat History API - total транзакций (для расчета возраста)
+                    // ИСПРАВЛЕНИЕ: Используем правильные параметры cursor и size (по документации API)
+                    const unisatHistoryPromise = () =>
+                        (async () => {
+                            const primary = await safeFetch(
+                                () =>
+                                    fetch(`${FRACTAL_BASE}/indexer/address/${address}/history?start=0&limit=1`, {
+                                        headers: upstreamHeaders
+                                    }),
+                                {
+                                    isUniSat: true,
+                                    useCache: true,
+                                    cacheKey: `unisat_history_${address}`,
+                                    retryOn429: !__fastMode,
+                                    traceLabel: 'unisat_history_start_limit',
+                                    traceUrl: `${FRACTAL_BASE}/indexer/address/${address}/history?start=0&limit=1`
+                                }
+                            );
+                            if (primary) {
+                                try {
+                                    debugInfo.unisat_history_params = 'start_limit';
+                                } catch (_) {
+                                    void _;
+                                }
+                                return primary;
+                            }
+                            const fallback = await safeFetch(
+                                () =>
+                                    fetch(`${FRACTAL_BASE}/indexer/address/${address}/history?cursor=0&size=1`, {
+                                        headers: upstreamHeaders
+                                    }),
+                                {
+                                    isUniSat: true,
+                                    useCache: true,
+                                    cacheKey: `unisat_history_start_${address}`,
+                                    retryOn429: !__fastMode,
+                                    traceLabel: 'unisat_history_cursor_size',
+                                    traceUrl: `${FRACTAL_BASE}/indexer/address/${address}/history?cursor=0&size=1`
+                                }
+                            );
+                            if (fallback) {
+                                try {
+                                    debugInfo.unisat_history_params = 'cursor_size';
+                                } catch (_) {
+                                    void _;
+                                }
+                            }
+                            return fallback;
+                        })();
+
+                    // 4. Опционально: UniSat Runes Balance List - все руны разом
+                    const unisatRunesPromise = () =>
+                        safeFetch(
                             () =>
                                 fetch(
-                                    `${FRACTAL_BASE}/indexer/address/${address}/brc20/summary?start=0&limit=500&exclude_zero=true`,
-                                    { headers: upstreamHeaders }
+                                    `${FRACTAL_BASE}/indexer/address/${address}/runes/balance-list?start=0&limit=200`,
+                                    {
+                                        headers: upstreamHeaders
+                                    }
                                 ),
                             {
                                 isUniSat: true,
                                 useCache: true,
-                                cacheKey: `unisat_brc20_${address}`,
+                                cacheKey: `unisat_runes_${address}`,
                                 retryOn429: !__fastMode,
-                                traceLabel: 'unisat_brc20_summary',
-                                traceUrl: `${FRACTAL_BASE}/indexer/address/${address}/brc20/summary?start=0&limit=500&exclude_zero=true`
+                                traceLabel: 'unisat_runes_balance_list',
+                                traceUrl: `${FRACTAL_BASE}/indexer/address/${address}/runes/balance-list?start=0&limit=200`
                             }
                         );
-                        if (result) {
-                            debugInfo.brc20_api_used = 'brc20_summary';
-                        }
-                        return result;
-                    })();
-
-                    // 3. UniSat History API - total транзакций (для расчета возраста)
-                    // ИСПРАВЛЕНИЕ: Используем правильные параметры cursor и size (по документации API)
-                    const unisatHistoryPromise = (async () => {
-                        const primary = await safeFetch(
-                            () =>
-                                fetch(`${FRACTAL_BASE}/indexer/address/${address}/history?start=0&limit=1`, {
-                                    headers: upstreamHeaders
-                                }),
-                            {
-                                isUniSat: true,
-                                useCache: true,
-                                cacheKey: `unisat_history_${address}`,
-                                retryOn429: !__fastMode,
-                                traceLabel: 'unisat_history_start_limit',
-                                traceUrl: `${FRACTAL_BASE}/indexer/address/${address}/history?start=0&limit=1`
-                            }
-                        );
-                        if (primary) {
-                            try {
-                                debugInfo.unisat_history_params = 'start_limit';
-                            } catch (_) {
-                                void _;
-                            }
-                            return primary;
-                        }
-                        const fallback = await safeFetch(
-                            () =>
-                                fetch(`${FRACTAL_BASE}/indexer/address/${address}/history?cursor=0&size=1`, {
-                                    headers: upstreamHeaders
-                                }),
-                            {
-                                isUniSat: true,
-                                useCache: true,
-                                cacheKey: `unisat_history_start_${address}`,
-                                retryOn429: !__fastMode,
-                                traceLabel: 'unisat_history_cursor_size',
-                                traceUrl: `${FRACTAL_BASE}/indexer/address/${address}/history?cursor=0&size=1`
-                            }
-                        );
-                        if (fallback) {
-                            try {
-                                debugInfo.unisat_history_params = 'cursor_size';
-                            } catch (_) {
-                                void _;
-                            }
-                        }
-                        return fallback;
-                    })();
-
-                    // 4. Опционально: UniSat Runes Balance List - все руны разом
-                    const unisatRunesPromise = safeFetch(
-                        () =>
-                            fetch(`${FRACTAL_BASE}/indexer/address/${address}/runes/balance-list?start=0&limit=100`, {
-                                headers: upstreamHeaders
-                            }),
-                        {
-                            isUniSat: true,
-                            useCache: true,
-                            cacheKey: `unisat_runes_${address}`,
-                            retryOn429: !__fastMode,
-                            traceLabel: 'unisat_runes_balance_list',
-                            traceUrl: `${FRACTAL_BASE}/indexer/address/${address}/runes/balance-list?start=0&limit=100`
-                        }
-                    );
 
                     // ОПТИМИЗАЦИЯ: Удален unisatSummaryPromise (404 за 4.2 секунды)
                     // const unisatSummaryPromise = Promise.resolve(null);
 
-                    const unisatAbandonNftUtxoPromise = safeFetch(
-                        () =>
-                            fetch(`${FRACTAL_BASE}/indexer/address/${address}/abandon-nft-utxo-data`, {
-                                headers: upstreamHeaders
-                            }),
-                        {
-                            isUniSat: true,
-                            useCache: true,
-                            cacheKey: `unisat_abandon_nft_utxo_${address}`,
-                            retryOn429: !__fastMode,
-                            traceLabel: 'unisat_abandon_nft_utxo_data',
-                            traceUrl: `${FRACTAL_BASE}/indexer/address/${address}/abandon-nft-utxo-data`
-                        }
-                    );
+                    const unisatAbandonNftUtxoPromise = () =>
+                        safeFetch(
+                            () =>
+                                fetch(`${FRACTAL_BASE}/indexer/address/${address}/abandon-nft-utxo-data`, {
+                                    headers: upstreamHeaders
+                                }),
+                            {
+                                isUniSat: true,
+                                useCache: true,
+                                cacheKey: `unisat_abandon_nft_utxo_${address}`,
+                                retryOn429: !__fastMode,
+                                traceLabel: 'unisat_abandon_nft_utxo_data',
+                                traceUrl: `${FRACTAL_BASE}/indexer/address/${address}/abandon-nft-utxo-data`
+                            }
+                        );
 
-                    const unisatInscriptionDataPromise = safeFetch(
-                        () =>
-                            fetch(`${FRACTAL_BASE}/indexer/address/${address}/inscription-data?cursor=0&size=100`, {
-                                headers: upstreamHeaders
-                            }),
-                        {
-                            isUniSat: true,
-                            useCache: true,
-                            cacheKey: `unisat_inscription_data_${address}`,
-                            retryOn429: !__fastMode,
-                            traceLabel: 'unisat_inscription_data',
-                            traceUrl: `${FRACTAL_BASE}/indexer/address/${address}/inscription-data?cursor=0&size=100`
-                        }
-                    );
+                    const unisatInscriptionDataPromise = () =>
+                        safeFetch(
+                            () =>
+                                fetch(`${FRACTAL_BASE}/indexer/address/${address}/inscription-data?cursor=0&size=100`, {
+                                    headers: upstreamHeaders
+                                }),
+                            {
+                                isUniSat: true,
+                                useCache: true,
+                                cacheKey: `unisat_inscription_data_${address}`,
+                                retryOn429: !__fastMode,
+                                traceLabel: 'unisat_inscription_data',
+                                traceUrl: `${FRACTAL_BASE}/indexer/address/${address}/inscription-data?cursor=0&size=100`
+                            }
+                        );
 
                     // ОПТИМИЗАЦИЯ: Удален inswapAssetSummaryPromise (оба 404)
                     // LP данные уже получаем из inswap_all_balance_direct
@@ -4386,23 +4460,11 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     // ОПТИМИЗАЦИЯ: Удален unisatBalance и unisatSummary - данные берутся из других источников
                     console.log('📊 [1-5/7] Loading UniSat APIs (queued/sequential to reduce 429)...');
 
-                    const unisatBrc20Summary = await withTimeout(unisatBrc20SummaryPromise, UNISAT_AUDIT_TIMEOUT_MS);
-                    await new Promise(r => setTimeout(r, 80));
-                    const unisatHistory = await withTimeout(unisatHistoryPromise, UNISAT_AUDIT_TIMEOUT_MS);
-                    await new Promise(r => setTimeout(r, 80));
-                    const unisatRunes = needRunesFallback
-                        ? await withTimeout(unisatRunesPromise, UNISAT_AUDIT_TIMEOUT_MS)
-                        : null;
-                    await new Promise(r => setTimeout(r, 80));
-                    const unisatInscriptionData = await withTimeout(
-                        unisatInscriptionDataPromise,
-                        UNISAT_AUDIT_TIMEOUT_MS
-                    );
-                    await new Promise(r => setTimeout(r, 80));
-                    const unisatAbandonNftUtxo = await withTimeout(
-                        unisatAbandonNftUtxoPromise,
-                        UNISAT_AUDIT_TIMEOUT_MS
-                    );
+                    let unisatBrc20Summary = null;
+                    let unisatHistory = null;
+                    let unisatRunes = null;
+                    let unisatInscriptionData = null;
+                    let unisatAbandonNftUtxo = null;
                     const unisatBalance = null; // Удален запрос - используем только Mempool API
                     const unisatSummary = null; // Удален запрос (404 за 4.2 секунды)
                     await new Promise(r => setTimeout(r, 120));
@@ -4512,6 +4574,21 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     let txCountForOffset = txCount;
                     let genesisTxPromise = null;
 
+                    if (!mempool && !__fastMode) {
+                        try {
+                            unisatHistory = await withTimeout(unisatHistoryPromise(), UNISAT_AUDIT_TIMEOUT_MS);
+                            const t = Number(unisatHistory?.data?.total || 0) || 0;
+                            if (t > 0) {
+                                txCount = t;
+                                txCountForOffset = t;
+                                debugInfo.tx_count_source = 'unisat_history_fallback_mempool_missing';
+                                debugInfo.genesis_txCount_source = 'unisat_history_fallback_mempool_missing';
+                            }
+                        } catch (_) {
+                            void _;
+                        }
+                    }
+
                     // ОПТИМИЗАЦИЯ: если Uniscan Summary уже отдал время первой транзакции — используем его
                     // и не дергаем /history (это один из самых медленных и rate-limited запросов).
                     let firstTxTsHint = 0;
@@ -4568,9 +4645,6 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 0
                         );
                         debugInfo.genesis_txCount_source = 'unisat_summary';
-                    } else if (unisatHistory?.data?.total) {
-                        txCountForOffset = Number(unisatHistory.data.total || 0) || 0;
-                        debugInfo.genesis_txCount_source = 'unisat_history';
                     } else if (txCount > 0) {
                         txCountForOffset = txCount;
                         debugInfo.genesis_txCount_source = 'mempool_stats_fallback';
@@ -4583,7 +4657,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     if (!__fastMode && firstTxTsHint === 0 && (txCountForOffset > 0 || txCount > 0)) {
                         genesisTxPromise = (async () => {
                             try {
-                                const GENESIS_TIMEOUT_MS = __fastMode ? 3500 : 9000;
+                                const GENESIS_TIMEOUT_MS = __fastMode ? 3500 : 12000;
                                 const controller = new AbortController();
                                 const timeoutId = setTimeout(() => controller.abort(), GENESIS_TIMEOUT_MS);
                                 let cursor;
@@ -4657,7 +4731,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                             isUniSat: true,
                                             useCache: true,
                                             cacheKey,
-                                            retryOn429: false,
+                                            retryOn429: true,
+                                            maxRetries: 2,
+                                            maxDelayMs: 15000,
                                             traceLabel: `unisat_history_genesis_${label}`,
                                             traceUrl: u
                                         }
@@ -4721,6 +4797,19 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             debugInfo.genesis_error = e.message;
                         }
                     }
+
+                    unisatInscriptionData = await withTimeout(unisatInscriptionDataPromise(), UNISAT_AUDIT_TIMEOUT_MS);
+                    await new Promise(r => setTimeout(r, 120));
+
+                    unisatBrc20Summary = await withTimeout(unisatBrc20SummaryPromise(), UNISAT_AUDIT_TIMEOUT_MS);
+                    await new Promise(r => setTimeout(r, 120));
+
+                    unisatRunes = needRunesFallback
+                        ? await withTimeout(unisatRunesPromise(), UNISAT_AUDIT_TIMEOUT_MS)
+                        : null;
+                    await new Promise(r => setTimeout(r, 120));
+
+                    unisatAbandonNftUtxo = await withTimeout(unisatAbandonNftUtxoPromise(), UNISAT_AUDIT_TIMEOUT_MS);
 
                     // 2. Цены и история - используем уже полученный результат (с таймаутом)
                     // const cg = null; // Убран CoinGecko - цены получаем из InSwap all_balance
@@ -4927,6 +5016,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             m = mempool.mempool_stats || {};
                         }
                         txCount = Number(c.tx_count || 0) + Number(m.tx_count || 0);
+                        debugInfo.tx_count_source = debugInfo.tx_count_source || 'mempool_stats';
                         const fundedSum = Number(c.funded_txo_sum || 0) + Number(m.funded_txo_sum || 0);
                         const spentSum = Number(c.spent_txo_sum || 0) + Number(m.spent_txo_sum || 0);
                         nativeBalance = Math.max(0, (fundedSum - spentSum) / 1e8);
@@ -4947,18 +5037,20 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     debugInfo.ordinals_count_from_balance = Number(unisatBalance?.data?.inscriptionUtxoCount || 0);
 
                     // 2. History API - total транзакций (ПРИОРИТЕТ: Uniscan Summary, fallback: UniSat History)
-                    if (uniscanSummary?.data) {
+                    if (mempool) {
+                        debugInfo.tx_count_source = debugInfo.tx_count_source || 'mempool_stats';
+                    } else if (uniscanSummary?.data) {
                         txCount = Number(
                             uniscanSummary.data.totalTransactionCount || uniscanSummary.data.tx_count || 0
                         );
                         debugInfo.tx_count_source = 'uniscan_summary';
                     } else if (unisatHistory?.data?.total) {
                         txCount = Number(unisatHistory.data.total);
-                        debugInfo.tx_count_source = 'unisat_history';
+                        debugInfo.tx_count_source = 'unisat_history_fallback_mempool_missing';
                     } else if (unisatHistory?.data) {
                         // Fallback: проверяем другие возможные поля
                         txCount = Number(unisatHistory.data.total || unisatHistory.data.count || 0);
-                        debugInfo.tx_count_source = 'unisat_history_fallback';
+                        debugInfo.tx_count_source = 'unisat_history_fallback_mempool_missing';
                         debugInfo.tx_count_debug = Object.keys(unisatHistory.data);
                     } else {
                         // ИСПРАВЛЕНИЕ: Если history не загрузился, пробуем запросить отдельно для получения total
@@ -5197,19 +5289,45 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     ) {
                         runesCount = uniscanSummary.data.assets.RunesList.length;
                         debugInfo.runes_count_source = 'uniscan_summary_runes_list';
-                    } else if (unisatRunes?.data) {
-                        // Fallback: Проверяем разные структуры ответа UniSat API
-                        if (Array.isArray(unisatRunes.data)) {
-                            runesCount = unisatRunes.data.length;
-                        } else if (unisatRunes.data.detail && Array.isArray(unisatRunes.data.detail)) {
-                            runesCount = unisatRunes.data.detail.length;
-                        } else if (unisatRunes.data.list && Array.isArray(unisatRunes.data.list)) {
-                            runesCount = unisatRunes.data.list.length;
-                        } else if (unisatRunes.data.total) {
-                            runesCount = Number(unisatRunes.data.total) || 0;
-                        }
-                        if (runesCount > 0) {
-                            debugInfo.runes_count_source = 'unisat_runes_balance_list';
+                    } else if (unisatRunes) {
+                        try {
+                            const r0 = unisatRunes && typeof unisatRunes === 'object' ? unisatRunes : null;
+                            const r1 = r0 && r0.data && typeof r0.data === 'object' ? r0.data : null;
+                            const r2 = r1 && r1.data && typeof r1.data === 'object' ? r1.data : null;
+
+                            const totalRaw =
+                                (r2 ? r2.total : undefined) ??
+                                (r2 ? r2.count : undefined) ??
+                                (r1 ? r1.total : undefined) ??
+                                (r1 ? r1.count : undefined) ??
+                                (r0 ? r0.total : undefined) ??
+                                (r0 ? r0.count : undefined) ??
+                                0;
+                            const total = Number(totalRaw);
+
+                            const list =
+                                (r2 ? r2.list || r2.detail || r2.data : null) ||
+                                (r1 ? r1.list || r1.detail || r1.data : null) ||
+                                (r0 ? r0.list || r0.detail || r0.data : null) ||
+                                (Array.isArray(r1) ? r1 : null) ||
+                                (Array.isArray(r0) ? r0 : null);
+
+                            if (Number.isFinite(total) && total > 0) {
+                                runesCount = Math.max(0, Math.floor(total));
+                            } else if (Array.isArray(list)) {
+                                runesCount = list.length;
+                            }
+
+                            debugInfo.runes_count_source =
+                                runesCount > 0 ? 'unisat_runes_balance_list' : 'unisat_runes_balance_list_empty';
+                            try {
+                                debugInfo.runes_balance_list_keys = r0 ? Object.keys(r0) : null;
+                                debugInfo.runes_balance_list_data_keys = r1 ? Object.keys(r1) : null;
+                            } catch (_) {
+                                void _;
+                            }
+                        } catch (_) {
+                            debugInfo.runes_count_source = 'unisat_runes_parse_error';
                         }
                     } else {
                         // ИСПРАВЛЕНИЕ: Fallback для рун - если UniSat API не загрузился, пробуем запросить отдельно
@@ -5218,26 +5336,41 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             'Runes data not loaded - UniSat API returned no data, will try separate request';
                         // Пробуем запросить руны отдельно
                         try {
-                            const runesRes = await fetch(
-                                `${FRACTAL_BASE}/indexer/address/${address}/runes/balance-list?start=0&limit=100`,
-                                {
-                                    headers: upstreamHeaders
-                                }
-                            );
-                            if (runesRes.ok) {
-                                const runesData = await runesRes.json();
-                                if (runesData?.data) {
-                                    if (Array.isArray(runesData.data)) {
-                                        runesCount = runesData.data.length;
-                                    } else if (runesData.data.detail && Array.isArray(runesData.data.detail)) {
-                                        runesCount = runesData.data.detail.length;
-                                    } else if (runesData.data.total) {
-                                        runesCount = Number(runesData.data.total) || 0;
-                                    }
-                                    if (runesCount > 0) {
-                                        debugInfo.runes_count_source = 'fallback_separate_request';
-                                    }
-                                }
+                            const u = `${FRACTAL_BASE}/indexer/address/${address}/runes/balance-list?start=0&limit=200`;
+                            const runesData = await safeFetch(() => fetch(u, { headers: upstreamHeaders }), {
+                                isUniSat: true,
+                                useCache: true,
+                                cacheKey: `unisat_runes_${address}_fallback`,
+                                retryOn429: true,
+                                maxRetries: 2,
+                                maxDelayMs: 15000,
+                                traceLabel: 'unisat_runes_balance_list_fallback',
+                                traceUrl: u
+                            });
+                            if (runesData) {
+                                const r0 = runesData && typeof runesData === 'object' ? runesData : null;
+                                const r1 = r0 && r0.data && typeof r0.data === 'object' ? r0.data : null;
+                                const r2 = r1 && r1.data && typeof r1.data === 'object' ? r1.data : null;
+                                const totalRaw =
+                                    (r2 ? r2.total : undefined) ??
+                                    (r2 ? r2.count : undefined) ??
+                                    (r1 ? r1.total : undefined) ??
+                                    (r1 ? r1.count : undefined) ??
+                                    (r0 ? r0.total : undefined) ??
+                                    (r0 ? r0.count : undefined) ??
+                                    0;
+                                const total = Number(totalRaw);
+                                const list =
+                                    (r2 ? r2.list || r2.detail || r2.data : null) ||
+                                    (r1 ? r1.list || r1.detail || r1.data : null) ||
+                                    (r0 ? r0.list || r0.detail || r0.data : null) ||
+                                    (Array.isArray(r1) ? r1 : null) ||
+                                    (Array.isArray(r0) ? r0 : null);
+
+                                if (Number.isFinite(total) && total > 0) runesCount = Math.max(0, Math.floor(total));
+                                else if (Array.isArray(list)) runesCount = list.length;
+
+                                if (runesCount > 0) debugInfo.runes_count_source = 'fallback_separate_request';
                             }
                         } catch (e) {
                             debugInfo.runes_fallback_error = e.message;
@@ -5306,7 +5439,6 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                             method: 'POST',
                                             headers: {
                                                 ...unisatApiHeaders,
-                                                ...authHeaders(),
                                                 'Content-Type': 'application/json'
                                             },
                                             body: JSON.stringify(
@@ -5317,7 +5449,11 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                         isUniSat: true,
                                         useCache: true,
                                         cacheKey,
-                                        retryOn429: !__fastMode
+                                        retryOn429: true,
+                                        maxRetries: 2,
+                                        maxDelayMs: 15000,
+                                        traceLabel: 'unisat_market_collection_summary',
+                                        traceUrl: summaryUrl
                                     }
                                 );
 
@@ -5424,7 +5560,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                             );
                                         }
                                     }
-                                    if (cid === 'fennec_boxes') {
+                                    if (cidNorm === 'fennec_boxes') {
                                         sawFennecBoxes = true;
                                         if (Number.isFinite(itemTotal) && itemTotal > 0) {
                                             fennecBoxesTotal = Math.max(fennecBoxesTotal, itemTotal);
@@ -5442,6 +5578,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 if (!nextCursor || nextCursor === cursor) break;
                                 cursor = nextCursor;
                                 page++;
+                                await new Promise(r => setTimeout(r, 120));
                             }
 
                             const rawBoxes =
@@ -5776,6 +5913,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     // Альтернативный источник: UniSat Market API collection_summary
                     // Требуется API_KEY. Возвращает список коллекций у адреса.
                     if (
+                        String(env?.ENABLE_MARKET_COLLECTION_SUMMARY_FALLBACK || '').trim() === '1' &&
                         !(
                             typeof totalCollections === 'number' &&
                             Number.isFinite(totalCollections) &&
@@ -5801,7 +5939,6 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                             method: 'POST',
                                             headers: {
                                                 ...unisatApiHeaders,
-                                                ...authHeaders(),
                                                 'Content-Type': 'application/json'
                                             },
                                             body: JSON.stringify(
@@ -5812,7 +5949,11 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                         isUniSat: true,
                                         useCache: true,
                                         cacheKey,
-                                        retryOn429: !__fastMode
+                                        retryOn429: true,
+                                        maxRetries: 2,
+                                        maxDelayMs: 15000,
+                                        traceLabel: 'unisat_market_collection_summary_fallback',
+                                        traceUrl: summaryUrl
                                     }
                                 );
 
@@ -5833,6 +5974,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 if (!nextCursor || nextCursor === cursor) break;
                                 cursor = nextCursor;
                                 page++;
+                                await new Promise(r => setTimeout(r, 180));
                                 sawProgress = true;
                             }
 
@@ -5887,7 +6029,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                                   isUniSat: true,
                                                   useCache: true,
                                                   cacheKey,
-                                                  retryOn429: false
+                                                  retryOn429: true,
+                                                  maxRetries: 1,
+                                                  maxDelayMs: 8000
                                               }
                                           );
 
@@ -6055,21 +6199,20 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         debugInfo.ordinals_count_source = 'collections_none_or_unknown';
                     }
 
-                    // Если коллекций нет (parent пустой), но есть total inscriptions, считаем их standalone ordinals.
+                    // Standalone inscriptions (без parent/коллекции) не увеличивают ordinals_count.
                     if (ordinalsCount === 0) {
                         const totalIns = Number(totalInscriptionsCount || 0) || 0;
                         if (totalIns > 0) {
-                            ordinalsCount = Math.max(0, Math.floor(totalIns));
-                            debugInfo.ordinals_count_source = 'inscription_data_total_standalone';
-                            if (!ordinalsByCollection) ordinalsByCollection = {};
+                            debugInfo.ordinals_standalone_total_inscriptions = Math.max(0, Math.floor(totalIns));
+                            debugInfo.ordinals_standalone_not_counted = true;
                         }
                     }
 
                     if (ordinalsCount === 0) {
                         const balCount = Number(unisatBalance?.data?.inscriptionUtxoCount || 0);
                         if (Number.isFinite(balCount) && balCount > 0) {
-                            ordinalsCount = Math.max(0, Math.floor(balCount));
-                            debugInfo.ordinals_count_source = 'unisat_balance_inscriptionUtxoCount';
+                            debugInfo.ordinals_inscription_utxo_count = Math.max(0, Math.floor(balCount));
+                            debugInfo.ordinals_inscription_utxo_not_counted = true;
                         }
                     }
 
@@ -6136,6 +6279,12 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     const MIN_VALID = 1700000000; // Ноябрь 2023
                     const FRACTAL_LAUNCH = 1725840000; // 9 сентября 2024 (запуск Fractal)
                     const MAX_VALID = now; // Не может быть в будущем
+
+                    const __txCountForFirstTxTs = Math.max(
+                        0,
+                        Math.floor(Number(txCountForOffset || txCount || 0) || 0)
+                    );
+                    const __genesisWasAttempted = !!genesisTxPromise;
 
                     void FRACTAL_LAUNCH;
 
@@ -6216,6 +6365,16 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         debugInfo.genesis_tx_structure = Object.keys(finalGenesisTxData);
                         // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Если data.detail пустой, не используем этот метод
                         // Оставляем firstTxTs = 0 для использования других методов
+                    }
+
+                    const __blockFirstTxFallbacks =
+                        __txCountForFirstTxTs > 0 && __genesisWasAttempted && firstTxTsHint === 0 && firstTxTs === 0;
+                    if (__blockFirstTxFallbacks) {
+                        debugInfo.first_tx_requires_genesis = true;
+                        debugInfo.first_tx_fallback_disabled = true;
+                        debugInfo.first_tx_fallback_disabled_reason =
+                            'tx_count>0 but genesis (cursor=txCount-1,size=1) was not obtained/validated; disabling summary/utxo/history fallbacks to avoid wrong age';
+                        debugInfo.first_tx_method = 'error_genesis_failed_no_fallback';
                     }
 
                     // ИСПРАВЛЕНИЕ: Убран fallback метод mempool_txs_sorted - он возвращает последние транзакции, а не первую
@@ -6362,7 +6521,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
 
                     // Метод 2: Проверяем summary
                     // ИСПРАВЛЕНИЕ: Добавляем валидацию timestamp из summary
-                    if (firstTxTs === 0 && summaryData?.data) {
+                    if (!__blockFirstTxFallbacks && firstTxTs === 0 && summaryData?.data) {
                         let candidateTs = 0;
                         if (summaryData.data.firstTransactionTime) {
                             candidateTs = summaryData.data.firstTransactionTime;
@@ -6409,7 +6568,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             debugInfo.first_tx_warning = `Timestamp ${firstTxTs} is outside valid range (${MIN_VALID} - ${now})`;
                             // НЕ сбрасываем - возможно это правильный timestamp из будущего (если часы сервера отстают)
                         }
-                    } else {
+                    } else if (!__blockFirstTxFallbacks) {
                         let utxoMinTs = 0;
                         try {
                             const list = Array.isArray(utxoList) ? utxoList : null;
@@ -6436,10 +6595,15 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 'Failed to determine first transaction timestamp from all available sources. Invalid timestamp or no data.';
                             firstTxTs = 0;
                         }
+                    } else {
+                        debugInfo.first_tx_method = debugInfo.first_tx_method || 'error_genesis_failed_no_fallback';
+                        debugInfo.first_tx_error =
+                            debugInfo.first_tx_error ||
+                            'tx_count>0 but genesis was not obtained/validated; fallbacks disabled to avoid incorrect first_tx_ts.';
                     }
 
                     // Метод 3: Используем history (последняя попытка)
-                    if (firstTxTs === 0 && historyData) {
+                    if (!__blockFirstTxFallbacks && firstTxTs === 0 && historyData) {
                         let txList = [];
                         // ИСПРАВЛЕНИЕ: Проверяем разные структуры ответа
                         // Если historyData.data существует, но пустой или не массив, проверяем другие поля
@@ -7575,7 +7739,6 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                                 method: 'POST',
                                                 headers: {
                                                     ...unisatApiHeaders,
-                                                    ...authHeaders(),
                                                     'Content-Type': 'application/json'
                                                 },
                                                 body: JSON.stringify(
@@ -7586,7 +7749,11 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                             isUniSat: true,
                                             useCache: true,
                                             cacheKey,
-                                            retryOn429: true
+                                            retryOn429: true,
+                                            maxRetries: 2,
+                                            maxDelayMs: 15000,
+                                            traceLabel: 'unisat_market_collection_summary_boxes',
+                                            traceUrl: summaryUrl
                                         }
                                     );
 
@@ -7633,6 +7800,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                     if (!nextCursor || nextCursor === cursor) break;
                                     cursor = nextCursor;
                                     page++;
+                                    await new Promise(r => setTimeout(r, 180));
                                 }
                             } catch (e) {
                                 debugInfo.fennec_boxes_summary_error = e?.message || String(e);
@@ -8507,7 +8675,9 @@ Example: "Signature verified. Ancient protocol access granted."`;
                         // КРИТИЧЕСКОЕ: Используем нормализованный cacheKey (без pubkey) для переиспользования между пользователями
                         const normalizedCacheKey = new Request(cacheKeyUrl.toString(), { method: 'GET' });
                         response.headers.set('Cache-Control', 's-maxage=60, max-age=30'); // 60s в Cloudflare, 30s в браузере
-                        if (!__debugEnabled) {
+                        const __isAuditComplete =
+                            (Number(outData?.tx_count || 0) || 0) <= 0 || (Number(outData?.first_tx_ts || 0) || 0) > 0;
+                        if (!__debugEnabled && cache && __isAuditComplete) {
                             if (ctx?.waitUntil) {
                                 ctx.waitUntil(cache.put(normalizedCacheKey, response.clone()));
                             } else {
