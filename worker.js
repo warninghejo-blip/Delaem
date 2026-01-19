@@ -299,7 +299,9 @@ export default {
                     };
 
                     if (systemInstruction) {
-                        body.systemInstruction = { parts: [{ text: String(systemInstruction || '') }] };
+                        body.systemInstruction = {
+                            parts: [{ text: String(systemInstruction || '') }]
+                        };
                     }
 
                     if (useSearch) {
@@ -582,7 +584,10 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         const cgUrl =
                             'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,fractal-bitcoin&vs_currencies=usd';
                         const cgRes = await fetch(cgUrl, {
-                            headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' },
+                            headers: {
+                                'User-Agent': 'Mozilla/5.0',
+                                Accept: 'application/json'
+                            },
                             signal: controller.signal
                         }).finally(() => clearTimeout(timeoutId));
                         if (cgRes.ok) {
@@ -616,7 +621,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                 // Fallback: FB считаем из пула FB-Биткоин с учетом текущего курса биткоина
                 if (fbPrice === 0 && btcPrice > 0) {
                     try {
-                        const query = `?tick0=${encodeURIComponent('sBTC___000')}&tick1=${encodeURIComponent('sFB___000')}`;
+                        const query = `?tick0=${encodeURIComponent(
+                            'sBTC___000'
+                        )}&tick1=${encodeURIComponent('sFB___000')}`;
                         let poolUrl = `${SWAP_BASE}/brc20-swap/pool_info${query}`;
                         let poolRes = await fetch(poolUrl, { headers: upstreamHeaders });
                         if (!poolRes.ok && poolRes.status === 404) {
@@ -807,7 +814,11 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     return sendJSON({ code: 0, data: { btc, fb, fennec_in_fb } }, 200);
                 } catch (e) {
                     return sendJSON(
-                        { code: 0, data: { btc: 0, fb: 0, fennec_in_fb: 0 }, error: e?.message || String(e) },
+                        {
+                            code: 0,
+                            data: { btc: 0, fb: 0, fennec_in_fb: 0 },
+                            error: e?.message || String(e)
+                        },
                         200
                     );
                 }
@@ -831,7 +842,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                     (async () => {
                                         let fennec_in_fb = 0;
                                         try {
-                                            const query = `?tick0=${encodeURIComponent('FENNEC')}&tick1=${encodeURIComponent('sFB___000')}`;
+                                            const query = `?tick0=${encodeURIComponent(
+                                                'FENNEC'
+                                            )}&tick1=${encodeURIComponent('sFB___000')}`;
                                             let poolUrl = `${SWAP_BASE}/brc20-swap/pool_info${query}`;
                                             const controller = new AbortController();
                                             const timeoutId = setTimeout(() => controller.abort(), 2200);
@@ -867,7 +880,11 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 const [p, fennec_in_fb] = await Promise.all([pPromise, fPromise]);
                                 btc = Number(p?.btcPrice || 0) || 0;
                                 fb = Number(p?.fbPrice || 0) || 0;
-                                return { btc, fb, fennec_in_fb: Number(fennec_in_fb || 0) || 0 };
+                                return {
+                                    btc,
+                                    fb,
+                                    fennec_in_fb: Number(fennec_in_fb || 0) || 0
+                                };
                             })(),
                             new Promise(resolve => setTimeout(() => resolve(null), 3500))
                         ]);
@@ -879,7 +896,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     // 2) fees
                     const readFee = async endpoint => {
                         try {
-                            const res = await fetch(endpoint, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+                            const res = await fetch(endpoint, {
+                                headers: { 'User-Agent': 'Mozilla/5.0' }
+                            });
                             if (!res.ok) return null;
                             const data = await res.json().catch(() => null);
                             if (!data || typeof data !== 'object') return null;
@@ -922,7 +941,14 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     );
                 } catch (e) {
                     return sendJSON(
-                        { code: 0, data: { prices: null, fees: null, ts: Math.floor(Date.now() / 1000) } },
+                        {
+                            code: 0,
+                            data: {
+                                prices: null,
+                                fees: null,
+                                ts: Math.floor(Date.now() / 1000)
+                            }
+                        },
                         200
                     );
                 }
@@ -1146,7 +1172,12 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             const tryPayloads = [
                                 {
                                     units: 'ms',
-                                    body: { tick: 'FENNEC', timeStart, timeEnd, timeStep: effStepMs },
+                                    body: {
+                                        tick: 'FENNEC',
+                                        timeStart,
+                                        timeEnd,
+                                        timeStep: effStepMs
+                                    },
                                     mapTs: x => x
                                 },
                                 {
@@ -1163,7 +1194,11 @@ Request Context: ${JSON.stringify(context, null, 2)}
 
                             for (const attempt of tryPayloads) {
                                 const headers = haveKey
-                                    ? { ...unisatApiHeaders, ...authHeaders(), 'Content-Type': 'application/json' }
+                                    ? {
+                                          ...unisatApiHeaders,
+                                          ...authHeaders(),
+                                          'Content-Type': 'application/json'
+                                      }
                                     : { ...unisatApiHeaders, 'Content-Type': 'application/json' };
                                 const controller = new AbortController();
                                 const timeoutId = setTimeout(() => {
@@ -1423,7 +1458,10 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     const timeoutId = setTimeout(() => controller.abort(), 4000);
                     const mempoolRes = await fetch(`https://mempool.space/api/address/${address}`, {
                         signal: controller.signal,
-                        headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' }
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0',
+                            Accept: 'application/json'
+                        }
                     });
                     clearTimeout(timeoutId);
                     if (mempoolRes.ok) {
@@ -1805,7 +1843,11 @@ Request Context: ${JSON.stringify(context, null, 2)}
 
                 if (!auditData) {
                     const fallbackIdentity = {
-                        archetype: { baseKey: 'DRIFTER', title: 'DESERT RUNNER', tierLevel: 0 },
+                        archetype: {
+                            baseKey: 'DRIFTER',
+                            title: 'DESERT RUNNER',
+                            tierLevel: 0
+                        },
                         badges: [],
                         metrics: { address: addrIn }
                     };
@@ -1914,7 +1956,10 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     return sendJSON(JSON.parse(text), response.status);
                 } catch (e) {
                     return sendJSON(
-                        { error: `JSON parse error: ${e?.message || String(e)}`, raw: text.substring(0, 200) },
+                        {
+                            error: `JSON parse error: ${e?.message || String(e)}`,
+                            raw: text.substring(0, 200)
+                        },
                         response.status || 500
                     );
                 }
@@ -1935,7 +1980,10 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     return sendJSON(JSON.parse(text), response.status);
                 } catch (e) {
                     return sendJSON(
-                        { error: `JSON parse error: ${e?.message || String(e)}`, raw: text.substring(0, 200) },
+                        {
+                            error: `JSON parse error: ${e?.message || String(e)}`,
+                            raw: text.substring(0, 200)
+                        },
                         response.status || 500
                     );
                 }
@@ -2237,7 +2285,14 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     }
                 }
 
-                return sendJSON({ code: -1, msg: 'Content fetch failed', data: { contentType: '', body: '' } }, 200);
+                return sendJSON(
+                    {
+                        code: -1,
+                        msg: 'Content fetch failed',
+                        data: { contentType: '', body: '' }
+                    },
+                    200
+                );
             }
 
             // 4c. PUSH TX (broadcast raw transaction)
@@ -2360,7 +2415,14 @@ Request Context: ${JSON.stringify(context, null, 2)}
                 const payAddress = orderJson?.data?.payAddress || '';
                 const payAmount = BigInt(orderJson?.data?.amount || 0);
                 if (!orderId || !payAddress || payAmount <= 0n) {
-                    return sendJSON({ code: -1, msg: 'Order create returned missing fields', data: orderJson }, 200);
+                    return sendJSON(
+                        {
+                            code: -1,
+                            msg: 'Order create returned missing fields',
+                            data: orderJson
+                        },
+                        200
+                    );
                 }
 
                 let infoJson = null;
@@ -2389,18 +2451,30 @@ Request Context: ${JSON.stringify(context, null, 2)}
 
                 if (!burnTxid || !Number.isFinite(burnVout) || burnSatoshi <= 0n || !burnScriptPkHex) {
                     return sendJSON(
-                        { code: -1, msg: 'Failed to resolve burn UTXO for inscription', data: infoJson },
+                        {
+                            code: -1,
+                            msg: 'Failed to resolve burn UTXO for inscription',
+                            data: infoJson
+                        },
                         200
                     );
                 }
 
                 if (burnOwner && burnOwner !== address) {
-                    return sendJSON({ code: -1, msg: 'Inscription UTXO is not owned by provided address' }, 200);
+                    return sendJSON(
+                        {
+                            code: -1,
+                            msg: 'Inscription UTXO is not owned by provided address'
+                        },
+                        200
+                    );
                 }
 
                 let addrUtxoJson = null;
                 try {
-                    const utxoUrl = `${FRACTAL_BASE}/indexer/address/${encodeURIComponent(address)}/utxo-data?cursor=0&size=200`;
+                    const utxoUrl = `${FRACTAL_BASE}/indexer/address/${encodeURIComponent(
+                        address
+                    )}/utxo-data?cursor=0&size=200`;
                     const response = await fetch(utxoUrl, {
                         method: 'GET',
                         headers: {
@@ -2486,7 +2560,13 @@ Request Context: ${JSON.stringify(context, null, 2)}
                 }
 
                 if (totalIn < burnValue + payAmount + estimateFee(1 + selected.length, 2)) {
-                    return sendJSON({ code: -1, msg: 'Insufficient funds to pay order in single transaction' }, 200);
+                    return sendJSON(
+                        {
+                            code: -1,
+                            msg: 'Insufficient funds to pay order in single transaction'
+                        },
+                        200
+                    );
                 }
 
                 fee = estimateFee(1 + selected.length, 3);
@@ -2570,7 +2650,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     if (!proxyParams.has('payType')) proxyParams.set('payType', 'tick');
 
                     let endpointUrl = `${SWAP_BASE}/brc20-swap/pre_add_liq?${proxyParams.toString()}`;
-                    let response = await fetch(endpointUrl, { headers: unisatApiHeaders });
+                    let response = await fetch(endpointUrl, {
+                        headers: unisatApiHeaders
+                    });
                     if (!response.ok && response.status === 404) {
                         endpointUrl = `${SWAP_BASE}/indexer/brc20-swap/pre_add_liq?${proxyParams.toString()}`;
                         response = await fetch(endpointUrl, { headers: unisatApiHeaders });
@@ -2592,7 +2674,10 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         if ('rememberPayType' in body) delete body.rememberPayType;
                     }
 
-                    const headers = { ...unisatApiHeaders, 'Content-Type': 'application/json' };
+                    const headers = {
+                        ...unisatApiHeaders,
+                        'Content-Type': 'application/json'
+                    };
 
                     let endpointUrl = `${SWAP_BASE}/brc20-swap/add_liq`;
                     let response = await fetch(endpointUrl, {
@@ -2622,7 +2707,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     proxyParams.delete('rememberPayType');
 
                     let endpointUrl = `${SWAP_BASE}/brc20-swap/quote_remove_liq?${proxyParams.toString()}`;
-                    let response = await fetch(endpointUrl, { headers: unisatApiHeaders });
+                    let response = await fetch(endpointUrl, {
+                        headers: unisatApiHeaders
+                    });
                     if (!response.ok && response.status === 404) {
                         endpointUrl = `${SWAP_BASE}/indexer/brc20-swap/quote_remove_liq?${proxyParams.toString()}`;
                         response = await fetch(endpointUrl, { headers: unisatApiHeaders });
@@ -2644,7 +2731,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     if (!proxyParams.has('payType')) proxyParams.set('payType', 'tick');
 
                     let endpointUrl = `${SWAP_BASE}/brc20-swap/pre_remove_liq?${proxyParams.toString()}`;
-                    let response = await fetch(endpointUrl, { headers: unisatApiHeaders });
+                    let response = await fetch(endpointUrl, {
+                        headers: unisatApiHeaders
+                    });
                     if (!response.ok && response.status === 404) {
                         endpointUrl = `${SWAP_BASE}/indexer/brc20-swap/pre_remove_liq?${proxyParams.toString()}`;
                         response = await fetch(endpointUrl, { headers: unisatApiHeaders });
@@ -2666,7 +2755,10 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         if ('rememberPayType' in body) delete body.rememberPayType;
                     }
 
-                    const headers = { ...unisatApiHeaders, 'Content-Type': 'application/json' };
+                    const headers = {
+                        ...unisatApiHeaders,
+                        'Content-Type': 'application/json'
+                    };
 
                     let endpointUrl = `${SWAP_BASE}/brc20-swap/remove_liq`;
                     let response = await fetch(endpointUrl, {
@@ -2693,9 +2785,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                 const tick = url.searchParams.get('tick');
                 if (!address || !tick) return sendJSON({ code: -1, msg: 'Missing address or tick' }, 200);
                 try {
-                    const endpoint = `${FRACTAL_BASE}/indexer/address/${encodeURIComponent(address)}/brc20/${encodeURIComponent(
-                        tick
-                    )}/info`;
+                    const endpoint = `${FRACTAL_BASE}/indexer/address/${encodeURIComponent(
+                        address
+                    )}/brc20/${encodeURIComponent(tick)}/info`;
                     const res = await fetch(endpoint, {
                         headers: upstreamHeaders
                     });
@@ -2784,7 +2876,11 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     }
                     if (!res.ok) {
                         return sendJSON(
-                            { code: -1, msg: `API error: ${res.status} ${res.statusText}`, url: poolUrl },
+                            {
+                                code: -1,
+                                msg: `API error: ${res.status} ${res.statusText}`,
+                                url: poolUrl
+                            },
                             res.status
                         );
                     }
@@ -2879,10 +2975,16 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         proxyParams.delete('action');
                         const endpoint = action;
                         let endpointUrl = `${SWAP_BASE}/brc20-swap/${endpoint}?${proxyParams.toString()}`;
-                        let response = await fetch(endpointUrl, { method: 'GET', headers: upstreamHeaders });
+                        let response = await fetch(endpointUrl, {
+                            method: 'GET',
+                            headers: upstreamHeaders
+                        });
                         if (!response.ok && response.status === 404) {
                             endpointUrl = `${SWAP_BASE}/indexer/brc20-swap/${endpoint}?${proxyParams.toString()}`;
-                            response = await fetch(endpointUrl, { method: 'GET', headers: upstreamHeaders });
+                            response = await fetch(endpointUrl, {
+                                method: 'GET',
+                                headers: upstreamHeaders
+                            });
                         }
                         const json = await response.json();
                         const out = sendJSON(json, response.status);
@@ -2920,10 +3022,16 @@ Request Context: ${JSON.stringify(context, null, 2)}
                 void isBridgeCreateWithdraw;
 
                 let endpointUrl = `${SWAP_BASE}/brc20-swap/${endpoint}?${proxyParams.toString()}`;
-                let response = await fetch(endpointUrl, { method: 'GET', headers: upstreamHeaders });
+                let response = await fetch(endpointUrl, {
+                    method: 'GET',
+                    headers: upstreamHeaders
+                });
                 if (!response.ok && response.status === 404) {
                     endpointUrl = `${SWAP_BASE}/indexer/brc20-swap/${endpoint}?${proxyParams.toString()}`;
-                    response = await fetch(endpointUrl, { method: 'GET', headers: upstreamHeaders });
+                    response = await fetch(endpointUrl, {
+                        method: 'GET',
+                        headers: upstreamHeaders
+                    });
                 }
                 return sendJSON(await response.json(), response.status);
             }
@@ -2994,12 +3102,16 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     } else {
                         // ИСПРАВЛЕНИЕ: Пробуем сначала без /indexer/, затем с /indexer/ (fallback)
                         let balanceUrl = `${SWAP_BASE}/brc20-swap/balance?address=${address}&tick=${tick}`;
-                        let balanceRes = await fetch(balanceUrl, { headers: upstreamHeaders });
+                        let balanceRes = await fetch(balanceUrl, {
+                            headers: upstreamHeaders
+                        });
 
                         // Fallback: если не работает без /indexer/, пробуем с /indexer/
                         if (!balanceRes.ok && balanceRes.status === 404) {
                             balanceUrl = `${SWAP_BASE}/indexer/brc20-swap/balance?address=${address}&tick=${tick}`;
-                            balanceRes = await fetch(balanceUrl, { headers: upstreamHeaders });
+                            balanceRes = await fetch(balanceUrl, {
+                                headers: upstreamHeaders
+                            });
                         }
 
                         try {
@@ -3040,7 +3152,10 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             return sendJSON(JSON.parse(text));
                         } catch (parseError) {
                             return sendJSON(
-                                { error: `JSON parse error: ${parseError.message}`, raw: text.substring(0, 200) },
+                                {
+                                    error: `JSON parse error: ${parseError.message}`,
+                                    raw: text.substring(0, 200)
+                                },
                                 500
                             );
                         }
@@ -3058,7 +3173,10 @@ Request Context: ${JSON.stringify(context, null, 2)}
 
                         if (!res.ok) {
                             return sendJSON(
-                                { error: `API error: ${res.status} ${res.statusText}`, url: balanceUrl },
+                                {
+                                    error: `API error: ${res.status} ${res.statusText}`,
+                                    url: balanceUrl
+                                },
                                 res.status
                             );
                         }
@@ -3070,7 +3188,10 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             return sendJSON(JSON.parse(text));
                         } catch (parseError) {
                             return sendJSON(
-                                { error: `JSON parse error: ${parseError.message}`, raw: text.substring(0, 200) },
+                                {
+                                    error: `JSON parse error: ${parseError.message}`,
+                                    raw: text.substring(0, 200)
+                                },
                                 500
                             );
                         }
@@ -3100,7 +3221,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     targetUrl = `${FRACTAL_BASE}/indexer/address/${address}/history?cursor=0&size=10`;
                 }
 
-                const response = await fetch(targetUrl, { headers: authHeaders() }).catch(() => null);
+                const response = await fetch(targetUrl, {
+                    headers: authHeaders()
+                }).catch(() => null);
                 if (!response) {
                     return sendJSON({ code: 0, data: { list: [] } }, 200);
                 }
@@ -3178,7 +3301,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                 const CACHE_TTL = 60000; // 60 секунд для балансов и метаданных (для множества пользователей)
 
                 const safeFetch = async (p, options = {}) => {
-                    const { useCache = false, cacheKey = null, isUniSat = false } = options;
+                    const { useCache = false, cacheKey = null, isUniSat = false, maxRetries = 3 } = options;
 
                     // Проверяем кэш
                     if (useCache && cacheKey) {
@@ -3188,42 +3311,94 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         }
                     }
 
-                    // Throttling для UniSat API
-                    if (isUniSat) {
-                        const now = Date.now();
-                        const timeSinceLastRequest = now - lastUniSatRequest;
-                        if (timeSinceLastRequest < UNISAT_THROTTLE_MS) {
-                            await new Promise(r => setTimeout(r, UNISAT_THROTTLE_MS - timeSinceLastRequest));
-                        }
-                        lastUniSatRequest = Date.now();
-                    }
+                    let retries = maxRetries;
+                    let lastError = null;
 
-                    try {
-                        const response = await p;
-                        if (!response.ok) {
-                            // Exponential backoff для 429
-                            if (response.status === 429) {
-                                const retryAfter = response.headers.get('Retry-After');
-                                const delay = (retryAfter ? parseInt(retryAfter) * 1000 : 1000) || 1000; // ОПТИМИЗАЦИЯ: Уменьшено до 1 секунды
-                                console.warn(`Rate limited (429), waiting ${delay}ms`);
-                                await new Promise(r => setTimeout(r, delay));
-                                // Не ретраим автоматически - пусть вызывающий код решает
+                    while (retries >= 0) {
+                        // Throttling для UniSat API
+                        if (isUniSat) {
+                            const now = Date.now();
+                            const timeSinceLastRequest = now - lastUniSatRequest;
+                            if (timeSinceLastRequest < UNISAT_THROTTLE_MS) {
+                                await new Promise(r => setTimeout(r, UNISAT_THROTTLE_MS - timeSinceLastRequest));
+                            }
+                            lastUniSatRequest = Date.now();
+                        }
+
+                        try {
+                            const response = await (typeof p === 'function' ? p() : p);
+
+                            if (!response.ok) {
+                                // KEY HOPPING: Мгновенная смена ключа при 429
+                                if (response.status === 429 && isUniSat) {
+                                    const currentKey = upstreamHeaders.Authorization || '';
+                                    const currentKeyLast4 = currentKey.slice(-4);
+
+                                    console.log(
+                                        `[KeyHopping] 429 on key ending in ...${currentKeyLast4}. Switching to next key.`
+                                    );
+
+                                    // Пробуем получить новый ключ
+                                    const newKey = __pickUniSatKey();
+
+                                    if (newKey && newKey !== currentKey.replace('Bearer ', '')) {
+                                        // KEY SWITCHED: INSTANT RETRY
+                                        upstreamHeaders.Authorization = `Bearer ${newKey}`;
+                                        if (typeof unisatApiHeaders !== 'undefined') {
+                                            unisatApiHeaders.Authorization = `Bearer ${newKey}`;
+                                        }
+
+                                        const newKeyLast4 = newKey.slice(-4);
+                                        console.log(
+                                            `[KeyHopping] Switched to new key ending in ...${newKeyLast4}. Retrying immediately.`
+                                        );
+
+                                        // Ждем минимальную задержку (100ms) и повторяем
+                                        await new Promise(r => setTimeout(r, 100));
+                                        retries--; // Уменьшаем счетчик попыток
+                                        continue; // Retry loop
+                                    } else {
+                                        // NO NEW KEYS AVAILABLE: Fallback to standard wait
+                                        const delayMs = 2000 * (maxRetries - retries + 1);
+                                        console.log(
+                                            `[KeyHopping] No fresh keys available. Waiting ${delayMs}ms before retry.`
+                                        );
+                                        await new Promise(r => setTimeout(r, delayMs));
+                                        retries--;
+                                        continue;
+                                    }
+                                }
+
+                                // Для других ошибок возвращаем null
+                                lastError = new Error(`HTTP ${response.status}: ${response.statusText}`);
                                 return null;
                             }
+
+                            const data = await response.json();
+
+                            // Сохраняем в кэш
+                            if (useCache && cacheKey) {
+                                responseCache.set(cacheKey, { data, timestamp: Date.now() });
+                            }
+
+                            return data;
+                        } catch (err) {
+                            lastError = err;
+                            console.warn(`Fetch error (${retries} retries left):`, err.message);
+
+                            if (retries > 0) {
+                                // Простой backoff для сетевых ошибок
+                                await new Promise(r => setTimeout(r, 1000));
+                                retries--;
+                                continue;
+                            }
+
                             return null;
                         }
-                        const data = await response.json();
-
-                        // Сохраняем в кэш
-                        if (useCache && cacheKey) {
-                            responseCache.set(cacheKey, { data, timestamp: Date.now() });
-                        }
-
-                        return data;
-                    } catch (err) {
-                        console.warn('Fetch error:', err.message);
-                        return null;
                     }
+
+                    console.warn('All retries exhausted:', lastError?.message);
+                    return null;
                 };
 
                 try {
@@ -3242,7 +3417,10 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         ),
                         safeFetch(
                             fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd', {
-                                headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' }
+                                headers: {
+                                    'User-Agent': 'Mozilla/5.0',
+                                    Accept: 'application/json'
+                                }
                             })
                         ),
                         safeFetch(
@@ -3456,10 +3634,14 @@ Request Context: ${JSON.stringify(context, null, 2)}
                 try {
                     void pubkey;
                     const myPoolListUrl = `${SWAP_BASE}/brc20-swap/my_pool_list?address=${address}&start=0&limit=100`;
-                    let myPoolListRes = await fetch(myPoolListUrl, { headers: upstreamHeaders }).catch(() => null);
+                    let myPoolListRes = await fetch(myPoolListUrl, {
+                        headers: upstreamHeaders
+                    }).catch(() => null);
                     if (!myPoolListRes?.ok && myPoolListRes?.status === 404) {
                         const myPoolListUrlIdx = `${SWAP_BASE}/indexer/brc20-swap/my_pool_list?address=${address}&start=0&limit=100`;
-                        myPoolListRes = await fetch(myPoolListUrlIdx, { headers: upstreamHeaders }).catch(() => null);
+                        myPoolListRes = await fetch(myPoolListUrlIdx, {
+                            headers: upstreamHeaders
+                        }).catch(() => null);
                     }
                     const myPoolList = myPoolListRes?.ok ? await myPoolListRes.json().catch(() => null) : null;
 
@@ -3799,7 +3981,11 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                         if (cacheKey && cacheKey.includes('uniscan_summary')) {
                                             debugInfo.uniscan_summary_429_final = true;
                                         }
-                                        __finalize({ ok: false, status: 429, statusText: 'Too Many Requests' });
+                                        __finalize({
+                                            ok: false,
+                                            status: 429,
+                                            statusText: 'Too Many Requests'
+                                        });
                                         return null;
                                     }
 
@@ -3827,7 +4013,11 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                     if (cacheKey && cacheKey.includes('uniscan_summary')) {
                                         debugInfo.uniscan_summary_429_final = true;
                                     }
-                                    __finalize({ ok: false, status: 429, statusText: 'Too Many Requests' });
+                                    __finalize({
+                                        ok: false,
+                                        status: 429,
+                                        statusText: 'Too Many Requests'
+                                    });
                                     return null;
                                 }
 
@@ -3867,7 +4057,10 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 responseCache.set(cacheKey, { data, timestamp: Date.now() });
                             }
 
-                            __finalize({ ok: true, status: Number(response?.status || 0) || 0 });
+                            __finalize({
+                                ok: true,
+                                status: Number(response?.status || 0) || 0
+                            });
                             return data;
                         } catch (err) {
                             if (cacheKey && cacheKey.includes('uniscan_summary')) {
@@ -3890,7 +4083,11 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 continue;
                             }
 
-                            __finalize({ ok: false, error: err?.message || String(err), error_name: err?.name || '' });
+                            __finalize({
+                                ok: false,
+                                error: err?.message || String(err),
+                                error_name: err?.name || ''
+                            });
                             return null;
                         }
                     }
@@ -3930,7 +4127,10 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 signal: controller.signal
                             }).finally(() => clearTimeout(timeoutId));
                         },
-                        { traceLabel: 'mempool_fractal_address', traceUrl: mempoolFractalUrl }
+                        {
+                            traceLabel: 'mempool_fractal_address',
+                            traceUrl: mempoolFractalUrl
+                        }
                     );
                     // ИСПРАВЛЕНИЕ: UTXO список из Mempool Fractal (разгружаем UniSat)
                     // КРИТИЧЕСКОЕ: этот эндпоинт может быть очень тяжелым -> ограничиваем по времени
@@ -3944,7 +4144,10 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 signal: controller.signal
                             }).finally(() => clearTimeout(timeoutId));
                         },
-                        { traceLabel: 'mempool_fractal_utxo', traceUrl: mempoolFractalUtxoUrl }
+                        {
+                            traceLabel: 'mempool_fractal_utxo',
+                            traceUrl: mempoolFractalUtxoUrl
+                        }
                     );
 
                     // ОПТИМИЗАЦИЯ: Удален uniscanPromise (404 Not Found)
@@ -4100,7 +4303,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         if (__disableInswap) return null;
 
                         try {
-                            const directUrl = `${SWAP_BASE}/brc20-swap/all_balance?address=${encodeURIComponent(address)}`;
+                            const directUrl = `${SWAP_BASE}/brc20-swap/all_balance?address=${encodeURIComponent(
+                                address
+                            )}`;
                             let direct = await safeFetch(() => fetch(directUrl, { headers: upstreamHeaders }), {
                                 isUniSat: false,
                                 useCache: true,
@@ -4110,7 +4315,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 traceUrl: directUrl
                             });
                             if (!direct || (direct.code !== undefined && direct.code !== 0) || !direct.data) {
-                                const idxUrl = `${SWAP_BASE}/indexer/brc20-swap/all_balance?address=${encodeURIComponent(address)}`;
+                                const idxUrl = `${SWAP_BASE}/indexer/brc20-swap/all_balance?address=${encodeURIComponent(
+                                    address
+                                )}`;
                                 direct = await safeFetch(() => fetch(idxUrl, { headers: upstreamHeaders }), {
                                     isUniSat: false,
                                     useCache: true,
@@ -4272,7 +4479,11 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             if (valueUSD > 0) totalUsd += valueUSD;
 
                             data[key] = {
-                                balance: { swap: balSwap, module: balModule, total: totalBal || bal },
+                                balance: {
+                                    swap: balSwap,
+                                    module: balModule,
+                                    total: totalBal || bal
+                                },
                                 price: priceUSD > 0 ? priceUSD : totalBal > 0 && valueUSD > 0 ? valueUSD / totalBal : 0
                             };
                         }
@@ -4305,7 +4516,11 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             try {
                                 const __att =
                                     __trace && Array.isArray(__trace.attempts)
-                                        ? { attempt: attempt + 1, started_at: Date.now(), delay_ms: delay }
+                                        ? {
+                                              attempt: attempt + 1,
+                                              started_at: Date.now(),
+                                              delay_ms: delay
+                                          }
                                         : null;
                                 try {
                                     if (__att && __trace) __trace.attempts.push(__att);
@@ -4460,11 +4675,11 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     // ОПТИМИЗАЦИЯ: Удален unisatBalance и unisatSummary - данные берутся из других источников
                     console.log('📊 [1-5/7] Loading UniSat APIs (queued/sequential to reduce 429)...');
 
-                    let unisatBrc20Summary = null;
+                    const unisatBrc20Summary = null;
                     const unisatHistory = null;
-                    let unisatRunes = null;
-                    let unisatInscriptionData = null;
-                    let unisatAbandonNftUtxo = null;
+                    const unisatRunes = null;
+                    const unisatInscriptionData = null;
+                    const unisatAbandonNftUtxo = null;
                     const unisatBalance = null; // Удален запрос - используем только Mempool API
                     const unisatSummary = null; // Удален запрос (404 за 4.2 секунды)
                     await new Promise(r => setTimeout(r, 120));
@@ -4646,7 +4861,11 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         } catch (e) {
                             __error = e?.message || String(e);
                         }
-                        return { allBalance: __allBalance, attempted: __attempted, error: __error };
+                        return {
+                            allBalance: __allBalance,
+                            attempted: __attempted,
+                            error: __error
+                        };
                     })();
 
                     const utxoList = await mempoolUtxoPromise;
@@ -4660,10 +4879,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         }
                     }
 
-                    unisatInscriptionData = await unisatInscriptionDataInFlight;
-                    unisatBrc20Summary = await unisatBrc20SummaryInFlight;
-                    unisatRunes = await unisatRunesInFlight;
-                    unisatAbandonNftUtxo = await unisatAbandonNftUtxoInFlight;
+                    // Все тяжелые UniSat запросы уже выполнены последовательно выше
 
                     const allBalanceResult = await allBalanceInFlight;
                     allBalance = allBalanceResult?.allBalance || null;
@@ -4705,7 +4921,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
 
                     if (!(fbPrice > 0) && btcPrice > 0) {
                         try {
-                            const query = `?tick0=${encodeURIComponent('sBTC___000')}&tick1=${encodeURIComponent('sFB___000')}`;
+                            const query = `?tick0=${encodeURIComponent(
+                                'sBTC___000'
+                            )}&tick1=${encodeURIComponent('sFB___000')}`;
                             let poolUrl = `${SWAP_BASE}/brc20-swap/pool_info${query}`;
                             let res = await fetch(poolUrl, { headers: upstreamHeaders });
                             if (!res.ok && res.status === 404) {
@@ -5122,7 +5340,11 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 normalizedWalletTickers.add(normalized);
                                 inswapAddedTickers.push({ original: t, normalized });
                             } else {
-                                inswapSkippedTickers.push({ original: t, normalized, reason: 'already_in_wallet' });
+                                inswapSkippedTickers.push({
+                                    original: t,
+                                    normalized,
+                                    reason: 'already_in_wallet'
+                                });
                             }
                         }
                     });
@@ -5163,7 +5385,12 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             }
                             const normalized = normalizeTicker(key.replace(/___\d+$/, '').toUpperCase());
                             const inWallet = normalizedWalletTickers.has(normalized);
-                            allCheckedTickers.push({ original: key, normalized, balance, inWallet });
+                            allCheckedTickers.push({
+                                original: key,
+                                normalized,
+                                balance,
+                                inWallet
+                            });
                         });
                         debugInfo.brc20_inswap_all_checked = allCheckedTickers;
                     }
@@ -5903,7 +6130,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
 
                             while (page < (__fastMode ? 2 : 5)) {
                                 const cacheKey = `inscription_data_public_${address}_${cursor}`;
-                                const endpoint = `${FRACTAL_BASE}/indexer/address/${encodeURIComponent(address)}/inscription-data?cursor=${cursor}&size=${pageSize}`;
+                                const endpoint = `${FRACTAL_BASE}/indexer/address/${encodeURIComponent(
+                                    address
+                                )}/inscription-data?cursor=${cursor}&size=${pageSize}`;
                                 debugInfo[`total_collections_public_url_${page}`] = endpoint;
 
                                 const res =
@@ -6381,7 +6610,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 // Mempool возвращает последние транзакции, а не первую, поэтому этот метод ненадежен
                                 // ИСПРАВЛЕНИЕ: mempool_txs_sorted убран как fallback - не используем его
                                 debugInfo.first_tx_method = 'error_mempool_txs_sorted_disabled';
-                                debugInfo.first_tx_error = `mempool_txs_sorted is disabled as fallback - it returns last transactions, not first. Invalid timestamp from mempool: ${candidateTs} (date: ${candidateTs > 0 ? new Date(candidateTs * 1000).toISOString() : 'invalid'}, year: ${timestampYear}, month: ${timestampMonth}, day: ${timestampDay}). Valid range: ${MIN_VALID} - ${validationNow}, year: <= ${currentYear}, month: <= ${currentMonth}, day: <= ${currentDay}`;
+                                debugInfo.first_tx_error = `mempool_txs_sorted is disabled as fallback - it returns last transactions, not first. Invalid timestamp from mempool: ${candidateTs} (date: ${
+                                    candidateTs > 0 ? new Date(candidateTs * 1000).toISOString() : 'invalid'
+                                }, year: ${timestampYear}, month: ${timestampMonth}, day: ${timestampDay}). Valid range: ${MIN_VALID} - ${validationNow}, year: <= ${currentYear}, month: <= ${currentMonth}, day: <= ${currentDay}`;
                                 debugInfo.first_tx_candidate_ts = candidateTs;
                                 debugInfo.first_tx_candidate_date =
                                     candidateTs > 0 ? new Date(candidateTs * 1000).toISOString() : 'invalid';
@@ -6444,7 +6675,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             }
                         } else if (candidateTs > 0) {
                             debugInfo.first_tx_method = 'error_summary_invalid_timestamp';
-                            debugInfo.first_tx_error = `Summary returned invalid timestamp: ${candidateTs} (date: ${new Date(candidateTs * 1000).toISOString()}). Valid range: ${MIN_VALID} - ${MAX_VALID}`;
+                            debugInfo.first_tx_error = `Summary returned invalid timestamp: ${candidateTs} (date: ${new Date(
+                                candidateTs * 1000
+                            ).toISOString()}). Valid range: ${MIN_VALID} - ${MAX_VALID}`;
                             debugInfo.summary_candidate_ts = candidateTs;
                             debugInfo.summary_candidate_valid = candidateTs >= MIN_VALID && candidateTs <= MAX_VALID;
                         } else {
@@ -6458,7 +6691,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         // Если timestamp найден, но невалидный - логируем, но оставляем (может быть правильный)
                         if (firstTxTs > now || firstTxTs < MIN_VALID) {
                             console.warn(
-                                `⚠️ Suspicious first_tx_ts: ${firstTxTs} (date: ${new Date(firstTxTs * 1000).toISOString()})`
+                                `⚠️ Suspicious first_tx_ts: ${firstTxTs} (date: ${new Date(
+                                    firstTxTs * 1000
+                                ).toISOString()})`
                             );
                             debugInfo.first_tx_warning = `Timestamp ${firstTxTs} is outside valid range (${MIN_VALID} - ${now})`;
                             // НЕ сбрасываем - возможно это правильный timestamp из будущего (если часы сервера отстают)
@@ -6600,7 +6835,15 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 // ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА: Проверяем также что timestamp не больше validationNow И не больше nowCheckStrict
                                 if (isFuture || candidateTs > validationNow || candidateTs > nowCheckStrict) {
                                     debugInfo.first_tx_method = 'error_history_future_timestamp';
-                                    debugInfo.first_tx_error = `History timestamp ${candidateTs} (year: ${tsYear}, month: ${tsMonth + 1}, day: ${tsDay}) is in future. Current: ${currentYear}-${currentMonth + 1}-${currentDay}, validationNow: ${validationNow}, nowCheck: ${nowCheckStrict}, firstTxTs > validationNow: ${candidateTs > validationNow}, firstTxTs > nowCheckStrict: ${candidateTs > nowCheckStrict}, isFuture: ${isFuture}`;
+                                    debugInfo.first_tx_error = `History timestamp ${candidateTs} (year: ${tsYear}, month: ${
+                                        tsMonth + 1
+                                    }, day: ${tsDay}) is in future. Current: ${currentYear}-${
+                                        currentMonth + 1
+                                    }-${currentDay}, validationNow: ${validationNow}, nowCheck: ${nowCheckStrict}, firstTxTs > validationNow: ${
+                                        candidateTs > validationNow
+                                    }, firstTxTs > nowCheckStrict: ${
+                                        candidateTs > nowCheckStrict
+                                    }, isFuture: ${isFuture}`;
                                     debugInfo.first_tx_from_history = candidateTs;
                                     debugInfo.first_tx_future_check = {
                                         tsYear,
@@ -6649,7 +6892,11 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                     ) {
                                         // Еще одна проверка - если все равно в будущем, отклоняем
                                         debugInfo.first_tx_method = 'error_history_future_timestamp';
-                                        debugInfo.first_tx_error = `Now check failed: timestamp ${candidateTs} (year: ${tsYear2}, month: ${tsMonth2 + 1}, day: ${tsDay2}) > validationNow ${validationNow} or > nowCheck ${nowCheck2} or > strictNowCheck ${strictNowCheck} or is future. Current: ${currentYear}-${currentMonth + 1}-${currentDay}, isStillFuture: ${isStillFuture2}, isGreaterThanStrictNow: ${isGreaterThanStrictNow}`;
+                                        debugInfo.first_tx_error = `Now check failed: timestamp ${candidateTs} (year: ${tsYear2}, month: ${
+                                            tsMonth2 + 1
+                                        }, day: ${tsDay2}) > validationNow ${validationNow} or > nowCheck ${nowCheck2} or > strictNowCheck ${strictNowCheck} or is future. Current: ${currentYear}-${
+                                            currentMonth + 1
+                                        }-${currentDay}, isStillFuture: ${isStillFuture2}, isGreaterThanStrictNow: ${isGreaterThanStrictNow}`;
                                         debugInfo.first_tx_debug_values = {
                                             firstTxTs,
                                             validationNow,
@@ -6675,7 +6922,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                     }
                                 } else {
                                     debugInfo.first_tx_method = 'error_history_invalid_timestamp';
-                                    debugInfo.first_tx_error = `History timestamp ${candidateTs} is invalid. Valid range: ${MIN_VALID} - ${validationNow}, isFuture: ${isFuture}, candidateTs > validationNow: ${candidateTs > validationNow}`;
+                                    debugInfo.first_tx_error = `History timestamp ${candidateTs} is invalid. Valid range: ${MIN_VALID} - ${validationNow}, isFuture: ${isFuture}, candidateTs > validationNow: ${
+                                        candidateTs > validationNow
+                                    }`;
                                     firstTxTs = 0;
                                 }
                             } else {
@@ -7194,7 +7443,12 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             if ((tick0 === 'FENNEC' || tick1 === 'FENNEC') && (amount0 > 0 || amount1 > 0)) {
                                 hasFennecInLP = true;
                                 debugInfo.has_fennec_in_lp_found = true;
-                                debugInfo.has_fennec_in_lp_pool = { tick0, tick1, amount0, amount1 };
+                                debugInfo.has_fennec_in_lp_pool = {
+                                    tick0,
+                                    tick1,
+                                    amount0,
+                                    amount1
+                                };
                             }
                         });
 
@@ -8393,7 +8647,11 @@ Request Context: ${JSON.stringify(context, null, 2)}
 
                     const makeLocalLore = () => {
                         try {
-                            const seedStr = `${String(address || '').trim()}|${txCount}|${firstTxTs}|${runesCount}|${totalCollections}|${Math.floor(allTokensValueUSD)}`;
+                            const seedStr = `${String(
+                                address || ''
+                            ).trim()}|${txCount}|${firstTxTs}|${runesCount}|${totalCollections}|${Math.floor(
+                                allTokensValueUSD
+                            )}`;
                             let h = 2166136261;
                             for (let i = 0; i < seedStr.length; i++) {
                                 h ^= seedStr.charCodeAt(i);
@@ -8483,7 +8741,9 @@ Example: "Signature verified. Ancient protocol access granted."`;
                                 aiLore = cleaned;
                                 try {
                                     if (env?.FENNEC_DB) {
-                                        await env.FENNEC_DB.put(loreCacheKey, aiLore, { expirationTtl: 6 * 3600 });
+                                        await env.FENNEC_DB.put(loreCacheKey, aiLore, {
+                                            expirationTtl: 6 * 3600
+                                        });
                                     }
                                 } catch (_) {
                                     void _;
@@ -8568,7 +8828,9 @@ Example: "Signature verified. Ancient protocol access granted."`;
                     try {
                         // ИСПРАВЛЕНИЕ: Увеличено время кэша для снижения 429 ошибок (особенно важно при множестве пользователей)
                         // КРИТИЧЕСКОЕ: Используем нормализованный cacheKey (без pubkey) для переиспользования между пользователями
-                        const normalizedCacheKey = new Request(cacheKeyUrl.toString(), { method: 'GET' });
+                        const normalizedCacheKey = new Request(cacheKeyUrl.toString(), {
+                            method: 'GET'
+                        });
                         response.headers.set('Cache-Control', 's-maxage=60, max-age=30'); // 60s в Cloudflare, 30s в браузере
                         const __isAuditComplete =
                             (Number(outData?.tx_count || 0) || 0) <= 0 || (Number(outData?.first_tx_ts || 0) || 0) > 0;
@@ -8720,7 +8982,9 @@ Example: "Signature verified. Ancient protocol access granted."`;
                         const k = `chat:${ip}:${bucket}`;
                         const v = Number((await env.RATE_LIMITER.get(k)) || 0) || 0;
                         if (v >= 20) return sendJSON({ reply: 'Too many messages. Chill.' }, 429);
-                        await env.RATE_LIMITER.put(k, String(v + 1), { expirationTtl: 3600 });
+                        await env.RATE_LIMITER.put(k, String(v + 1), {
+                            expirationTtl: 3600
+                        });
                     } else {
                         const rl = __rateLimit(`ip:${ip}:chat`, 20, 3_600_000);
                         if (!rl.ok) return sendJSON({ reply: 'Too many messages. Chill.' }, 429);
@@ -8808,7 +9072,9 @@ IF YOU ARE NOT SURE:
                         void e;
                     }
 
-                    const contextStr = `Section: ${uiContext.section || 'home'}, Tab: ${uiContext.tab || 'none'}, Swap: ${uiContext.swapPair || 'N/A'}`;
+                    const contextStr = `Section: ${uiContext.section || 'home'}, Tab: ${
+                        uiContext.tab || 'none'
+                    }, Swap: ${uiContext.swapPair || 'N/A'}`;
 
                     const systemPrompt = `
 You are Fennec (Fennec Oracle), the AI assistant of the Fennec terminal on Fractal Bitcoin.
@@ -8859,7 +9125,9 @@ EXAMPLES:
                         }
                     }
 
-                    const fullPrompt = `${systemPrompt}\n\n${conversationHistory ? 'History:\n' + conversationHistory + '\n' : ''}User: ${String(userMessage || '')}`;
+                    const fullPrompt = `${systemPrompt}\n\n${
+                        conversationHistory ? 'History:\n' + conversationHistory + '\n' : ''
+                    }User: ${String(userMessage || '')}`;
 
                     const result = await callGemini(fullPrompt, {
                         purpose: 'chat',
