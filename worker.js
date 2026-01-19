@@ -3858,7 +3858,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     const __maxRetries = (() => {
                         const v = Number(maxRetries);
                         if (Number.isFinite(v) && v >= 0) return Math.floor(v);
-                        return retryOn429 ? 2 : 0;
+                        return retryOn429 ? 10 : 0;
                     })();
 
                     let retries = __maxRetries;
@@ -3987,15 +3987,16 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                                 if (__attempt) {
                                                     __attempt.key_hopped = true;
                                                     __attempt.new_key_last4 = newKey.slice(-4);
-                                                    __attempt.wait_before_retry_ms = 0;
+                                                    __attempt.wait_before_retry_ms = 500;
                                                     __attempt.retries_left_after = retries - 1;
                                                 }
                                             } catch (_) {}
 
-                                            // CRITICAL: NO DELAY для свежего ключа
-                                            delay = 0;
+                                            // SOFTEN: 500ms delay для предотвращения IP-банов
+                                            delay = 500;
 
-                                            console.log('[KeyHop] Retrying immediately with new key.');
+                                            console.log('[KeyHop] Retrying in 500ms with new key (IP-ban prevention).');
+                                            await new Promise(r => setTimeout(r, delay));
                                             retries--;
                                             continue;
                                         } else {
@@ -4690,28 +4691,17 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     console.log('📊 [1-5/7] Loading UniSat APIs in parallel...');
 
                     // needRunesFallback уже объявлена выше (всегда true)
-                    // ОПТИМИЗАЦИЯ: Удален unisatBalance и unisatSummary - данные берутся из других источников
-                    console.log('📊 [1-5/7] Loading UniSat APIs (queued/sequential to reduce 429)...');
+                    // ═══════════════════════════════════════════════════════════════════════════
+                    // STAGE 1: Light & External (Mempool + Basic UniSat + InSwap)
+                    // ═══════════════════════════════════════════════════════════════════════════
+                    console.log('[Audit] Stage 1: Statistics (Mempool + BRC20 + InSwap)');
 
-                    const unisatBrc20Summary = null;
-                    const unisatHistory = null;
-                    const unisatRunes = null;
-                    const unisatInscriptionData = null;
-                    const unisatAbandonNftUtxo = null;
-                    const unisatBalance = null; // Удален запрос - используем только Mempool API
-                    const unisatSummary = null; // Удален запрос (404 за 4.2 секунды)
-                    await new Promise(r => setTimeout(r, 120));
-
-                    // Phase 1: стартуем параллельно mempool address, mempool utxo и легкий UniSat BRC-20 Summary.
-                    const mempoolAddressPromise = mempoolPromise;
-                    const mempoolUtxoPromise = utxoListPromise;
-                    const unisatBrc20SummaryInFlight = withTimeout(
-                        unisatBrc20SummaryPromise(),
-                        UNISAT_AUDIT_TIMEOUT_MS
-                    );
-
-                    // Phase 2: строго ждем mempool, чтобы получить точный tx_count.
-                    const mempool = await mempoolAddressPromise;
+                    const [mempool, mempoolUtxo, brc20Summary, inswapBalance] = await Promise.all([
+                        mempoolPromise,
+                        utxoListPromise,
+                        withTimeout(unisatBrc20SummaryPromise(), UNISAT_AUDIT_TIMEOUT_MS),
+                        withTimeout(allBalancePromise, INSWAP_AUDIT_TIMEOUT_MS)
+                    ]);
 
                     let txCount = 0;
                     if (mempool) {
@@ -4728,12 +4718,16 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     debugInfo.genesis_txCount_source =
                         debugInfo.genesis_txCount_source || (txCount > 0 ? 'mempool_stats' : 'none');
 
-                    // Phase 3: Genesis — один точечный запрос UniSat history cursor=txCount-1,size=1.
+                    // ═══════════════════════════════════════════════════════════════════════════
+                    // STAGE 2: Genesis (Dependent on Stage 1 tx_count)
+                    // ═══════════════════════════════════════════════════════════════════════════
+                    console.log('[Audit] Stage 2: Genesis Transaction');
+
                     const txCountForOffset = txCount;
-                    const firstTxTsHint = 0;
-                    let genesisTxPromise = null;
+                    let genesisTxData = null;
+
                     if (!__fastMode && txCountForOffset > 0) {
-                        genesisTxPromise = (async () => {
+                        const genesisTxPromise = (async () => {
                             try {
                                 const GENESIS_TIMEOUT_MS = __fastMode ? 3500 : 15000;
                                 const controller = new AbortController();
@@ -4842,72 +4836,56 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             }
                             return null;
                         })();
-                    } else {
-                        debugInfo.genesis_tx_skipped = true;
-                        debugInfo.genesis_tx_skipped_reason = 'no_tx_count';
-                    }
 
-                    // Phase 4: пока ждем genesis — запускаем тяжелые UniSat запросы через очередь.
-                    const unisatInscriptionDataInFlight = withTimeout(
-                        unisatInscriptionDataPromise(),
-                        UNISAT_AUDIT_TIMEOUT_MS
-                    );
-                    const unisatRunesInFlight = needRunesFallback
-                        ? withTimeout(unisatRunesPromise(), UNISAT_AUDIT_TIMEOUT_MS)
-                        : Promise.resolve(null);
-                    const unisatAbandonNftUtxoInFlight = withTimeout(
-                        unisatAbandonNftUtxoPromise(),
-                        UNISAT_AUDIT_TIMEOUT_MS
-                    );
-
-                    // InSwap All Balance API (не блокирует mempool-first/genesis)
-                    console.log('💱 [6/7] Loading InSwap All Balance...');
-                    let allBalance = null;
-                    let allBalanceAttempted = false;
-                    const allBalanceInFlight = (async () => {
-                        let __allBalance = null;
-                        let __attempted = false;
-                        let __error = null;
-                        try {
-                            __attempted = true;
-                            __allBalance = await Promise.race([
-                                allBalancePromise,
-                                new Promise((_, reject) =>
-                                    setTimeout(() => reject(new Error('Timeout')), INSWAP_AUDIT_TIMEOUT_MS)
-                                )
-                            ]).catch(() => null);
-                        } catch (e) {
-                            __error = e?.message || String(e);
-                        }
-                        return {
-                            allBalance: __allBalance,
-                            attempted: __attempted,
-                            error: __error
-                        };
-                    })();
-
-                    const utxoList = await mempoolUtxoPromise;
-
-                    let genesisTxData = null;
-                    if (genesisTxPromise) {
                         try {
                             genesisTxData = await genesisTxPromise;
                         } catch (e) {
                             debugInfo.genesis_error = e?.message || String(e);
                         }
+                    } else {
+                        debugInfo.genesis_tx_skipped = true;
+                        debugInfo.genesis_tx_skipped_reason = 'no_tx_count';
                     }
 
-                    // Все тяжелые UniSat запросы уже выполнены последовательно выше
+                    // ═══════════════════════════════════════════════════════════════════════════
+                    // COOLDOWN: 1 second break before heavy assets
+                    // ═══════════════════════════════════════════════════════════════════════════
+                    console.log('[Audit] Cooldown: 1s');
+                    await new Promise(r => setTimeout(r, 1000));
 
-                    const allBalanceResult = await allBalanceInFlight;
-                    allBalance = allBalanceResult?.allBalance || null;
-                    allBalanceAttempted = !!allBalanceResult?.attempted;
-                    if (allBalanceResult?.error) debugInfo.all_balance_error = allBalanceResult.error;
-                    try {
-                        debugInfo.all_balance_attempted = allBalanceAttempted;
-                    } catch (_) {
-                        void _;
-                    }
+                    // ═══════════════════════════════════════════════════════════════════════════
+                    // STAGE 3: Assets (Runes, Inscriptions, Abandon)
+                    // ═══════════════════════════════════════════════════════════════════════════
+                    console.log('[Audit] Stage 3: Assets (Runes + Inscriptions)');
+
+                    const [unisatRunes, unisatInscriptionData, unisatAbandonNftUtxo] = await Promise.all([
+                        needRunesFallback
+                            ? withTimeout(unisatRunesPromise(), UNISAT_AUDIT_TIMEOUT_MS)
+                            : Promise.resolve(null),
+                        withTimeout(unisatInscriptionDataPromise(), UNISAT_AUDIT_TIMEOUT_MS),
+                        withTimeout(unisatAbandonNftUtxoPromise(), UNISAT_AUDIT_TIMEOUT_MS)
+                    ]);
+
+                    // ═══════════════════════════════════════════════════════════════════════════
+                    // COOLDOWN: 1.5 second break before market data
+                    // ═══════════════════════════════════════════════════════════════════════════
+                    console.log('[Audit] Cooldown: 1.5s');
+                    await new Promise(r => setTimeout(r, 1500));
+
+                    // ═══════════════════════════════════════════════════════════════════════════
+                    // STAGE 4: Market & Collections (SEQUENTIAL to avoid burst 429)
+                    // ═══════════════════════════════════════════════════════════════════════════
+                    console.log('[Audit] Stage 4: Market Data (Sequential)');
+
+                    // Assign results from Stage 1 and Stage 3 to variables expected by downstream code
+                    const utxoList = mempoolUtxo;
+                    const allBalance = inswapBalance;
+                    const allBalanceAttempted = !!inswapBalance;
+
+                    // ═══════════════════════════════════════════════════════════════════════════
+                    // FINALIZE: All data collected
+                    // ═══════════════════════════════════════════════════════════════════════════
+                    console.log('[Audit] Finalize: Processing collected data');
 
                     const inswapAssetSummary = null;
                     void inswapAssetSummary;
@@ -4973,16 +4951,14 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         void e;
                     }
 
-                    // 2. Цены и история - используем уже полученный результат (с таймаутом)
-                    // const cg = null; // Убран CoinGecko - цены получаем из InSwap all_balance
-                    const historyData = unisatHistory;
-
-                    // 3. Runes, BRC-20 и Ordinals - используем уже полученные результаты (с таймаутом)
+                    // 2. Assign Stage results to legacy variable names for downstream compatibility
+                    const historyData = null; // Not fetched in new staged approach
                     const runesBalanceList = unisatRunes;
-                    const brc20Data = unisatBrc20Summary;
+                    const brc20Data = brc20Summary;
                     const ordinalsInscriptionData = unisatInscriptionData;
-                    const runesData = null; // Не используется
-                    const ordinalsData = null; // Не используется
+                    const runesData = null; // Not used
+                    const ordinalsData = null; // Not used
+                    const summaryData = null; // Removed (was 404)
 
                     void brc20Data;
                     void runesData;
@@ -5001,8 +4977,6 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     } catch (e) {
                         // Игнорируем ошибки
                     }
-
-                    const summaryData = unisatSummary;
 
                     // ИСПРАВЛЕНИЕ: Последовательное выполнение запросов для снижения rate limiting
                     // ОПТИМИЗАЦИЯ: Выполняем запросы последовательно для снижения 429 ошибок (рекомендация UniSat)
