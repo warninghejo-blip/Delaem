@@ -4461,7 +4461,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     console.log('📊 [1-5/7] Loading UniSat APIs (queued/sequential to reduce 429)...');
 
                     let unisatBrc20Summary = null;
-                    let unisatHistory = null;
+                    const unisatHistory = null;
                     let unisatRunes = null;
                     let unisatInscriptionData = null;
                     let unisatAbandonNftUtxo = null;
@@ -4469,31 +4469,214 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     const unisatSummary = null; // Удален запрос (404 за 4.2 секунды)
                     await new Promise(r => setTimeout(r, 120));
 
-                    // 6. InSwap All Balance API - все токены с балансами и ценами в USD
+                    // Phase 1: стартуем параллельно mempool address, mempool utxo и легкий UniSat BRC-20 Summary.
+                    const mempoolAddressPromise = mempoolPromise;
+                    const mempoolUtxoPromise = utxoListPromise;
+                    const unisatBrc20SummaryInFlight = withTimeout(
+                        unisatBrc20SummaryPromise(),
+                        UNISAT_AUDIT_TIMEOUT_MS
+                    );
+
+                    // Phase 2: строго ждем mempool, чтобы получить точный tx_count.
+                    const mempool = await mempoolAddressPromise;
+
+                    let txCount = 0;
+                    if (mempool) {
+                        let c = {},
+                            m = {};
+                        if (mempool.chain_stats || mempool.mempool_stats) {
+                            c = mempool.chain_stats || {};
+                            m = mempool.mempool_stats || {};
+                        }
+                        txCount = Number(c.tx_count || 0) + Number(m.tx_count || 0);
+                    }
+                    if (mempool) debugInfo.tx_count_source = debugInfo.tx_count_source || 'mempool_stats';
+                    else debugInfo.tx_count_source = debugInfo.tx_count_source || 'mempool_missing';
+                    debugInfo.genesis_txCount_source =
+                        debugInfo.genesis_txCount_source || (txCount > 0 ? 'mempool_stats' : 'none');
+
+                    // Phase 3: Genesis — один точечный запрос UniSat history cursor=txCount-1,size=1.
+                    const txCountForOffset = txCount;
+                    const firstTxTsHint = 0;
+                    let genesisTxPromise = null;
+                    if (!__fastMode && txCountForOffset > 0) {
+                        genesisTxPromise = (async () => {
+                            try {
+                                const GENESIS_TIMEOUT_MS = __fastMode ? 3500 : 15000;
+                                const controller = new AbortController();
+                                const timeoutId = setTimeout(() => controller.abort(), GENESIS_TIMEOUT_MS);
+                                const cursor = Math.max(0, Math.floor(txCountForOffset) - 1);
+
+                                const pickTxFromResponse = json => {
+                                    try {
+                                        const d0 = json && typeof json === 'object' ? json : null;
+                                        const d1 = d0 && d0.data && typeof d0.data === 'object' ? d0.data : null;
+                                        const arr =
+                                            (d1 && Array.isArray(d1.detail) ? d1.detail : null) ||
+                                            (d1 && Array.isArray(d1.list) ? d1.list : null) ||
+                                            (Array.isArray(d1) ? d1 : null) ||
+                                            (Array.isArray(d0) ? d0 : null) ||
+                                            [];
+                                        if (!Array.isArray(arr) || arr.length === 0) return null;
+                                        return arr[0];
+                                    } catch (_) {
+                                        return null;
+                                    }
+                                };
+
+                                const extractTs = tx => {
+                                    let txTs = (tx && (tx.timestamp || tx.blocktime || tx.time || tx.blockTime)) || 0;
+                                    if (txTs > 1000000000000) {
+                                        txTs = Math.floor(txTs / 1000);
+                                        debugInfo.genesis_tx_offset_converted_from_ms = true;
+                                    }
+                                    if (txTs > 10000000000) {
+                                        txTs = Math.floor(txTs / 1000);
+                                        debugInfo.genesis_tx_offset_converted_from_ms = true;
+                                    }
+                                    return Number(txTs) || 0;
+                                };
+
+                                const isValidTs = ts => {
+                                    const now = Math.floor(Date.now() / 1000);
+                                    const MIN_VALID = 1700000000;
+                                    if (!(ts > 0 && ts >= MIN_VALID && ts <= now)) return false;
+                                    const currentDate = new Date();
+                                    const currentYear = currentDate.getFullYear();
+                                    const currentMonth = currentDate.getMonth();
+                                    const currentDay = currentDate.getDate();
+                                    const timestampDate = new Date(ts * 1000);
+                                    const timestampYear = timestampDate.getFullYear();
+                                    const timestampMonth = timestampDate.getMonth();
+                                    const timestampDay = timestampDate.getDate();
+                                    const isFutureYear = timestampYear > currentYear;
+                                    const isFutureMonth =
+                                        timestampYear === currentYear && timestampMonth > currentMonth;
+                                    const isFutureDay =
+                                        timestampYear === currentYear &&
+                                        timestampMonth === currentMonth &&
+                                        timestampDay > currentDay;
+                                    return !(isFutureYear || isFutureMonth || isFutureDay);
+                                };
+
+                                const u = `${FRACTAL_BASE}/indexer/address/${address}/history?cursor=${cursor}&size=1`;
+                                const cacheKey = `unisat_history_genesis_${address}_${cursor}`;
+                                const json = await safeFetch(
+                                    () =>
+                                        fetch(u, {
+                                            headers: upstreamHeaders,
+                                            signal: controller.signal
+                                        }),
+                                    {
+                                        isUniSat: true,
+                                        useCache: true,
+                                        cacheKey,
+                                        retryOn429: true,
+                                        maxRetries: 2,
+                                        maxDelayMs: 15000,
+                                        traceLabel: 'unisat_history_genesis_targeted',
+                                        traceUrl: u
+                                    }
+                                );
+                                clearTimeout(timeoutId);
+
+                                const tx = pickTxFromResponse(json);
+                                if (!tx) return null;
+                                const ts = extractTs(tx);
+                                if (!isValidTs(ts)) return null;
+
+                                debugInfo.genesis_tx_found = true;
+                                debugInfo.genesis_tx_cursor_used = cursor;
+                                debugInfo.genesis_tx_timestamp = ts;
+                                debugInfo.genesis_tx_url = u;
+                                debugInfo.genesis_tx_param_style = 'cursor_size';
+
+                                return {
+                                    data: {
+                                        detail: [
+                                            {
+                                                txid: tx.txid || tx.hash || '',
+                                                timestamp: ts,
+                                                blocktime: ts,
+                                                time: ts,
+                                                ...tx
+                                            }
+                                        ]
+                                    }
+                                };
+                            } catch (e) {
+                                debugInfo.genesis_error = e?.message || String(e);
+                            }
+                            return null;
+                        })();
+                    } else {
+                        debugInfo.genesis_tx_skipped = true;
+                        debugInfo.genesis_tx_skipped_reason = 'no_tx_count';
+                    }
+
+                    // Phase 4: пока ждем genesis — запускаем тяжелые UniSat запросы через очередь.
+                    const unisatInscriptionDataInFlight = withTimeout(
+                        unisatInscriptionDataPromise(),
+                        UNISAT_AUDIT_TIMEOUT_MS
+                    );
+                    const unisatRunesInFlight = needRunesFallback
+                        ? withTimeout(unisatRunesPromise(), UNISAT_AUDIT_TIMEOUT_MS)
+                        : Promise.resolve(null);
+                    const unisatAbandonNftUtxoInFlight = withTimeout(
+                        unisatAbandonNftUtxoPromise(),
+                        UNISAT_AUDIT_TIMEOUT_MS
+                    );
+
+                    // InSwap All Balance API (не блокирует mempool-first/genesis)
                     console.log('💱 [6/7] Loading InSwap All Balance...');
                     let allBalance = null;
                     let allBalanceAttempted = false;
-                    try {
-                        allBalanceAttempted = true;
-                        allBalance = await Promise.race([
-                            allBalancePromise,
-                            new Promise((_, reject) =>
-                                setTimeout(() => reject(new Error('Timeout')), INSWAP_AUDIT_TIMEOUT_MS)
-                            )
-                        ]).catch(() => null);
-                    } catch (e) {
-                        debugInfo.all_balance_error = e.message;
+                    const allBalanceInFlight = (async () => {
+                        let __allBalance = null;
+                        let __attempted = false;
+                        let __error = null;
+                        try {
+                            __attempted = true;
+                            __allBalance = await Promise.race([
+                                allBalancePromise,
+                                new Promise((_, reject) =>
+                                    setTimeout(() => reject(new Error('Timeout')), INSWAP_AUDIT_TIMEOUT_MS)
+                                )
+                            ]).catch(() => null);
+                        } catch (e) {
+                            __error = e?.message || String(e);
+                        }
+                        return { allBalance: __allBalance, attempted: __attempted, error: __error };
+                    })();
+
+                    const utxoList = await mempoolUtxoPromise;
+
+                    let genesisTxData = null;
+                    if (genesisTxPromise) {
+                        try {
+                            genesisTxData = await genesisTxPromise;
+                        } catch (e) {
+                            debugInfo.genesis_error = e?.message || String(e);
+                        }
                     }
+
+                    unisatInscriptionData = await unisatInscriptionDataInFlight;
+                    unisatBrc20Summary = await unisatBrc20SummaryInFlight;
+                    unisatRunes = await unisatRunesInFlight;
+                    unisatAbandonNftUtxo = await unisatAbandonNftUtxoInFlight;
+
+                    const allBalanceResult = await allBalanceInFlight;
+                    allBalance = allBalanceResult?.allBalance || null;
+                    allBalanceAttempted = !!allBalanceResult?.attempted;
+                    if (allBalanceResult?.error) debugInfo.all_balance_error = allBalanceResult.error;
                     try {
                         debugInfo.all_balance_attempted = allBalanceAttempted;
                     } catch (_) {
                         void _;
                     }
-                    await new Promise(r => setTimeout(r, 120));
 
-                    // ОПТИМИЗАЦИЯ: Удален inswapAssetSummary (оба 404)
-                    // LP данные уже получаем из inswap_all_balance_direct
                     const inswapAssetSummary = null;
+                    void inswapAssetSummary;
 
                     try {
                         const ab = allBalance && typeof allBalance === 'object' ? allBalance.data : null;
@@ -4553,263 +4736,6 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     } catch (e) {
                         void e;
                     }
-
-                    // ИСПРАВЛЕНИЕ: Загружаем данные параллельно (как в backup версии)
-                    // 1. Критичные данные (базовые) - загружаем первыми параллельно
-                    const [mempool, utxoList] = await Promise.all([mempoolPromise, utxoListPromise]);
-
-                    // ИСПРАВЛЕНИЕ: Инициализируем txCount ДО использования, получаем из mempool
-                    let txCount = 0;
-                    if (mempool) {
-                        let c = {},
-                            m = {};
-                        if (mempool.chain_stats || mempool.mempool_stats) {
-                            c = mempool.chain_stats || {};
-                            m = mempool.mempool_stats || {};
-                        }
-                        txCount = Number(c.tx_count || 0) + Number(m.tx_count || 0);
-                    }
-
-                    // Получаем txCount для genesis запроса (ПРИОРИТЕТ: Mempool, затем Uniscan Summary, затем UniSat History)
-                    let txCountForOffset = txCount;
-                    let genesisTxPromise = null;
-
-                    if (!mempool && !__fastMode) {
-                        try {
-                            unisatHistory = await withTimeout(unisatHistoryPromise(), UNISAT_AUDIT_TIMEOUT_MS);
-                            const t = Number(unisatHistory?.data?.total || 0) || 0;
-                            if (t > 0) {
-                                txCount = t;
-                                txCountForOffset = t;
-                                debugInfo.tx_count_source = 'unisat_history_fallback_mempool_missing';
-                                debugInfo.genesis_txCount_source = 'unisat_history_fallback_mempool_missing';
-                            }
-                        } catch (_) {
-                            void _;
-                        }
-                    }
-
-                    // ОПТИМИЗАЦИЯ: если Uniscan Summary уже отдал время первой транзакции — используем его
-                    // и не дергаем /history (это один из самых медленных и rate-limited запросов).
-                    let firstTxTsHint = 0;
-                    try {
-                        const nowTs = Math.floor(Date.now() / 1000);
-                        const MIN_VALID_TS = 1700000000;
-                        const candidateRaw = Number(
-                            uniscanSummary?.data?.firstTxTime ??
-                                uniscanSummary?.data?.firstTxTime ??
-                                uniscanSummary?.data?.firstTxTs ??
-                                uniscanSummary?.data?.first_tx_time ??
-                                uniscanSummary?.data?.first_tx_ts ??
-                                uniscanSummary?.data?.firstTransactionTime ??
-                                0
-                        );
-                        let candidateTs = Number.isFinite(candidateRaw) ? Math.floor(candidateRaw) : 0;
-                        if (candidateTs > 1000000000000) {
-                            candidateTs = Math.floor(candidateTs / 1000);
-                            debugInfo.first_tx_hint_converted_from_ms = true;
-                        }
-                        if (candidateTs > 0 && candidateTs >= MIN_VALID_TS && candidateTs <= nowTs) {
-                            const currentDate = new Date();
-                            const currentYear = currentDate.getFullYear();
-                            const currentMonth = currentDate.getMonth();
-                            const currentDay = currentDate.getDate();
-                            const tsDate = new Date(candidateTs * 1000);
-                            const tsYear = tsDate.getFullYear();
-                            const tsMonth = tsDate.getMonth();
-                            const tsDay = tsDate.getDate();
-                            const isFutureYear = tsYear > currentYear;
-                            const isFutureMonth = tsYear === currentYear && tsMonth > currentMonth;
-                            const isFutureDay =
-                                tsYear === currentYear && tsMonth === currentMonth && tsDay > currentDay;
-                            if (!isFutureYear && !isFutureMonth && !isFutureDay) {
-                                firstTxTsHint = candidateTs;
-                                debugInfo.first_tx_method = 'uniscan_summary_firstTxTime';
-                                debugInfo.first_tx_hint = firstTxTsHint;
-                            }
-                        }
-                    } catch (_) {
-                        void _;
-                    }
-
-                    if (uniscanSummary?.data) {
-                        txCountForOffset = Number(
-                            uniscanSummary.data.totalTransactionCount || uniscanSummary.data.tx_count || 0
-                        );
-                        debugInfo.genesis_txCount_source = 'uniscan_summary';
-                    } else if (unisatSummary?.data) {
-                        txCountForOffset = Number(
-                            unisatSummary.data.totalTransactionCount ||
-                                unisatSummary.data.historyCount ||
-                                unisatSummary.data.tx_count ||
-                                0
-                        );
-                        debugInfo.genesis_txCount_source = 'unisat_summary';
-                    } else if (txCount > 0) {
-                        txCountForOffset = txCount;
-                        debugInfo.genesis_txCount_source = 'mempool_stats_fallback';
-                    }
-
-                    // КРИТИЧЕСКОЕ: Получаем первую транзакцию используя total из history
-                    // ИСПРАВЛЕНИЕ: Если txCountForOffset = 0, пробуем start=0&limit=100
-                    // ОПТИМИЗАЦИЯ: Не дергаем /history если уже есть валидный firstTxTsHint
-                    // и не делаем запрос если txCount неизвестен/0.
-                    if (!__fastMode && firstTxTsHint === 0 && (txCountForOffset > 0 || txCount > 0)) {
-                        genesisTxPromise = (async () => {
-                            try {
-                                const GENESIS_TIMEOUT_MS = __fastMode ? 3500 : 12000;
-                                const controller = new AbortController();
-                                const timeoutId = setTimeout(() => controller.abort(), GENESIS_TIMEOUT_MS);
-                                let cursor;
-                                if (txCountForOffset > 0) {
-                                    cursor = Math.max(0, txCountForOffset - 1);
-                                } else {
-                                    cursor = 0;
-                                }
-                                const pickTxFromResponse = (json, pickLast) => {
-                                    try {
-                                        const d0 = json && typeof json === 'object' ? json : null;
-                                        const d1 = d0 && d0.data && typeof d0.data === 'object' ? d0.data : null;
-                                        const arr =
-                                            (d1 && Array.isArray(d1.detail) ? d1.detail : null) ||
-                                            (d1 && Array.isArray(d1.list) ? d1.list : null) ||
-                                            (Array.isArray(d1) ? d1 : null) ||
-                                            (Array.isArray(d0) ? d0 : null) ||
-                                            [];
-                                        if (!Array.isArray(arr) || arr.length === 0) return null;
-                                        return pickLast ? arr[arr.length - 1] : arr[0];
-                                    } catch (_) {
-                                        return null;
-                                    }
-                                };
-
-                                const extractTs = tx => {
-                                    let txTs = (tx && (tx.timestamp || tx.blocktime || tx.time || tx.blockTime)) || 0;
-                                    if (txTs > 1000000000000) {
-                                        txTs = Math.floor(txTs / 1000);
-                                        debugInfo.genesis_tx_offset_converted_from_ms = true;
-                                    }
-                                    if (txTs > 10000000000) {
-                                        txTs = Math.floor(txTs / 1000);
-                                        debugInfo.genesis_tx_offset_converted_from_ms = true;
-                                    }
-                                    return Number(txTs) || 0;
-                                };
-
-                                const isValidTs = ts => {
-                                    const now = Math.floor(Date.now() / 1000);
-                                    const MIN_VALID = 1700000000;
-                                    if (!(ts > 0 && ts >= MIN_VALID && ts <= now)) return false;
-                                    const currentDate = new Date();
-                                    const currentYear = currentDate.getFullYear();
-                                    const currentMonth = currentDate.getMonth();
-                                    const currentDay = currentDate.getDate();
-                                    const timestampDate = new Date(ts * 1000);
-                                    const timestampYear = timestampDate.getFullYear();
-                                    const timestampMonth = timestampDate.getMonth();
-                                    const timestampDay = timestampDate.getDate();
-                                    const isFutureYear = timestampYear > currentYear;
-                                    const isFutureMonth =
-                                        timestampYear === currentYear && timestampMonth > currentMonth;
-                                    const isFutureDay =
-                                        timestampYear === currentYear &&
-                                        timestampMonth === currentMonth &&
-                                        timestampDay > currentDay;
-                                    return !(isFutureYear || isFutureMonth || isFutureDay);
-                                };
-
-                                const fetchOne = async (off, label) => {
-                                    const u = `${FRACTAL_BASE}/indexer/address/${address}/history?cursor=${off}&size=1`;
-                                    const cacheKey = `unisat_history_genesis_${address}_${off}_${label}`;
-                                    const json = await safeFetch(
-                                        () =>
-                                            fetch(u, {
-                                                headers: upstreamHeaders,
-                                                signal: controller.signal
-                                            }),
-                                        {
-                                            isUniSat: true,
-                                            useCache: true,
-                                            cacheKey,
-                                            retryOn429: true,
-                                            maxRetries: 2,
-                                            maxDelayMs: 15000,
-                                            traceLabel: `unisat_history_genesis_${label}`,
-                                            traceUrl: u
-                                        }
-                                    );
-                                    const tx = pickTxFromResponse(json, false);
-                                    if (!tx) return null;
-                                    const ts = extractTs(tx);
-                                    if (!isValidTs(ts)) return null;
-                                    return {
-                                        tx,
-                                        ts,
-                                        url: u,
-                                        label,
-                                        paramStyle: 'cursor_size'
-                                    };
-                                };
-
-                                const offOld = cursor;
-                                let chosen = await fetchOne(offOld, 'offset');
-                                if (!chosen && offOld !== 0) {
-                                    chosen = await fetchOne(0, 'zero');
-                                }
-                                clearTimeout(timeoutId);
-
-                                if (chosen) {
-                                    debugInfo.genesis_tx_found = true;
-                                    debugInfo.genesis_tx_cursor_used = chosen.label === 'offset' ? offOld : 0;
-                                    debugInfo.genesis_tx_timestamp = chosen.ts;
-                                    debugInfo.genesis_tx_url = chosen.url;
-                                    debugInfo.genesis_tx_param_style = chosen.paramStyle;
-                                    return {
-                                        data: {
-                                            detail: [
-                                                {
-                                                    txid: chosen.tx.txid || chosen.tx.hash || '',
-                                                    timestamp: chosen.ts,
-                                                    blocktime: chosen.ts,
-                                                    time: chosen.ts,
-                                                    ...chosen.tx
-                                                }
-                                            ]
-                                        }
-                                    };
-                                }
-                            } catch (e) {
-                                debugInfo.genesis_error = e.message;
-                            }
-                            return null;
-                        })();
-                    } else {
-                        debugInfo.genesis_tx_skipped = true;
-                        debugInfo.genesis_tx_skipped_reason = firstTxTsHint > 0 ? 'have_first_tx_hint' : 'no_tx_count';
-                    }
-
-                    // Получаем первую транзакцию (genesis)
-                    let genesisTxData = null;
-                    if (genesisTxPromise) {
-                        try {
-                            genesisTxData = await genesisTxPromise;
-                        } catch (e) {
-                            debugInfo.genesis_error = e.message;
-                        }
-                    }
-
-                    unisatInscriptionData = await withTimeout(unisatInscriptionDataPromise(), UNISAT_AUDIT_TIMEOUT_MS);
-                    await new Promise(r => setTimeout(r, 120));
-
-                    unisatBrc20Summary = await withTimeout(unisatBrc20SummaryPromise(), UNISAT_AUDIT_TIMEOUT_MS);
-                    await new Promise(r => setTimeout(r, 120));
-
-                    unisatRunes = needRunesFallback
-                        ? await withTimeout(unisatRunesPromise(), UNISAT_AUDIT_TIMEOUT_MS)
-                        : null;
-                    await new Promise(r => setTimeout(r, 120));
-
-                    unisatAbandonNftUtxo = await withTimeout(unisatAbandonNftUtxoPromise(), UNISAT_AUDIT_TIMEOUT_MS);
 
                     // 2. Цены и история - используем уже полученный результат (с таймаутом)
                     // const cg = null; // Убран CoinGecko - цены получаем из InSwap all_balance
@@ -5036,45 +4962,10 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     debugInfo.utxo_count_source = debugInfo.utxo_method || 'unknown';
                     debugInfo.ordinals_count_from_balance = Number(unisatBalance?.data?.inscriptionUtxoCount || 0);
 
-                    // 2. History API - total транзакций (ПРИОРИТЕТ: Uniscan Summary, fallback: UniSat History)
-                    if (mempool) {
-                        debugInfo.tx_count_source = debugInfo.tx_count_source || 'mempool_stats';
-                    } else if (uniscanSummary?.data) {
-                        txCount = Number(
-                            uniscanSummary.data.totalTransactionCount || uniscanSummary.data.tx_count || 0
-                        );
-                        debugInfo.tx_count_source = 'uniscan_summary';
-                    } else if (unisatHistory?.data?.total) {
-                        txCount = Number(unisatHistory.data.total);
-                        debugInfo.tx_count_source = 'unisat_history_fallback_mempool_missing';
-                    } else if (unisatHistory?.data) {
-                        // Fallback: проверяем другие возможные поля
-                        txCount = Number(unisatHistory.data.total || unisatHistory.data.count || 0);
-                        debugInfo.tx_count_source = 'unisat_history_fallback_mempool_missing';
-                        debugInfo.tx_count_debug = Object.keys(unisatHistory.data);
-                    } else {
-                        // ИСПРАВЛЕНИЕ: Если history не загрузился, пробуем запросить отдельно для получения total
-                        debugInfo.tx_count_source = 'fallback_attempt';
-                        debugInfo.tx_count_error = 'History API not loaded - will try to fetch total separately';
-                        try {
-                            // ИСПРАВЛЕНИЕ: Используем правильные параметры cursor и size (по документации API)
-                            const historyRes = await fetch(
-                                `${FRACTAL_BASE}/indexer/address/${address}/history?cursor=0&size=1`,
-                                {
-                                    headers: upstreamHeaders
-                                }
-                            );
-                            if (historyRes.ok) {
-                                const historyData = await historyRes.json();
-                                if (historyData?.data?.total) {
-                                    txCount = Number(historyData.data.total);
-                                    debugInfo.tx_count_source = 'fallback_separate_request';
-                                }
-                            }
-                        } catch (e) {
-                            debugInfo.tx_count_fallback_error = e.message;
-                        }
-                    }
+                    // 2. History API - total транзакций (ИНВАРИАНТ): tx_count берём только из mempool.
+                    // Никаких fallback на UniSat/Uniscan/отдельных history-запросов, чтобы не плодить 429.
+                    debugInfo.tx_count_source =
+                        debugInfo.tx_count_source || (mempool ? 'mempool_stats' : 'mempool_missing');
 
                     // 3. BRC-20 Summary API - количество BRC-20 токенов (кошелек + InSwap)
                     // ИСПРАВЛЕНИЕ: Считаем BRC-20 и на кошельке, и в InSwap (объединяем)
@@ -6380,7 +6271,11 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     // ИСПРАВЛЕНИЕ: Убран fallback метод mempool_txs_sorted - он возвращает последние транзакции, а не первую
                     // Если первая транзакция не определена, это будет видно в debug
                     // Метод 1: mempool_txs_sorted - ОТКЛЮЧЕН (fallback) - мертвый код удален
-                    if (String(env?.ENABLE_MEMPOOL_TXS_SORTED_FALLBACK || '').trim() === '1' && firstTxTs === 0) {
+                    if (
+                        false &&
+                        String(env?.ENABLE_MEMPOOL_TXS_SORTED_FALLBACK || '').trim() === '1' &&
+                        firstTxTs === 0
+                    ) {
                         const txsData = [];
                         // now, MI N_VALID, MAX_VALID уже определены выше
 
