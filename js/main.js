@@ -6,6 +6,16 @@ try {
 }
 
 try {
+    const isLite = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.hardwareConcurrency || 4) < 4;
+    if (isLite) {
+        document.body.classList.add('fennec-lite');
+        window.__fennecLiteMode = true;
+    }
+} catch (_) {
+    void _;
+}
+
+try {
     const noop = function () {};
     window.connectWallet = window.connectWallet || noop;
     window.disconnectWallet = window.disconnectWallet || noop;

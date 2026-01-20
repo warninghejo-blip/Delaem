@@ -1064,6 +1064,37 @@ window.connectWallet = async function () {
     }
 };
 
+window.updateWalletUI = function () {
+    try {
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const disconnectBtnText = document.getElementById('disconnectBtnText');
+        const addr = String(window.userAddress || userAddress || '').trim();
+
+        if (addr) {
+            if (connectBtn) connectBtn.classList.add('hidden');
+            if (disconnectBtn) disconnectBtn.classList.remove('hidden');
+            if (disconnectBtnText) disconnectBtnText.textContent = `...${addr.slice(-4)}`;
+        } else {
+            if (connectBtn) connectBtn.classList.remove('hidden');
+            if (disconnectBtn) disconnectBtn.classList.add('hidden');
+            if (disconnectBtnText) disconnectBtnText.textContent = '...';
+        }
+    } catch (_) {}
+};
+
+window.onVisionFennecIdClick = function () {
+    try {
+        if (typeof window.__fennecNavigate === 'function') {
+            window.__fennecNavigate('id.html');
+        } else {
+            window.location.href = 'id.html';
+        }
+    } catch (_) {
+        window.location.href = 'id.html';
+    }
+};
+
 window.disconnectWallet = function (opts) {
     const manual = !(opts && typeof opts === 'object' && opts.manual === false);
     try {
@@ -5820,17 +5851,17 @@ async function __legacy_fetchAuditData(abortSignal = null, silent = false, optio
         }
         const __opts = options && typeof options === 'object' ? options : null;
         const __noCache = !!(__opts && (__opts.noCache || __opts.forceNoCache));
-        const __fast = __opts && typeof __opts.fast === 'boolean' ? __opts.fast : true;
+        const __fast = false; // full audit only
         const __cacheBust = __noCache ? `&_ts=${Date.now()}` : '';
-        const __fastParam = __fast ? '&fast=1' : '';
+        const __fastParam = '';
 
         // Call the updated Worker endpoint
         // ИСПРАВЛЕНИЕ: Добавляем pubkey для запросов к InSwap
         const pubkey = userPubkey || '';
         // ИСПРАВЛЕНИЕ: Убрана подпись пользователя - не требуется для API запросов
         const url = pubkey
-            ? `${BACKEND_URL}?action=fractal_audit&address=${addr}&pubkey=${pubkey}${__fastParam}${__cacheBust}`
-            : `${BACKEND_URL}?action=fractal_audit&address=${addr}${__fastParam}${__cacheBust}`;
+            ? `${BACKEND_URL}?action=fractal_audit&address=${addr}&pubkey=${pubkey}${__cacheBust}`
+            : `${BACKEND_URL}?action=fractal_audit&address=${addr}${__cacheBust}`;
 
         let workerRes = null;
         let retryCount = 0;

@@ -3008,3 +3008,31 @@ button:active {
 .router-view.router-fade-out {
     opacity: 0;
 }
+
+/* Lite Mode Optimizations for Mobile/Weak PC */
+.fennec-lite * {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+.fennec-lite .glass-panel,
+.fennec-lite [style*='backdrop-filter'] {
+    background: rgba(10, 10, 15, 0.95) !important;
+    backdrop-filter: none !important;
+}
+
+.fennec-lite .animate-pulse {
+    animation-duration: 3s !important;
+}
+
+.fennec-lite [style*='box-shadow'] {
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3) !important;
+}
+
+.fennec-lite [style*='filter: drop-shadow'] {
+    filter: none !important;
+}
+
+.fennec-lite [style*='linear-gradient'] {
+    background: rgba(255, 107, 53, 0.15) !important;
+}
