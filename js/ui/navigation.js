@@ -13,6 +13,17 @@ export function showSection(id) {
         sec.style.display = 'none';
     });
 
+    // Restore audit cache if switching to terminal/audit
+    if (id === 'terminal' || id === 'audit') {
+        if (window.auditCache && typeof window.renderAudit === 'function') {
+            setTimeout(() => {
+                try {
+                    window.renderAudit(window.auditCache);
+                } catch (_) {}
+            }, 50);
+        }
+    }
+
     if (id === 'audit') {
         if (typeof window.initAudit === 'function' && !window.auditLoading) {
             setTimeout(() => {

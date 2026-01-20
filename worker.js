@@ -3727,14 +3727,33 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     let inswap_fb_balance = 0;
                     let inswap_fennec_balance = 0;
                     try {
-                        const inswapBalanceUrl = `${SWAP_BASE}/brc20-swap/balance?address=${address}`;
-                        const inswapRes = await fetch(inswapBalanceUrl, { headers: upstreamHeaders }).catch(() => null);
-                        if (inswapRes && inswapRes.ok) {
-                            const inswapData = await inswapRes.json().catch(() => null);
-                            if (inswapData?.data) {
-                                // InSwap returns balance in sats or tokens
-                                inswap_fb_balance = Number(inswapData.data.fb_balance || 0) / 1e8 || 0;
-                                inswap_fennec_balance = Number(inswapData.data.fennec_balance || 0) || 0;
+                        // Try multiple InSwap endpoints for balance
+                        const endpoints = [
+                            `${SWAP_BASE}/brc20-swap/balance?address=${address}`,
+                            `${SWAP_BASE}/swap-v1/balance?address=${address}`,
+                            `https://inswap.cc/fractal-api/swap-v1/balance?address=${address}`
+                        ];
+
+                        for (const endpoint of endpoints) {
+                            const inswapRes = await fetch(endpoint, { headers: upstreamHeaders }).catch(() => null);
+                            if (inswapRes && inswapRes.ok) {
+                                const inswapData = await inswapRes.json().catch(() => null);
+                                if (inswapData?.code === 0 && inswapData?.data) {
+                                    // InSwap returns balance - check multiple field names
+                                    const fbBal =
+                                        inswapData.data.fb_balance ||
+                                        inswapData.data.sFB___000 ||
+                                        inswapData.data.sFB ||
+                                        0;
+                                    const fennecBal = inswapData.data.fennec_balance || inswapData.data.FENNEC || 0;
+
+                                    // Balance might be in sats (if > 1000000) or already in BTC
+                                    inswap_fb_balance =
+                                        Number(fbBal) > 1000000 ? Number(fbBal) / 1e8 : Number(fbBal) || 0;
+                                    inswap_fennec_balance = Number(fennecBal) || 0;
+
+                                    if (inswap_fb_balance > 0 || inswap_fennec_balance > 0) break;
+                                }
                             }
                         }
                     } catch (_) {}
@@ -3758,6 +3777,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
 
                         const existing = tokenMap.get(ticker);
                         const balance = Number(token.overallBalance || token.balance || 0);
+
+                        // CRITICAL: Filter out zero-balance tokens
+                        if (balance <= 0) continue;
 
                         if (!existing || balance > existing.balance) {
                             tokenMap.set(ticker, {
@@ -3823,25 +3845,61 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     response.stages.collections = 'done';
 
                     // STAGE D: CALCULATE NETWORTH
-                    // Get FB price (assume 1 FB = $X, or fetch from market)
+                    // Get FB price from CoinGecko (Bitcoin as proxy for Fractal Bitcoin)
                     let fb_price_usd = 0;
+                    let fennec_price_usd = 0;
+
                     try {
-                        // Try to get FB price from InSwap or external API
-                        // For now, use a placeholder or fetch from pool
+                        // Fetch Bitcoin price from CoinGecko as proxy for FB
+                        const priceRes = await fetch(
+                            'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd',
+                            {
+                                headers: { Accept: 'application/json' }
+                            }
+                        ).catch(() => null);
+
+                        if (priceRes && priceRes.ok) {
+                            const priceData = await priceRes.json().catch(() => null);
+                            fb_price_usd = Number(priceData?.bitcoin?.usd || 0);
+                        }
+                    } catch (_) {}
+
+                    // Get FENNEC price from InSwap pool
+                    try {
                         const poolUrl = `${SWAP_BASE}/brc20-swap/pool_info?tick0=FENNEC&tick1=sFB___000`;
                         const poolRes = await fetch(poolUrl, { headers: upstreamHeaders }).catch(() => null);
                         if (poolRes && poolRes.ok) {
                             const poolData = await poolRes.json().catch(() => null);
-                            // Extract price if available, otherwise default to 0
-                            fb_price_usd = Number(poolData?.data?.fb_price_usd || 0);
+                            if (poolData?.code === 0 && poolData?.data) {
+                                // Calculate FENNEC price: (FB_amount / FENNEC_amount) * FB_price_usd
+                                const fennecAmount = Number(poolData.data.amount0 || poolData.data.amount1 || 0);
+                                const fbAmount = Number(poolData.data.amount1 || poolData.data.amount0 || 0);
+                                if (fennecAmount > 0 && fbAmount > 0) {
+                                    const fennec_in_fb = fbAmount / fennecAmount;
+                                    fennec_price_usd = fennec_in_fb * fb_price_usd;
+                                }
+                            }
                         }
                     } catch (_) {}
 
                     // Calculate total networth
                     const fb_value = response.native_balance * fb_price_usd;
-                    const tokens_value = response.brc20_summary.list.reduce((sum, t) => sum + (t.value_usd || 0), 0);
+
+                    // Calculate token values with FENNEC price
+                    let tokens_value = 0;
+                    for (const token of response.brc20_summary.list) {
+                        if (token.ticker === 'FENNEC') {
+                            tokens_value += token.balance * fennec_price_usd;
+                            token.price_usd = fennec_price_usd;
+                            token.value_usd = token.balance * fennec_price_usd;
+                        } else {
+                            tokens_value += token.value_usd || 0;
+                        }
+                    }
+
                     response.total_usd = fb_value + tokens_value;
                     response.fb_price_usd = fb_price_usd;
+                    response.fennec_price_usd = fennec_price_usd;
 
                     // Holdings summary for UI
                     response.holdings = {
