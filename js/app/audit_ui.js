@@ -35,9 +35,7 @@ async function fetchAuditData(abortSignal = null, silent = false, options = null
     const pubkey = String(window.userPubkey || '').trim();
     const __opts = options && typeof options === 'object' ? options : null;
     const __noCache = !!(__opts && (__opts.noCache || __opts.forceNoCache));
-    const __fast = false;
     const __cacheBust = __noCache ? `&_ts=${Date.now()}` : '';
-    const __fastParam = '';
     const url = pubkey
         ? `${BACKEND_URL}?action=fractal_audit&address=${encodeURIComponent(addr)}&pubkey=${encodeURIComponent(pubkey)}${__cacheBust}`
         : `${BACKEND_URL}?action=fractal_audit&address=${encodeURIComponent(addr)}${__cacheBust}`;
@@ -107,12 +105,16 @@ async function fetchAuditData(abortSignal = null, silent = false, options = null
             }
 
             const prices = apiData.prices && typeof apiData.prices === 'object' ? apiData.prices : {};
+
+            // IMPORTANT: ordinals_count is the SUM of all collections' total field
+            // This represents the total number of inscription items across ALL collections
+            // totalCollections is the count of unique collection types
             const stats = {
                 total: Number(apiData.total_inscriptions_count || 0) || 0,
                 runes: Number(apiData.runes_count || 0) || 0,
                 brc20: Number(apiData.brc20_count || 0) || 0,
-                ordinals: Number(apiData.ordinals_count || 0) || 0,
-                totalCollections: Number(apiData.total_collections || 0) || 0,
+                ordinals: Number(apiData.ordinals_count || 0) || 0, // SUM of all items in all collections
+                totalCollections: Number(apiData.total_collections || 0) || 0, // Number of unique collection types
                 lp: Number(apiData.lp_count || 0) || 0
             };
 
@@ -1290,25 +1292,28 @@ async function initAudit() {
 
 // Run the audit
 async function runAudit(forceRefresh = false) {
-    // ПРОВЕРКА 1: Если аудит уже идет — игнорируем перезапуск (предотвращаем самосаботаж)
-    if (auditLoading) {
-        console.log('Audit already in progress, ignoring restart request.');
-        // Опционально: убедиться, что лоадер виден
-        try {
-            const container = document.getElementById('auditContainer');
-            if (container && !container.innerHTML.includes('SCANNING IDENTITY')) {
-                // если лоадер скрыт, можно показать его снова (но обычно он уже виден)
-            }
-        } catch (_) {}
+    // GUARD 1: Если аудит уже загружается — игнорируем повторный клик
+    if (window.auditLoading) {
+        console.log('[Audit] Already loading, ignoring restart.');
         return;
     }
 
-    // ПРОВЕРКА 2: 2-минутный кэш — если аудит был < 2 минут назад и не forceRefresh, используем кэш
+    // GUARD 2: Если данные есть и НЕ forceRefresh — просто восстанавливаем UI (не сканируем заново)
+    if (!forceRefresh && window.auditIdentity) {
+        console.log('[Audit] Restoring cached audit data...');
+        try {
+            if (typeof initAudit === 'function') __fennecInitAuditSafe();
+        } catch (err) {
+            console.warn('[Audit] Failed to restore cached data:', err);
+        }
+        return;
+    }
+
+    // GUARD 3: 2-минутный кэш — если аудит был < 2 минут назад и не forceRefresh, используем кэш
     const now = Date.now();
     const lastSuccess = Number(window.lastAuditSuccessTime || 0) || 0;
     if (!forceRefresh && auditIdentity && lastSuccess > 0 && now - lastSuccess < 120000) {
-        console.log('Using fresh cached audit (< 2 min), no server request.');
-        // UI уже должен показывать данные; если нет — можно обновить
+        console.log('[Audit] Using fresh cached audit (< 2 min), no server request.');
         try {
             if (typeof initAudit === 'function') __fennecInitAuditSafe();
         } catch (_) {}
