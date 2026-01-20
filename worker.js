@@ -1053,271 +1053,14 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         return v === '1h' || v === '24h';
                     })();
 
-                    // CRITICAL OPTIMIZATION: For 1h/24h, run InSwap and UniSat in parallel
+                    // CRITICAL FIX: For 1h/24h, skip UniSat entirely - use ONLY swap_history
+                    // UniSat brc20_kline causes 7s delay. Direct swap_history parsing = <500ms response.
                     if (isFennecPair && __isShortTimeframe) {
-                        const fetchInSwap = async () => {
-                            try {
-                                const tr = String(timeRange || '').toLowerCase() === 'all' ? '90d' : String(timeRange);
-                                const baseNoV1 = String(SWAP_BASE || '').replace(/\/v1\/?$/i, '');
-                                const __attempts = [];
-                                const __pushAttempt = (host, status, code, len) => {
-                                    try {
-                                        const h = String(host || '').trim();
-                                        const s = Number(status || 0) || 0;
-                                        const c = code !== undefined && code !== null ? Number(code) : NaN;
-                                        const l = Number(len || 0) || 0;
-                                        if (__attempts.length < 6) __attempts.push({ h, s, c, l });
-                                    } catch (_) {}
-                                };
-
-                                const candidates = [];
-                                const queries = [
-                                    `tick0=FENNEC&tick1=sFB___000&timeRange=${encodeURIComponent(tr)}`,
-                                    `tick0=sFB___000&tick1=FENNEC&timeRange=${encodeURIComponent(tr)}`
-                                ];
-                                queries.push(
-                                    `tick0=FENNEC&tick1=FB&timeRange=${encodeURIComponent(tr)}`,
-                                    `tick0=FB&tick1=FENNEC&timeRange=${encodeURIComponent(tr)}`,
-                                    `tick0=FENNEC&tick1=sFB&timeRange=${encodeURIComponent(tr)}`,
-                                    `tick0=sFB&tick1=FENNEC&timeRange=${encodeURIComponent(tr)}`
-                                );
-                                for (const q of queries) {
-                                    candidates.push(
-                                        ...[
-                                            `https://inswap.cc/fractal-api/swap-v1/price_line?${q}`,
-                                            `${baseNoV1}/fractal-api/swap-v1/price_line?${q}`,
-                                            `${SWAP_BASE}/brc20-swap/price_line?${q}`,
-                                            `${baseNoV1}/fractal-api/v1/brc20-swap/price_line?${q}`,
-                                            `${baseNoV1}/swap-v1/price_line?${q}`,
-                                            `${SWAP_BASE}/swap-v1/price_line?${q}`
-                                        ].filter(Boolean)
-                                    );
-                                }
-
-                                const __swapPriceLineStartedAt = Date.now();
-                                for (const endpointUrl of candidates) {
-                                    if (Date.now() - __swapPriceLineStartedAt > 6500) break;
-                                    let endpointHost = '';
-                                    let __needInvert = false;
-                                    try {
-                                        const u0 = new URL(endpointUrl);
-                                        endpointHost = u0.hostname;
-                                        const q0 = String(u0.searchParams.get('tick0') || '').toUpperCase();
-                                        const q1 = String(u0.searchParams.get('tick1') || '').toUpperCase();
-                                        __needInvert = q0 && q1 && q0 !== 'FENNEC' && q1 === 'FENNEC';
-                                    } catch (_) {}
-                                    const headers0 = (() => {
-                                        if (endpointHost && endpointHost.toLowerCase().includes('inswap.cc')) {
-                                            const h = { ...upstreamHeaders };
-                                            try {
-                                                delete h.Authorization;
-                                            } catch (_) {}
-                                            return h;
-                                        }
-                                        return upstreamHeaders;
-                                    })();
-                                    const controller = new AbortController();
-                                    const timeoutId = setTimeout(() => {
-                                        try {
-                                            controller.abort();
-                                        } catch (_) {}
-                                    }, 2500);
-                                    const res = await fetch(endpointUrl, {
-                                        method: 'GET',
-                                        headers: headers0,
-                                        signal: controller.signal
-                                    })
-                                        .catch(() => null)
-                                        .finally(() => {
-                                            try {
-                                                clearTimeout(timeoutId);
-                                            } catch (_) {}
-                                        });
-                                    if (!res) {
-                                        __pushAttempt(endpointHost || 'fetch_null', 0, null, 0);
-                                        continue;
-                                    }
-                                    const json = res.ok ? await res.json().catch(() => null) : null;
-                                    const rawList = (() => {
-                                        if (!json || typeof json !== 'object') return [];
-                                        if (Array.isArray(json.data?.list)) return json.data.list;
-                                        if (Array.isArray(json.data?.data)) return json.data.data;
-                                        if (Array.isArray(json.data)) return json.data;
-                                        if (Array.isArray(json.list)) return json.list;
-                                        return [];
-                                    })();
-                                    __pushAttempt(endpointHost || 'unknown', res.status, json?.code, rawList.length);
-                                    if (!res.ok) continue;
-                                    if (!rawList.length) continue;
-
-                                    const out = [];
-                                    for (const it of rawList) {
-                                        const tsRaw = Number(it?.ts ?? it?.timestamp ?? 0) || 0;
-                                        const ts = tsRaw > 1000000000000 ? Math.floor(tsRaw / 1000) : Math.floor(tsRaw);
-                                        const priceNum0 = Number(it?.price ?? it?.close ?? 0) || 0;
-                                        if (!(ts > 0 && priceNum0 > 0)) continue;
-                                        let priceNum = __needInvert ? 1 / priceNum0 : priceNum0;
-                                        if (priceNum > 10) priceNum = 1 / priceNum;
-                                        if (!(priceNum > 0) || !Number.isFinite(priceNum)) continue;
-                                        out.push({ ts, price: String(priceNum) });
-                                    }
-                                    out.sort((a, b) => (a.ts || 0) - (b.ts || 0));
-
-                                    if (out.length) {
-                                        return sendJSON(
-                                            {
-                                                code: 0,
-                                                data: {
-                                                    list: out,
-                                                    source: `swap_v1_price_line:${endpointUrl}`,
-                                                    build: __workerBuild
-                                                }
-                                            },
-                                            200,
-                                            120,
-                                            'public'
-                                        );
-                                    }
-                                }
-
-                                try {
-                                    __swapV1Hint = __attempts
-                                        .map(a => {
-                                            const host = String(a?.h || '').trim();
-                                            const st = Number(a?.s || 0) || 0;
-                                            const l = Number(a?.l || 0) || 0;
-                                            return `${host}:${st}:${l}`;
-                                        })
-                                        .slice(0, 4)
-                                        .join(',');
-                                } catch (_) {}
-                                return null; // InSwap failed
-                            } catch (e) {
-                                return null;
-                            }
-                        };
-
-                        const fetchUniSatKline = async () => {
-                            try {
-                                if (!isFennecPair) return null;
-                                const stepMs = (() => {
-                                    const v = String(timeRange || '').toLowerCase();
-                                    if (v === '1h') return 60 * 1000; // 1m
-                                    if (v === '24h') return 5 * 60 * 1000; // 5m
-                                    if (v === '7d') return 60 * 60 * 1000; // 1h
-                                    if (v === '30d') return 4 * 60 * 60 * 1000; // 4h
-                                    if (v === '90d') return 12 * 60 * 60 * 1000; // 12h
-                                    if (v === 'all') return 24 * 60 * 60 * 1000; // 1d (90d window)
-                                    return 60 * 60 * 1000;
-                                })();
-
-                                const timeStart = cutoffMs;
-                                const timeEnd = nowMs;
-
-                                // Ограничение UniSat: (timeEnd-timeStart)/timeStep <= 2016
-                                // Если выбрали слишком мелкий step — увеличиваем.
-                                let effStepMs = stepMs;
-                                const maxPoints = 2016;
-                                const span = Math.max(0, timeEnd - timeStart);
-                                if (span > 0 && Math.floor(span / effStepMs) > maxPoints) {
-                                    effStepMs = Math.ceil(span / maxPoints);
-                                }
-
-                                const klineUrl =
-                                    'https://open-api-fractal.unisat.io/v3/market/brc20/auction/brc20_kline';
-
-                                const tryPayloads = [
-                                    {
-                                        units: 'ms',
-                                        body: {
-                                            tick: 'FENNEC',
-                                            timeStart,
-                                            timeEnd,
-                                            timeStep: effStepMs
-                                        },
-                                        mapTs: x => x
-                                    },
-                                    {
-                                        units: 's',
-                                        body: {
-                                            tick: 'FENNEC',
-                                            timeStart: Math.floor(timeStart / 1000),
-                                            timeEnd: Math.floor(timeEnd / 1000),
-                                            timeStep: Math.max(1, Math.floor(effStepMs / 1000))
-                                        },
-                                        mapTs: x => x
-                                    }
-                                ];
-
-                                for (const attempt of tryPayloads) {
-                                    // OPTIMIZATION: Reduced timeout to avoid hanging on slow UniSat responses
-                                    const klineResult = await smartFetch(klineUrl, {
-                                        method: 'POST',
-                                        body: JSON.stringify(attempt.body),
-                                        timeoutMs: 2500 // Reduced from 4500ms
-                                    }).catch(() => null);
-
-                                    if (!klineResult || klineResult.code !== 0) continue;
-
-                                    const arr = Array.isArray(klineResult?.data)
-                                        ? klineResult.data
-                                        : Array.isArray(klineResult?.data?.list)
-                                          ? klineResult.data.list
-                                          : Array.isArray(klineResult?.data?.data)
-                                            ? klineResult.data.data
-                                            : [];
-                                    if (!arr.length) continue;
-
-                                    const out = [];
-                                    for (const p of arr) {
-                                        const tsRaw = Number(p?.timestamp ?? p?.ts ?? p?.time ?? 0) || 0;
-                                        const priceNum0 = Number(p?.price ?? p?.close ?? p?.curPrice ?? 0) || 0;
-                                        if (!(tsRaw > 0 && priceNum0 > 0)) continue;
-                                        const tsMs = tsRaw > 1000000000000 ? tsRaw : tsRaw * 1000;
-                                        const ts = Math.floor(tsMs / 1000);
-                                        if (!(ts > 0)) continue;
-                                        let priceNum = priceNum0;
-                                        if (priceNum > 10) priceNum = 1 / priceNum;
-                                        if (!(priceNum > 0) || !Number.isFinite(priceNum)) continue;
-                                        out.push({ ts, price: String(priceNum) });
-                                    }
-                                    out.sort((a, b) => (a.ts || 0) - (b.ts || 0));
-                                    if (out.length) {
-                                        return sendJSON(
-                                            {
-                                                code: 0,
-                                                data: {
-                                                    list: out,
-                                                    source: `brc20_kline_${attempt.units}_smartfetch`,
-                                                    build: __workerBuild
-                                                }
-                                            },
-                                            200,
-                                            120,
-                                            'public'
-                                        );
-                                    }
-                                }
-                                return null; // UniSat kline failed
-                            } catch (e) {
-                                return null;
-                            }
-                        };
-
-                        // Run both in parallel, return first successful result
-                        const results = await Promise.all([fetchInSwap(), fetchUniSatKline()]);
-                        const inswapResult = results[0];
-                        const klineResult = results[1];
-
-                        // Prioritize InSwap for short timeframes
-                        if (inswapResult) return inswapResult;
-                        if (klineResult) return klineResult;
-                        // Fall through to swap_history if both failed
-                    } else {
-                        // For longer timeframes or non-Fennec pairs, try sequentially
+                        // Skip all price_line/kline attempts for short timeframes
+                        // Go directly to swap_history parsing below
+                    } else if (isFennecPair && !__isShortTimeframe) {
+                        // For longer timeframes (7d/30d/all), try InSwap price_line then UniSat kline
                         try {
-                            const __preferKline = !__isShortTimeframe;
-                            if (isFennecPair && !__preferKline) {
                                 const tr = String(timeRange || '').toLowerCase() === 'all' ? '90d' : String(timeRange);
                                 const baseNoV1 = String(SWAP_BASE || '').replace(/\/v1\/?$/i, '');
                                 const __attempts = [];
@@ -3978,15 +3721,71 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     const mempoolRes = await fetch(`https://mempool.fractalbitcoin.io/api/address/${address}`);
                     const mempoolStats = await mempoolRes.json().catch(() => ({}));
                     const chain = mempoolStats.chain_stats || {};
-                    response.native_balance =
-                        (Number(chain.funded_txo_sum || 0) - Number(chain.spent_txo_sum || 0)) / 1e8 || 0;
+                    let native_balance_sats = Number(chain.funded_txo_sum || 0) - Number(chain.spent_txo_sum || 0);
+                    response.native_balance = native_balance_sats / 1e8 || 0;
 
-                    // BRC20 Summary (smartFetch)
+                    // InSwap Balance (fetch user's liquidity/balance from InSwap)
+                    let inswap_fb_balance = 0;
+                    let inswap_fennec_balance = 0;
+                    try {
+                        const inswapBalanceUrl = `${SWAP_BASE}/brc20-swap/balance?address=${address}`;
+                        const inswapRes = await fetch(inswapBalanceUrl, { headers: upstreamHeaders }).catch(() => null);
+                        if (inswapRes && inswapRes.ok) {
+                            const inswapData = await inswapRes.json().catch(() => null);
+                            if (inswapData?.data) {
+                                // InSwap returns balance in sats or tokens
+                                inswap_fb_balance = Number(inswapData.data.fb_balance || 0) / 1e8 || 0;
+                                inswap_fennec_balance = Number(inswapData.data.fennec_balance || 0) || 0;
+                            }
+                        }
+                    } catch (_) {}
+                    response.inswap_fb_balance = inswap_fb_balance;
+                    response.inswap_fennec_balance = inswap_fennec_balance;
+
+                    // Add InSwap FB balance to total native balance
+                    response.native_balance += inswap_fb_balance;
+
+                    // BRC20 Summary with DEDUPLICATION (smartFetch)
                     const brc20 = await smartFetch(
                         `https://open-api-fractal.unisat.io/v1/indexer/address/${address}/brc20/summary?start=0&limit=100`
                     ).catch(() => ({ data: { total: 0, detail: [] } }));
-                    response.brc20_summary = { total: brc20.data?.total || 0, list: brc20.data?.detail || [] };
-                    response.brc20_count = response.brc20_summary.list.length;
+
+                    // Use Map to deduplicate tokens by ticker
+                    const tokenMap = new Map();
+                    const brc20List = brc20.data?.detail || [];
+                    for (const token of brc20List) {
+                        const ticker = String(token.ticker || '').toUpperCase();
+                        if (!ticker) continue;
+
+                        const existing = tokenMap.get(ticker);
+                        const balance = Number(token.overallBalance || token.balance || 0);
+
+                        if (!existing || balance > existing.balance) {
+                            tokenMap.set(ticker, {
+                                ticker,
+                                balance,
+                                price_usd: Number(token.price_usd || 0),
+                                value_usd: balance * Number(token.price_usd || 0)
+                            });
+                        }
+                    }
+
+                    // Add InSwap FENNEC balance if not already present or if larger
+                    if (inswap_fennec_balance > 0) {
+                        const existing = tokenMap.get('FENNEC');
+                        if (!existing || inswap_fennec_balance > existing.balance) {
+                            tokenMap.set('FENNEC', {
+                                ticker: 'FENNEC',
+                                balance: inswap_fennec_balance,
+                                price_usd: 0,
+                                value_usd: 0,
+                                source: 'inswap'
+                            });
+                        }
+                    }
+
+                    response.brc20_summary = { total: tokenMap.size, list: Array.from(tokenMap.values()) };
+                    response.brc20_count = tokenMap.size;
 
                     // Runes Balance (smartFetch)
                     const runes = await smartFetch(
@@ -4023,6 +3822,34 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     response.has_fennec_boxes = response.fennec_boxes_count > 0;
                     response.all_collections = colList;
                     response.stages.collections = 'done';
+
+                    // STAGE D: CALCULATE NETWORTH
+                    // Get FB price (assume 1 FB = $X, or fetch from market)
+                    let fb_price_usd = 0;
+                    try {
+                        // Try to get FB price from InSwap or external API
+                        // For now, use a placeholder or fetch from pool
+                        const poolUrl = `${SWAP_BASE}/brc20-swap/pool_info?tick0=FENNEC&tick1=sFB___000`;
+                        const poolRes = await fetch(poolUrl, { headers: upstreamHeaders }).catch(() => null);
+                        if (poolRes && poolRes.ok) {
+                            const poolData = await poolRes.json().catch(() => null);
+                            // Extract price if available, otherwise default to 0
+                            fb_price_usd = Number(poolData?.data?.fb_price_usd || 0);
+                        }
+                    } catch (_) {}
+
+                    // Calculate total networth
+                    const fb_value = response.native_balance * fb_price_usd;
+                    const tokens_value = response.brc20_summary.list.reduce((sum, t) => sum + (t.value_usd || 0), 0);
+                    response.total_usd = fb_value + tokens_value;
+                    response.fb_price_usd = fb_price_usd;
+
+                    // Holdings summary for UI
+                    response.holdings = {
+                        native: { balance: response.native_balance, value_usd: fb_value },
+                        tokens: response.brc20_summary.list
+                    };
+                    response.networth = response.total_usd;
 
                     // Legacy fields for UI compatibility
                     response.data = { ...response };

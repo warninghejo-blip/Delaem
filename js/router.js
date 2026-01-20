@@ -90,39 +90,45 @@
         try {
             const path = pathname || window.location.pathname;
 
-            // Видаляємо 'active' з усіх навігаційних елементів
-            document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+            // Remove 'active' from all nav links and reset to inactive state
+            document.querySelectorAll('.nav-link').forEach(link => {
+                link.classList.remove('active', 'text-fennec', 'border-fennec', 'bg-fennec/10', 'rounded-md', 'p-2');
+                link.classList.add('text-muted-foreground', 'border-transparent', 'border-b-2');
+            });
 
-            // FIX: Use partial matching with includes() for better tab highlighting
-            // Check both data-link and href attributes for flexibility
-            let target = null;
+            try {
+                // FIX: Use partial matching with includes() for better tab highlighting
+                // Check both data-link and href attributes for flexibility
+                let target = null;
 
-            if (path.includes('/terminal')) {
-                target =
-                    document.querySelector('[data-link="/terminal"]') ||
-                    document.querySelector('a[href*="terminal"]') ||
-                    document.querySelector('a[href*="/terminal"]');
-            } else if (path.includes('/id')) {
-                target =
-                    document.querySelector('[data-link="/id"]') ||
-                    document.querySelector('a[href*="id"]') ||
-                    document.querySelector('a[href*="/id"]');
-            } else {
-                // Home page - check multiple variations
-                target =
-                    document.querySelector('[data-link="/index"]') ||
-                    document.querySelector('[data-link="/"]') ||
-                    document.querySelector('a[href*="index"]') ||
-                    document.querySelector('a[href="/"]') ||
-                    document.querySelector('a[href="./index.html"]');
-            }
-
-            if (target) {
-                target.classList.add('active');
-                // Also ensure proper styling classes are applied
-                if (!target.classList.contains('text-fennec')) {
-                    target.classList.add('text-fennec', 'bg-fennec/10');
+                if (path.includes('/terminal')) {
+                    target =
+                        document.querySelector('[data-link="/terminal"]') ||
+                        document.querySelector('a[href*="terminal"]') ||
+                        document.querySelector('a[href*="/terminal"]');
+                } else if (path.includes('/id')) {
+                    target =
+                        document.querySelector('[data-link="/id"]') ||
+                        document.querySelector('a[href*="id"]') ||
+                        document.querySelector('a[href*="/id"]');
+                } else {
+                    // Home page - check multiple variations
+                    target =
+                        document.querySelector('[data-link="/index"]') ||
+                        document.querySelector('[data-link="/"]') ||
+                        document.querySelector('a[href*="index"]') ||
+                        document.querySelector('a[href="/"]') ||
+                        document.querySelector('a[href="./index.html"]');
                 }
+
+                if (target) {
+                    target.classList.add('active');
+                    // Clean underline effect: remove muted color, add fennec color and border
+                    target.classList.remove('text-muted-foreground', 'border-transparent');
+                    target.classList.add('text-fennec', 'border-b-2', 'border-fennec');
+                }
+            } catch (err) {
+                console.warn('[Router] __setActiveNav error:', err);
             }
         } catch (err) {
             console.warn('[Router] __setActiveNav error:', err);
