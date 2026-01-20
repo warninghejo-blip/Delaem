@@ -3723,38 +3723,58 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     const native_balance_sats = Number(chain.funded_txo_sum || 0) - Number(chain.spent_txo_sum || 0);
                     response.native_balance = native_balance_sats / 1e8 || 0;
 
-                    // InSwap Balance (fetch user's liquidity/balance from InSwap)
+                    // InSwap Balance + Liquidity (restore old logic)
                     let inswap_fb_balance = 0;
                     let inswap_fennec_balance = 0;
                     try {
-                        // Try multiple InSwap endpoints for balance
-                        const endpoints = [
-                            `${SWAP_BASE}/brc20-swap/balance?address=${address}`,
-                            `${SWAP_BASE}/swap-v1/balance?address=${address}`,
-                            `https://inswap.cc/fractal-api/swap-v1/balance?address=${address}`
-                        ];
+                        const inswapBase = 'https://brc20-swap-fractal.unisat.io/brc20-swap/v1';
 
-                        for (const endpoint of endpoints) {
-                            const inswapRes = await fetch(endpoint, { headers: upstreamHeaders }).catch(() => null);
-                            if (inswapRes && inswapRes.ok) {
-                                const inswapData = await inswapRes.json().catch(() => null);
-                                if (inswapData?.code === 0 && inswapData?.data) {
-                                    // InSwap returns balance - check multiple field names
-                                    const fbBal =
-                                        inswapData.data.fb_balance ||
-                                        inswapData.data.sFB___000 ||
-                                        inswapData.data.sFB ||
-                                        0;
-                                    const fennecBal = inswapData.data.fennec_balance || inswapData.data.FENNEC || 0;
+                        // Fetch user balance
+                        const balanceUrl = `${inswapBase}/address/${address}/balance`;
+                        const balanceRes = await fetch(balanceUrl, { headers: upstreamHeaders }).catch(() => null);
+                        let balanceData = null;
+                        if (balanceRes && balanceRes.ok) {
+                            balanceData = await balanceRes.json().catch(() => null);
+                        }
 
-                                    // Balance might be in sats (if > 1000000) or already in BTC
-                                    inswap_fb_balance =
-                                        Number(fbBal) > 1000000 ? Number(fbBal) / 1e8 : Number(fbBal) || 0;
-                                    inswap_fennec_balance = Number(fennecBal) || 0;
+                        // Fetch user liquidity
+                        const liquidityUrl = `${inswapBase}/address/${address}/liquidity`;
+                        const liquidityRes = await fetch(liquidityUrl, { headers: upstreamHeaders }).catch(() => null);
+                        let liquidityData = null;
+                        if (liquidityRes && liquidityRes.ok) {
+                            liquidityData = await liquidityRes.json().catch(() => null);
+                        }
 
-                                    if (inswap_fb_balance > 0 || inswap_fennec_balance > 0) break;
+                        // Sum FB from balance
+                        if (balanceData?.data) {
+                            const fbBal = balanceData.data.sFB___000 || balanceData.data.sFB || 0;
+                            inswap_fb_balance += Number(fbBal) || 0;
+
+                            const fennecBal = balanceData.data.FENNEC || 0;
+                            inswap_fennec_balance += Number(fennecBal) || 0;
+                        }
+
+                        // Sum FB from liquidity positions
+                        if (liquidityData?.data?.list && Array.isArray(liquidityData.data.list)) {
+                            for (const lp of liquidityData.data.list) {
+                                if (lp.tick0 === 'sFB___000' || lp.tick0 === 'sFB') {
+                                    inswap_fb_balance += Number(lp.amount0 || 0);
+                                }
+                                if (lp.tick1 === 'sFB___000' || lp.tick1 === 'sFB') {
+                                    inswap_fb_balance += Number(lp.amount1 || 0);
+                                }
+                                if (lp.tick0 === 'FENNEC') {
+                                    inswap_fennec_balance += Number(lp.amount0 || 0);
+                                }
+                                if (lp.tick1 === 'FENNEC') {
+                                    inswap_fennec_balance += Number(lp.amount1 || 0);
                                 }
                             }
+                        }
+
+                        // Convert sats to BTC if needed
+                        if (inswap_fb_balance > 1000000) {
+                            inswap_fb_balance = inswap_fb_balance / 1e8;
                         }
                     } catch (_) {}
                     response.inswap_fb_balance = inswap_fb_balance;
@@ -3845,37 +3865,35 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     response.stages.collections = 'done';
 
                     // STAGE D: CALCULATE NETWORTH
-                    // Get FB price from CoinGecko (Bitcoin as proxy for Fractal Bitcoin)
+                    // Get FB price from Binance BTC/USDT as proxy
                     let fb_price_usd = 0;
                     let fennec_price_usd = 0;
 
                     try {
-                        // Fetch Bitcoin price from CoinGecko as proxy for FB
-                        const priceRes = await fetch(
-                            'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd',
-                            {
-                                headers: { Accept: 'application/json' }
-                            }
+                        // Fetch Bitcoin price from Binance as proxy for FB
+                        const binanceRes = await fetch(
+                            'https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT'
                         ).catch(() => null);
 
-                        if (priceRes && priceRes.ok) {
-                            const priceData = await priceRes.json().catch(() => null);
-                            fb_price_usd = Number(priceData?.bitcoin?.usd || 0);
+                        if (binanceRes && binanceRes.ok) {
+                            const binanceData = await binanceRes.json().catch(() => null);
+                            fb_price_usd = Number(binanceData?.price || 0);
                         }
                     } catch (_) {}
 
                     // Get FENNEC price from InSwap pool
                     try {
-                        const poolUrl = `${SWAP_BASE}/brc20-swap/pool_info?tick0=FENNEC&tick1=sFB___000`;
+                        const inswapBase = 'https://brc20-swap-fractal.unisat.io/brc20-swap/v1';
+                        const poolUrl = `${inswapBase}/pool/info?tick0=FENNEC&tick1=sFB___000`;
                         const poolRes = await fetch(poolUrl, { headers: upstreamHeaders }).catch(() => null);
                         if (poolRes && poolRes.ok) {
                             const poolData = await poolRes.json().catch(() => null);
-                            if (poolData?.code === 0 && poolData?.data) {
-                                // Calculate FENNEC price: (FB_amount / FENNEC_amount) * FB_price_usd
-                                const fennecAmount = Number(poolData.data.amount0 || poolData.data.amount1 || 0);
-                                const fbAmount = Number(poolData.data.amount1 || poolData.data.amount0 || 0);
-                                if (fennecAmount > 0 && fbAmount > 0) {
-                                    const fennec_in_fb = fbAmount / fennecAmount;
+                            if (poolData?.data) {
+                                // Calculate FENNEC price: FB_Reserve / FENNEC_Reserve * FB_price_usd
+                                const fennecReserve = Number(poolData.data.amount0 || 0);
+                                const fbReserve = Number(poolData.data.amount1 || 0);
+                                if (fennecReserve > 0 && fbReserve > 0 && fb_price_usd > 0) {
+                                    const fennec_in_fb = fbReserve / fennecReserve;
                                     fennec_price_usd = fennec_in_fb * fb_price_usd;
                                 }
                             }
