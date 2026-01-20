@@ -112,8 +112,9 @@
                         document.querySelector('a[href*="id"]') ||
                         document.querySelector('a[href*="/id"]');
                 } else {
-                    // Home page - check multiple variations
+                    // Home page (Vision) - prioritize #nav-home
                     target =
+                        document.getElementById('nav-home') ||
                         document.querySelector('[data-link="/index"]') ||
                         document.querySelector('[data-link="/"]') ||
                         document.querySelector('a[href*="index"]') ||

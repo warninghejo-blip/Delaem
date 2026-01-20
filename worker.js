@@ -3811,10 +3811,16 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         }
                     }
 
-                    // Add InSwap FENNEC balance if not already present or if larger
+                    // Add InSwap FENNEC balance - merge with existing or create new entry
                     if (inswap_fennec_balance > 0) {
                         const existing = tokenMap.get('FENNEC');
-                        if (!existing || inswap_fennec_balance > existing.balance) {
+                        if (existing) {
+                            // Merge: add InSwap balance to existing wallet balance
+                            existing.balance += inswap_fennec_balance;
+                            existing.value_usd = existing.balance * (existing.price_usd || 0);
+                            existing.source = existing.source ? `${existing.source}+inswap` : 'inswap';
+                        } else {
+                            // Create new FENNEC entry from InSwap
                             tokenMap.set('FENNEC', {
                                 ticker: 'FENNEC',
                                 balance: inswap_fennec_balance,
@@ -3823,6 +3829,17 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 source: 'inswap'
                             });
                         }
+                    }
+
+                    // Ensure FENNEC is always present in the list (even with 0 balance for tracking)
+                    if (!tokenMap.has('FENNEC')) {
+                        tokenMap.set('FENNEC', {
+                            ticker: 'FENNEC',
+                            balance: 0,
+                            price_usd: 0,
+                            value_usd: 0,
+                            source: 'placeholder'
+                        });
                     }
 
                     response.brc20_summary = { total: tokenMap.size, list: Array.from(tokenMap.values()) };
@@ -3888,12 +3905,13 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         const poolRes = await fetch(poolUrl, { headers: upstreamHeaders }).catch(() => null);
                         if (poolRes && poolRes.ok) {
                             const poolData = await poolRes.json().catch(() => null);
-                            if (poolData?.data) {
-                                // Calculate FENNEC price: FB_Reserve / FENNEC_Reserve * FB_price_usd
-                                const fennecReserve = Number(poolData.data.amount0 || 0);
-                                const fbReserve = Number(poolData.data.amount1 || 0);
-                                if (fennecReserve > 0 && fbReserve > 0 && fb_price_usd > 0) {
-                                    const fennec_in_fb = fbReserve / fennecReserve;
+                            if (poolData?.code === 0 && poolData?.data) {
+                                // Calculate FENNEC price: (amount_sFB / amount_FENNEC) * FB_price_usd
+                                // tick0=FENNEC, tick1=sFB___000, so amount0=FENNEC, amount1=sFB
+                                const fennecAmount = Number(poolData.data.amount0 || 0);
+                                const sfbAmount = Number(poolData.data.amount1 || 0);
+                                if (fennecAmount > 0 && sfbAmount > 0 && fb_price_usd > 0) {
+                                    const fennec_in_fb = sfbAmount / fennecAmount;
                                     fennec_price_usd = fennec_in_fb * fb_price_usd;
                                 }
                             }
