@@ -1052,7 +1052,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             (tick1Cmp === 'FENNEC' && (tick0Cmp === 'SFB___000' || tick0Cmp === 'SFB'));
                         const __preferKline = (() => {
                             const v = String(timeRange || '').toLowerCase();
-                            return v === '1h' || v === '24h';
+                            // OPTIMIZATION: For short timeframes (1h, 24h), prefer InSwap (faster)
+                            // For longer timeframes, prefer kline (more stable)
+                            return !(v === '1h' || v === '24h');
                         })();
                         if (isFennecPair && !__preferKline) {
                             const tr = String(timeRange || '').toLowerCase() === 'all' ? '90d' : String(timeRange);
@@ -1249,9 +1251,11 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             ];
 
                             for (const attempt of tryPayloads) {
+                                // OPTIMIZATION: Reduced timeout to avoid hanging on slow UniSat responses
                                 const klineResult = await smartFetch(klineUrl, {
                                     method: 'POST',
-                                    body: JSON.stringify(attempt.body)
+                                    body: JSON.stringify(attempt.body),
+                                    timeoutMs: 2500 // Reduced from 4500ms
                                 }).catch(() => null);
 
                                 if (!klineResult || klineResult.code !== 0) continue;
@@ -3163,27 +3167,13 @@ Request Context: ${JSON.stringify(context, null, 2)}
                 const walletOnly = url.searchParams.get('walletOnly') === 'true';
                 if (walletOnly) {
                     try {
-                        const res = await fetch(`${FRACTAL_BASE}/indexer/address/${address}/brc20/${tick}/info`, {
-                            headers: upstreamHeaders
-                        });
-                        if (!res.ok) {
-                            return sendJSON({ error: `API error: ${res.status} ${res.statusText}` }, res.status);
+                        const result = await smartFetch(
+                            `${FRACTAL_BASE}/indexer/address/${address}/brc20/${tick}/info`
+                        );
+                        if (!result || result.code !== 0) {
+                            return sendJSON({ error: `API error: ${result?.msg || 'Unknown error'}` }, 500);
                         }
-                        const text = await res.text();
-                        if (!text || text.trim().length === 0) {
-                            return sendJSON({ error: 'Empty response from API' }, 500);
-                        }
-                        try {
-                            return sendJSON(JSON.parse(text));
-                        } catch (parseError) {
-                            return sendJSON(
-                                {
-                                    error: `JSON parse error: ${parseError.message}`,
-                                    raw: text.substring(0, 200)
-                                },
-                                500
-                            );
-                        }
+                        return sendJSON(result);
                     } catch (e) {
                         return sendJSON({ error: `Fetch error: ${e.message}` }, 500);
                     }

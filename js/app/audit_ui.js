@@ -1359,7 +1359,11 @@ async function runAudit(forceRefresh = false) {
 
     const hasContainer = !!container;
 
+    // FIX: Set auditLoading = true BEFORE starting the process
     auditLoading = true;
+    try {
+        window.auditLoading = true;
+    } catch (_) {}
     const requestId = ++currentAuditRequestId;
     // НЕ АБОРТИРУЕМ текущий процесс — пусть завершается сам
     // if (currentAuditAbortController) currentAuditAbortController.abort(); // УБРАНО
@@ -1495,9 +1499,9 @@ async function runAudit(forceRefresh = false) {
                                                                                                     <div class="w-full max-w-md bg-red-900/20 border border-red-500/50 p-4 rounded-xl text-red-200">
                                                                                                         <p class="font-bold mb-2">Fennec ID library missing</p>
                                                                                                         <p class="text-sm mb-4">generateRecursiveChildHTML() is not available.</p>
-                                                                                                    </div>
-                                                                                                `;
-        auditLoading = false;
+                                                                                            </div>
+                                                                                        `;
+        // FIX: Don't set auditLoading = false here - let finally block handle it
         return;
     }
 
@@ -1544,7 +1548,7 @@ async function runAudit(forceRefresh = false) {
                             if (finalProgressBar) finalProgressBar.style.width = '100%';
                             if (finalProgressPercent) finalProgressPercent.textContent = '100%';
                         } catch (_) {}
-                        auditLoading = false;
+                        // FIX: auditLoading = false moved to finally block only
                         try {
                             if (window.__fennecAuditUi && typeof window.__fennecAuditUi === 'object') {
                                 window.__fennecAuditUi.addr = addr;
@@ -1586,7 +1590,7 @@ async function runAudit(forceRefresh = false) {
                         if (finalProgressBar) finalProgressBar.style.width = '100%';
                         if (finalProgressPercent) finalProgressPercent.textContent = '100%';
                     } catch (_) {}
-                    auditLoading = false;
+                    // FIX: auditLoading = false moved to finally block only
                     try {
                         if (window.__fennecAuditUi && typeof window.__fennecAuditUi === 'object') {
                             window.__fennecAuditUi.addr = addr;
@@ -1629,7 +1633,7 @@ async function runAudit(forceRefresh = false) {
                             if (finalProgressBar) finalProgressBar.style.width = '100%';
                             if (finalProgressPercent) finalProgressPercent.textContent = '100%';
                         } catch (_) {}
-                        auditLoading = false;
+                        // FIX: auditLoading = false moved to finally block only
                         try {
                             if (window.__fennecAuditUi && typeof window.__fennecAuditUi === 'object') {
                                 window.__fennecAuditUi.addr = addr;
@@ -1663,7 +1667,7 @@ async function runAudit(forceRefresh = false) {
                     window.__scanProgressInterval = null;
                 }
             } catch (_) {}
-            auditLoading = false;
+            // FIX: auditLoading = false moved to finally block only
             return;
         }
 
@@ -1729,7 +1733,7 @@ async function runAudit(forceRefresh = false) {
             }
         } catch (_) {}
 
-        auditLoading = false;
+        // FIX: auditLoading = false moved to finally block only
         try {
             if (window.__fennecAuditUi && typeof window.__fennecAuditUi === 'object') {
                 window.__fennecAuditUi.addr = addr;
@@ -1779,7 +1783,7 @@ async function runAudit(forceRefresh = false) {
                 }
             } catch (_) {}
             try {
-                auditLoading = false;
+                // FIX: auditLoading = false moved to finally block only
                 if (typeof initAudit === 'function') __fennecInitAuditSafe();
             } catch (_) {}
             return;
@@ -1821,6 +1825,9 @@ async function runAudit(forceRefresh = false) {
         } catch (_) {}
         if (requestId === currentAuditRequestId) {
             auditLoading = false;
+            try {
+                window.auditLoading = false;
+            } catch (_) {}
         }
     }
 }

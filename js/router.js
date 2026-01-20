@@ -36,22 +36,97 @@
 
     function __routeKey(pathname) {
         const p = __resolvePathname(pathname).toLowerCase();
-        if (p.endsWith('/terminal.html')) return 'terminal';
-        if (p.endsWith('/id.html')) return 'audit';
+        if (p.includes('/terminal')) return 'terminal';
+        if (p.includes('/id')) return 'audit';
         return 'home';
+    }
+
+    function __renderSkeleton(pathname) {
+        const view = __getView();
+        if (!view) return;
+
+        const key = __routeKey(pathname);
+        let skeletonHtml = '';
+
+        if (key === 'home') {
+            skeletonHtml = `
+                <div class="flex flex-col items-center justify-center min-h-[60vh] space-y-6 animate-pulse">
+                    <div class="bg-white/5 rounded-xl h-32 w-64"></div>
+                    <div class="bg-white/5 rounded-xl h-12 w-96"></div>
+                    <div class="bg-white/5 rounded-xl h-12 w-48"></div>
+                </div>
+            `;
+        } else if (key === 'terminal') {
+            skeletonHtml = `
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-pulse">
+                    <div class="bg-white/5 rounded-xl h-[500px] w-full"></div>
+                    <div class="bg-white/5 rounded-xl h-[500px] w-full"></div>
+                </div>
+            `;
+        } else if (key === 'audit') {
+            let hasExistingAudit = false;
+            try {
+                const userAddr = String(window.userAddress || '').trim();
+                if (userAddr) {
+                    const cached = localStorage.getItem(`audit_v3_${userAddr}`);
+                    hasExistingAudit = !!cached;
+                }
+            } catch (_) {}
+
+            const cardClass = hasExistingAudit ? 'bg-white/5 opacity-80' : 'bg-white/3 opacity-50';
+
+            skeletonHtml = `
+                <div class="flex flex-col items-center justify-center min-h-[60vh]">
+                    <div class="${cardClass} rounded-[32px] animate-pulse" style="width: 360px; height: 520px;"></div>
+                    <div class="bg-white/5 rounded-xl h-12 w-48 mt-8 animate-pulse"></div>
+                </div>
+            `;
+        }
+
+        view.innerHTML = skeletonHtml;
     }
 
     function __setActiveNav(pathname) {
         try {
-            document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
-        } catch (_) {}
+            const path = pathname || window.location.pathname;
 
-        const key = __routeKey(pathname);
-        const id = key === 'terminal' ? 'nav-terminal' : key === 'audit' ? 'nav-audit' : 'nav-home';
-        try {
-            const el = document.getElementById(id);
-            if (el) el.classList.add('active');
-        } catch (_) {}
+            // Видаляємо 'active' з усіх навігаційних елементів
+            document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+
+            // FIX: Use partial matching with includes() for better tab highlighting
+            // Check both data-link and href attributes for flexibility
+            let target = null;
+
+            if (path.includes('/terminal')) {
+                target =
+                    document.querySelector('[data-link="/terminal"]') ||
+                    document.querySelector('a[href*="terminal"]') ||
+                    document.querySelector('a[href*="/terminal"]');
+            } else if (path.includes('/id')) {
+                target =
+                    document.querySelector('[data-link="/id"]') ||
+                    document.querySelector('a[href*="id"]') ||
+                    document.querySelector('a[href*="/id"]');
+            } else {
+                // Home page - check multiple variations
+                target =
+                    document.querySelector('[data-link="/index"]') ||
+                    document.querySelector('[data-link="/"]') ||
+                    document.querySelector('a[href*="index"]') ||
+                    document.querySelector('a[href="/"]') ||
+                    document.querySelector('a[href="./index.html"]');
+            }
+
+            if (target) {
+                target.classList.add('active');
+                // Also ensure proper styling classes are applied
+                if (!target.classList.contains('text-fennec')) {
+                    target.classList.add('text-fennec', 'bg-fennec/10');
+                }
+            }
+        } catch (err) {
+            console.warn('[Router] __setActiveNav error:', err);
+        }
     }
 
     function __runRouteInit(pathname) {
@@ -102,6 +177,12 @@
         try {
             if (typeof window.updateVisionFennecIdCta === 'function') window.updateVisionFennecIdCta();
         } catch (_) {}
+
+        if (window.userAddress && typeof window.updateWalletUI === 'function') {
+            try {
+                window.updateWalletUI();
+            } catch (_) {}
+        }
     }
 
     async function __fetchHtml(pathname, search) {
@@ -204,9 +285,13 @@
                 view.classList.add(FADE_CLASS);
             } catch (_) {}
 
-            await new Promise(r => setTimeout(r, FADE_MS));
-
             const pathname = __resolvePathname(targetUrl.pathname);
+            __renderSkeleton(pathname);
+
+            try {
+                view.classList.remove(FADE_CLASS);
+            } catch (_) {}
+
             const html = await __fetchHtml(pathname, targetUrl.search);
             const extracted = __extractViewInner(__stripScripts(html));
 
@@ -331,9 +416,17 @@
         } catch (_) {}
     });
 
-    try {
-        __setActiveNav(window.location.pathname);
-        __runRouteInit(window.location.pathname);
-        __bindPrefetchLinks();
-    } catch (_) {}
+    function __initRouter() {
+        try {
+            __setActiveNav(window.location.pathname);
+            __runRouteInit(window.location.pathname);
+            __bindPrefetchLinks();
+        } catch (_) {}
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', __initRouter);
+    } else {
+        __initRouter();
+    }
 })();
