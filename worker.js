@@ -3700,12 +3700,12 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     response.tx_count = tx_count;
                     response.stages.tx_count = 'done';
 
-                    // 2. Genesis Transaction Timestamp (if wallet has transactions)
+                    // 2. Genesis Transaction Timestamp (Simple "Total - 1" Logic)
                     response.first_tx_ts = 0;
                     if (tx_count > 0) {
-                        const genesisStart = tx_count - 1;
+                        const offset = tx_count - 1;
                         const genesisHistory = await smartFetch(
-                            `https://open-api-fractal.unisat.io/v1/indexer/address/${address}/history?start=${genesisStart}&limit=1`
+                            `https://open-api-fractal.unisat.io/v1/indexer/address/${address}/history?cursor=${offset}&size=1`
                         ).catch(() => null);
                         const genesisTx = genesisHistory?.data?.detail?.[0];
                         if (genesisTx?.timestamp) {
