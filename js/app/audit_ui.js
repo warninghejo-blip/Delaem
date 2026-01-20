@@ -2023,10 +2023,38 @@ try {
     }
 } catch (_) {}
 
+// Restore audit state when navigating back to terminal page
+function restoreAuditState() {
+    try {
+        // Check if we have cached audit data
+        if (window.auditIdentity && typeof window.auditIdentity === 'object') {
+            console.log('[Audit] Restoring cached audit state...');
+            // Re-render the audit UI with cached data
+            if (typeof initAudit === 'function') {
+                __fennecInitAuditSafe();
+                return true;
+            }
+        }
+        return false;
+    } catch (err) {
+        console.warn('[Audit] Failed to restore state:', err);
+        return false;
+    }
+}
+
 // Экспорт в window для использования в других модулях
 try {
     window.fetchAuditData = fetchAuditData;
+    window.restoreAuditState = restoreAuditState;
 } catch (_) {}
 
-export { prefetchFennecAudit, initAudit, runAudit, refreshAudit, startAuditRefreshTimer, fetchAuditData };
+export {
+    prefetchFennecAudit,
+    initAudit,
+    runAudit,
+    refreshAudit,
+    startAuditRefreshTimer,
+    fetchAuditData,
+    restoreAuditState
+};
 export { FENNEC_ID_EPOCH, fennecIdKeyV2, fennecMintedCardsKey, __fennecInitAuditSafe, MIN_AUDIT_REFRESH_INTERVAL };

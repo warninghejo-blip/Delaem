@@ -12,7 +12,7 @@
         transform: translateX(0);
     }
     100% {
-        transform: translateX(-100%);
+        transform: translateX(-50%);
     }
 }
 
@@ -26,6 +26,7 @@
     padding-left: 0 !important;
     display: flex !important;
     align-items: center !important;
+    overflow: hidden !important;
 }
 
 #liveTicker .ticker-marquee {
@@ -33,7 +34,7 @@
     align-items: center;
     width: max-content;
     will-change: transform;
-    animation: tickerMarquee 35s linear infinite;
+    animation: tickerMarquee 20s linear infinite;
 }
 
 #liveTicker .ticker-item {
