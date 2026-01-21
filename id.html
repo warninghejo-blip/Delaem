@@ -562,7 +562,7 @@
                         <div class="flex justify-between items-end mb-4">
                             <div>
                                 <div class="text-[10px] text-gray-500 uppercase tracking-widest font-bold">
-                                    Market Price (FB)
+                                    Market Price (<span id="chartPairLabel">FENNEC/FB</span>)
                                 </div>
                                 <div class="flex items-baseline gap-3">
                                     <div
@@ -819,7 +819,7 @@
                                 class="w-full bg-fennec text-black font-black text-xl py-4 rounded-xl mt-6 hover:bg-white hover:scale-[1.01] transition shadow-[0_0_20px_rgba(255,107,53,0.3)] tracking-wide flex items-center justify-center gap-2"
                                 data-t="swap_action"
                             >
-                                <img src="img/phav.png" class="w-6 h-6 inline-block object-contain" /> GET FENNEC
+                                <img src="img/phav.png" class="w-6 h-6 inline-block object-contain" /> SWAP
                             </button>
 
                             <!-- Recent Swaps -->
@@ -992,6 +992,12 @@
                                         class="text-xs text-fennec hover:text-white bg-fennec/10 px-4 py-2 rounded-lg border border-fennec/30 transition hover:bg-fennec/20"
                                     >
                                         Create Transfer Inscription
+                                    </button>
+                                    <button
+                                        id="btn-one-step-deposit"
+                                        class="text-xs text-black font-bold bg-fennec px-4 py-2 rounded-lg border border-fennec/30 transition hover:bg-white ml-2"
+                                    >
+                                        One-Step Deposit
                                     </button>
                                 </div>
                             </div>

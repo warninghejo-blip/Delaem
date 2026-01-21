@@ -68,15 +68,19 @@ export async function handleAuditAction(ctx) {
     const headers = upstreamHeaders && typeof upstreamHeaders === 'object' ? upstreamHeaders : {};
     const disableInswap = !!__disableInswap;
 
+    const mempoolHeaders = {
+        'User-Agent': 'Mozilla/5.0',
+        Accept: 'application/json',
+        Origin: 'https://fennecbtc.xyz',
+        Referer: 'https://fennecbtc.xyz/'
+    };
+
     const fetchMempoolStats = async addr => {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 2500);
         try {
-            const res = await fetch(`https://mempool.fractalbitcoin.io/api/address/${addr}`, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0',
-                    Accept: 'application/json'
-                },
+            const res = await fetch(`https://mempool.fractalbitcoin.io/api/address/${encodeURIComponent(addr)}`, {
+                headers: mempoolHeaders,
                 signal: controller.signal
             });
             if (!res || !res.ok) return null;
@@ -86,6 +90,40 @@ export async function handleAuditAction(ctx) {
         } finally {
             clearTimeout(timeoutId);
         }
+    };
+
+    const fetchMempoolFirstTxTs = async (addr, maxPages = 20) => {
+        let oldest = 0;
+        let afterTxid = '';
+        const pages = Math.max(1, Number(maxPages || 0) || 1);
+        for (let page = 0; page < pages; page += 1) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 3500);
+            try {
+                const suffix = afterTxid ? `?after_txid=${encodeURIComponent(afterTxid)}` : '';
+                const url = `https://mempool.fractalbitcoin.io/api/address/${encodeURIComponent(addr)}/txs${suffix}`;
+                const res = await fetch(url, { headers: mempoolHeaders, signal: controller.signal });
+                if (!res || !res.ok) break;
+                const data = await res.json().catch(() => null);
+                if (!Array.isArray(data) || data.length === 0) break;
+                for (const tx of data) {
+                    const blockTime = Number(tx?.status?.block_time || 0) || 0;
+                    if (blockTime > 0 && (!oldest || blockTime < oldest)) {
+                        oldest = blockTime;
+                    }
+                }
+                const last = data[data.length - 1];
+                const nextTxid = last && last.txid ? String(last.txid).trim() : '';
+                if (!nextTxid || data.length < 25) break;
+                afterTxid = nextTxid;
+            } catch (_) {
+                void _;
+                break;
+            } finally {
+                clearTimeout(timeoutId);
+            }
+        }
+        return oldest;
     };
 
     const fetchSwapJson = async pathWithQuery => {
@@ -146,7 +184,7 @@ export async function handleAuditAction(ctx) {
         response.tx_count = tx_count;
         response.stages.tx_count = 'done';
 
-        // 2. Genesis Transaction Timestamp (Simple "Total - 1" Logic)
+        // 2. Genesis Transaction Timestamp (UniSat → mempool fallback)
         response.first_tx_ts = 0;
         if (tx_count > 0) {
             const offset = tx_count - 1;
@@ -156,6 +194,14 @@ export async function handleAuditAction(ctx) {
             const genesisTx = genesisHistory?.data?.detail?.[0];
             if (genesisTx?.timestamp) {
                 response.first_tx_ts = Number(genesisTx.timestamp) || 0;
+            }
+
+            if (!response.first_tx_ts) {
+                const maxPages = Math.min(40, Math.ceil(tx_count / 25)) || 1;
+                const mempoolFirstTs = await fetchMempoolFirstTxTs(address, maxPages).catch(() => 0);
+                if (mempoolFirstTs > 0) {
+                    response.first_tx_ts = Number(mempoolFirstTs) || 0;
+                }
             }
         }
         response.stages.history = 'done';

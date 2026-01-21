@@ -54,6 +54,14 @@ import {
 
 import { BACKEND_URL, T_SFB, T_FENNEC, T_BTC, T_SBTC, safeFetchJson, __fennecDedupe } from '../js/app/core.js';
 
+try {
+    if (typeof window !== 'undefined' && typeof window.showError !== 'function') {
+        installUtilsGlobals();
+    }
+} catch (e) {
+    console.error('Failed to install utils globals (early):', e);
+}
+
 if (window.FENNEC_APP_INITIALIZED) {
     try {
         console.warn('FENNEC app already initialized (duplicate load), continuing.');
@@ -649,6 +657,9 @@ window.refreshFennecIdStatus = async function (force = false, _allowWalletScan =
         const addr = String(userAddress || window.userAddress || '').trim();
         if (!addr) {
             window.__fennecIdStatus = { address: '', hasId: false, inscriptionId: '', updatedAt: 0, src: '' };
+            try {
+                if (typeof window.__syncFennecIdButtonsUI === 'function') window.__syncFennecIdButtonsUI();
+            } catch (_) {}
             return window.__fennecIdStatus;
         }
 
@@ -694,6 +705,9 @@ window.refreshFennecIdStatus = async function (force = false, _allowWalletScan =
             src
         };
         window.__fennecIdStatus = out;
+        try {
+            if (typeof window.__syncFennecIdButtonsUI === 'function') window.__syncFennecIdButtonsUI();
+        } catch (_) {}
         return out;
     } catch (_) {
         return { address: '', hasId: false, inscriptionId: '', updatedAt: 0, checkedAt: Date.now(), src: 'error' };
@@ -1253,6 +1267,9 @@ window.disconnectWallet = function (opts) {
     } catch (_) {}
 
     try {
+        if (typeof window.refreshFennecIdStatus === 'function') window.refreshFennecIdStatus(true);
+    } catch (_) {}
+    try {
         if (typeof window.initAudit === 'function') setTimeout(() => window.initAudit(), 0);
     } catch (_) {}
 };
@@ -1761,11 +1778,17 @@ function setDepositFee(speed) {
     const fastEl = document.getElementById('dep-fee-fast');
     const customEl = document.getElementById('dep-fee-custom');
     const customInput = document.getElementById('dep-fee-custom-input');
+    const mediumVal = document.getElementById('dep-fee-medium-value');
+    const fastVal = document.getElementById('dep-fee-fast-value');
 
     if (speed === 'custom') {
         if (customInput) {
             customInput.style.display = 'block';
             customInput.focus();
+        }
+        const customFee = Number(customInput?.value || 0);
+        if (Number.isFinite(customFee) && customFee >= 1) {
+            depositFeeRate = customFee;
         }
         // Highlight custom button, reset others
         if (customEl)
@@ -1777,6 +1800,8 @@ function setDepositFee(speed) {
         if (fastEl)
             fastEl.className =
                 'flex-1 py-2 text-xs font-bold border transition cursor-pointer border-white/10 text-gray-500 hover:text-white';
+        if (mediumVal) mediumVal.className = 'text-[10px] text-gray-600';
+        if (fastVal) fastVal.className = 'text-[10px] text-gray-600';
         return;
     }
 
@@ -1789,6 +1814,8 @@ function setDepositFee(speed) {
     if (customEl)
         customEl.className =
             'flex-1 py-2 text-xs font-bold border transition cursor-pointer border-white/10 text-gray-500 hover:text-white';
+    if (mediumVal) mediumVal.className = `text-[10px] ${speed === 'medium' ? 'text-fennec/70' : 'text-gray-600'}`;
+    if (fastVal) fastVal.className = `text-[10px] ${speed === 'fast' ? 'text-fennec/70' : 'text-gray-600'}`;
     if (customInput) customInput.style.display = 'none';
 }
 
@@ -1797,8 +1824,11 @@ function setDepositFeeCustom(value) {
     if (fee && fee >= 1) {
         depositFeeRate = fee;
         const customEl = document.getElementById('dep-fee-custom');
+        const customInput = document.getElementById('dep-fee-custom-input');
         const mediumEl = document.getElementById('dep-fee-medium');
         const fastEl = document.getElementById('dep-fee-fast');
+        const mediumVal = document.getElementById('dep-fee-medium-value');
+        const fastVal = document.getElementById('dep-fee-fast-value');
         if (customEl)
             customEl.className =
                 'flex-1 py-2 text-xs font-bold border transition cursor-pointer border-fennec bg-fennec/10 text-fennec';
@@ -1808,6 +1838,9 @@ function setDepositFeeCustom(value) {
         if (fastEl)
             fastEl.className =
                 'flex-1 py-2 text-xs font-bold border transition cursor-pointer border-white/10 text-gray-500 hover:text-white';
+        if (customInput) customInput.style.display = 'block';
+        if (mediumVal) mediumVal.className = 'text-[10px] text-gray-600';
+        if (fastVal) fastVal.className = 'text-[10px] text-gray-600';
     }
 }
 
@@ -1817,11 +1850,17 @@ function setWithdrawFee(speed) {
     const fastEl = document.getElementById('wd-fee-fast');
     const customEl = document.getElementById('wd-fee-custom');
     const customInput = document.getElementById('wd-fee-custom-input');
+    const mediumVal = document.getElementById('wd-fee-medium-value');
+    const fastVal = document.getElementById('wd-fee-fast-value');
 
     if (speed === 'custom') {
         if (customInput) {
             customInput.style.display = 'block';
             customInput.focus();
+        }
+        const customFee = Number(customInput?.value || 0);
+        if (Number.isFinite(customFee) && customFee >= 1) {
+            withdrawFeeRate = customFee;
         }
         // Highlight custom button, reset others
         if (customEl)
@@ -1833,6 +1872,8 @@ function setWithdrawFee(speed) {
         if (fastEl)
             fastEl.className =
                 'flex-1 py-2 text-xs font-bold border transition cursor-pointer border-white/10 text-gray-500 hover:text-white';
+        if (mediumVal) mediumVal.className = 'text-[10px] text-gray-600';
+        if (fastVal) fastVal.className = 'text-[10px] text-gray-600';
         return;
     }
 
@@ -1845,6 +1886,8 @@ function setWithdrawFee(speed) {
     if (customEl)
         customEl.className =
             'flex-1 py-2 text-xs font-bold border transition cursor-pointer border-white/10 text-gray-500 hover:text-white';
+    if (mediumVal) mediumVal.className = `text-[10px] ${speed === 'medium' ? 'text-fennec/70' : 'text-gray-600'}`;
+    if (fastVal) fastVal.className = `text-[10px] ${speed === 'fast' ? 'text-fennec/70' : 'text-gray-600'}`;
     if (customInput) customInput.style.display = 'none';
 }
 
@@ -1853,8 +1896,11 @@ function setWithdrawFeeCustom(value) {
     if (fee && fee >= 1) {
         withdrawFeeRate = fee;
         const customEl = document.getElementById('wd-fee-custom');
+        const customInput = document.getElementById('wd-fee-custom-input');
         const mediumEl = document.getElementById('wd-fee-medium');
         const fastEl = document.getElementById('wd-fee-fast');
+        const mediumVal = document.getElementById('wd-fee-medium-value');
+        const fastVal = document.getElementById('wd-fee-fast-value');
         if (customEl)
             customEl.className =
                 'flex-1 py-2 text-xs font-bold border transition cursor-pointer border-fennec bg-fennec/10 text-fennec';
@@ -1864,6 +1910,9 @@ function setWithdrawFeeCustom(value) {
         if (fastEl)
             fastEl.className =
                 'flex-1 py-2 text-xs font-bold border transition cursor-pointer border-white/10 text-gray-500 hover:text-white';
+        if (customInput) customInput.style.display = 'block';
+        if (mediumVal) mediumVal.className = 'text-[10px] text-gray-600';
+        if (fastVal) fastVal.className = 'text-[10px] text-gray-600';
     }
 }
 
@@ -2570,7 +2619,7 @@ async function depositSelectedInscriptions() {
     }
 
     const insc = selectedInscriptions[0];
-    await executeDeposit(insc.inscriptionId);
+    await executeDeposit(insc.inscriptionId, insc.amount);
     selectedInscriptions.length = 0;
     updateSelectedAmount();
 }
@@ -2584,46 +2633,100 @@ async function openInscriptionModal() {
     setDepositToken('FENNEC');
     setTimeout(loadFennecInscriptions, 300);
 }
+function __resolveFennecAmountInput() {
+    return document.getElementById('depFennecAmount') || document.querySelector('#dep-brc20-ui input[type="number"]');
+}
+
+function __resolveFennecCreateButton() {
+    return document.getElementById('btnCreateInscription') || document.getElementById('btn-create-inscription');
+}
+
+function __resolveFennecOneStepButton() {
+    return document.getElementById('btn-one-step-deposit');
+}
+
+function __resolveBrc20Tick(fallbackTick) {
+    const candidate = String(fallbackTick || depositToken || 'FENNEC').trim();
+    if (!candidate) return 'FENNEC';
+    const upper = candidate.toUpperCase();
+    if (upper === 'BTC' || upper === 'SFB' || upper === 'FB') return 'FENNEC';
+    return upper;
+}
+
 // CREATE FENNEC TRANSFER INSCRIPTION
 async function createFennecInscription() {
     if (!userAddress) return window.connectWallet();
 
+    const tick = __resolveBrc20Tick('FENNEC');
+
     // Try to get amount from input field (may not exist if UI changed)
-    const amountInput =
-        document.getElementById('depFennecAmount') || document.querySelector('#dep-brc20-ui input[type="number"]');
+    const amountInput = __resolveFennecAmountInput();
     if (!amountInput) {
-        const amountStr = prompt('Enter FENNEC amount to create transfer inscription:');
+        const amountStr = prompt(`Enter ${tick} amount to create transfer inscription:`);
         if (!amountStr) return;
         const amount = parseFloat(amountStr);
         if (!amount || amount <= 0) return alert('Enter valid amount');
-        await createInscriptionWithAmount(amount);
+        await createInscriptionWithAmount(amount, { tick, buttonEl: __resolveFennecCreateButton() });
         return;
     }
 
     const amount = parseFloat(amountInput.value);
     if (!amount || amount <= 0) return alert('Enter amount');
-    await createInscriptionWithAmount(amount);
+    await createInscriptionWithAmount(amount, { tick, buttonEl: __resolveFennecCreateButton() });
 }
 
-async function createInscriptionWithAmount(amount) {
-    const btn = document.getElementById('btnCreateInscription');
-    btn.innerText = 'CREATING...';
-    btn.disabled = true;
+async function createFennecInscriptionAndDeposit() {
+    if (!userAddress) return window.connectWallet();
+
+    const tick = __resolveBrc20Tick('FENNEC');
+
+    const amountInput = __resolveFennecAmountInput();
+    if (!amountInput) {
+        const amountStr = prompt(`Enter ${tick} amount to deposit in one step:`);
+        if (!amountStr) return;
+        const amount = parseFloat(amountStr);
+        if (!amount || amount <= 0) return alert('Enter valid amount');
+        await createInscriptionWithAmount(amount, {
+            tick,
+            buttonEl: __resolveFennecOneStepButton(),
+            autoDeposit: true
+        });
+        return;
+    }
+
+    const amount = parseFloat(amountInput.value);
+    if (!amount || amount <= 0) return alert('Enter amount');
+    await createInscriptionWithAmount(amount, {
+        tick,
+        buttonEl: __resolveFennecOneStepButton(),
+        autoDeposit: true
+    });
+}
+
+async function createInscriptionWithAmount(amount, options = {}) {
+    const opts = options && typeof options === 'object' ? options : {};
+    const tick = String(opts.tick || 'FENNEC').trim() || 'FENNEC';
+    const btn = opts.buttonEl || __resolveFennecCreateButton();
+    const btnDefaultText = btn ? String(btn.innerText || '').trim() : '';
+    if (btn) {
+        btn.innerText = opts.autoDeposit ? 'CREATING...' : 'CREATING...';
+        btn.disabled = true;
+    }
 
     try {
         await checkFractalNetwork();
         if (!userPubkey) userPubkey = await window.unisat.getPublicKey();
 
         // Step 1: Create BRC-20 TRANSFER inscription
-        btn.innerText = 'CREATING TRANSFER...';
+        if (btn) btn.innerText = 'CREATING TRANSFER...';
         console.log('=== CREATING BRC-20 TRANSFER INSCRIPTION ===');
-        console.log(`Amount: ${amount} FENNEC`);
+        console.log(`Amount: ${amount} ${tick}`);
 
         // Create transfer JSON
         const transferData = {
             p: 'brc-20',
             op: 'transfer',
-            tick: 'FENNEC',
+            tick,
             amt: amount.toString()
         };
 
@@ -2690,30 +2793,68 @@ async function createInscriptionWithAmount(amount) {
         pendingInscriptions.push({
             orderId: orderId,
             amount: amount,
-            tick: 'FENNEC',
+            tick,
             status: 'pending',
             createdAt: Date.now()
         });
         localStorage.setItem('pending_inscriptions', JSON.stringify(pendingInscriptions));
 
         // Step 4: Start tracking inscription status in background
-        trackInscriptionStatus(orderId, amount);
+        trackInscriptionStatus(orderId, amount, {
+            tick,
+            onReady: opts.autoDeposit
+                ? async inscriptionId => {
+                      try {
+                          await new Promise(r => setTimeout(r, 3500));
+                          await executeDeposit(inscriptionId, amount, { tick });
+                      } catch (e) {
+                          console.error('Auto-deposit error:', e);
+                          const msg = `Auto-deposit failed: ${e?.message || String(e)}`;
+                          if (typeof window.showError === 'function') {
+                              window.showError(msg);
+                          } else {
+                              const errorMsg = document.getElementById('errorMsg');
+                              const errorModal = document.getElementById('errorModal');
+                              if (errorMsg) errorMsg.innerText = msg;
+                              if (errorModal) errorModal.classList.remove('hidden');
+                              else alert(msg);
+                          }
+                      }
+                  }
+                : null
+        });
 
-        btn.innerText = 'CREATING...';
-        showSuccess(`Inscription order created! It will appear in the list when ready. Order ID: ${orderId}`);
+        if (btn) btn.innerText = 'CREATING...';
+        if (opts.autoDeposit) {
+            showSuccess(`Transfer created! Auto-deposit will start once it's ready. Order ID: ${orderId}`);
+        } else {
+            showSuccess(`Inscription order created! It will appear in the list when ready. Order ID: ${orderId}`);
+        }
     } catch (e) {
         console.error('Inscription creation error:', e);
         document.getElementById('errorMsg').innerText = e.message || String(e);
         document.getElementById('errorModal').classList.remove('hidden');
-        btn.innerText = 'CREATE TRANSFER INSCRIPTION';
+        if (btn) {
+            btn.innerText = btnDefaultText || (opts.autoDeposit ? 'ONE-STEP DEPOSIT' : 'CREATE TRANSFER INSCRIPTION');
+            btn.disabled = false;
+        }
+        return;
+    }
+
+    if (btn) {
+        btn.innerText = btnDefaultText || (opts.autoDeposit ? 'ONE-STEP DEPOSIT' : 'CREATE TRANSFER INSCRIPTION');
         btn.disabled = false;
     }
 }
 
 // TRACK INSCRIPTION STATUS (background polling)
-async function trackInscriptionStatus(orderId, amount) {
+async function trackInscriptionStatus(orderId, amount, options = {}) {
+    const opts = options && typeof options === 'object' ? options : {};
+    const tick = String(opts.tick || 'FENNEC').trim() || 'FENNEC';
     let attempts = 0;
-    const maxAttempts = 120; // 10 minutes max
+    let resolved = false;
+    const maxAttempts = Math.max(1, Number(opts.maxAttempts || 120) || 120); // 10 minutes max
+    const intervalMs = Math.max(2000, Number(opts.intervalMs || 5000) || 5000);
 
     const checkStatus = async () => {
         attempts++;
@@ -2741,32 +2882,51 @@ async function trackInscriptionStatus(orderId, amount) {
                 const pendingInscriptions = JSON.parse(localStorage.getItem('pending_inscriptions') || '[]');
                 const index = pendingInscriptions.findIndex(p => p.orderId === orderId);
 
-                if (inscriptionId && (status === 'minted' || (status === 'inscribing' && inscriptionId))) {
+                const isMinted = status === 'minted' || status === 'complete' || status === 'completed';
+                const isFailed = status === 'closed' || status === 'refunded';
+                const hasInscriptionId = !!inscriptionId && String(inscriptionId).length > 10;
+                const allowEarly = hasInscriptionId && !isMinted && !isFailed;
+                if (hasInscriptionId && (isMinted || allowEarly)) {
                     // Inscription is ready!
                     if (index >= 0) {
-                        pendingInscriptions[index].status = 'ready';
+                        pendingInscriptions[index].status = isMinted ? 'ready' : status || 'inscribing';
                         pendingInscriptions[index].inscriptionId = inscriptionId;
-                        pendingInscriptions[index].readyAt = Date.now();
+                        if (isMinted) {
+                            pendingInscriptions[index].readyAt = Date.now();
+                        }
+                        pendingInscriptions[index].tick = pendingInscriptions[index].tick || tick;
                     }
                     localStorage.setItem('pending_inscriptions', JSON.stringify(pendingInscriptions));
                     console.log('Inscription ready:', inscriptionId);
 
+                    if (!resolved && typeof opts.onReady === 'function') {
+                        resolved = true;
+                        await opts.onReady(inscriptionId);
+                    }
+
                     // Refresh inscription modal if open
-                    if (!document.getElementById('inscriptionModal').classList.contains('hidden')) {
+                    const modal = document.getElementById('inscriptionModal');
+                    if (modal && !modal.classList.contains('hidden')) {
                         openInscriptionModal();
                     }
                     return; // Stop polling
-                } else if (status === 'closed' || status === 'refunded') {
+                } else if (isFailed) {
                     // Failed
                     if (index >= 0) {
                         pendingInscriptions[index].status = 'failed';
+                        pendingInscriptions[index].tick = pendingInscriptions[index].tick || tick;
                     }
                     localStorage.setItem('pending_inscriptions', JSON.stringify(pendingInscriptions));
+                    if (!resolved && typeof opts.onFail === 'function') {
+                        resolved = true;
+                        await opts.onFail(status);
+                    }
                     return; // Stop polling
                 } else {
                     // Still processing
                     if (index >= 0) {
                         pendingInscriptions[index].status = status;
+                        pendingInscriptions[index].tick = pendingInscriptions[index].tick || tick;
                     }
                     localStorage.setItem('pending_inscriptions', JSON.stringify(pendingInscriptions));
                 }
@@ -2777,17 +2937,21 @@ async function trackInscriptionStatus(orderId, amount) {
 
         // Continue polling if not ready and not exceeded max attempts
         if (attempts < maxAttempts) {
-            setTimeout(checkStatus, 5000); // Check every 5 seconds
+            setTimeout(checkStatus, intervalMs);
         } else {
             console.log('Inscription tracking timeout');
+            if (!resolved && typeof opts.onFail === 'function') {
+                resolved = true;
+                await opts.onFail('timeout');
+            }
         }
     };
 
     // Start checking
-    setTimeout(checkStatus, 5000);
+    setTimeout(checkStatus, intervalMs);
 }
 
-async function executeDeposit(inscriptionId) {
+async function executeDeposit(inscriptionId, amountOverride, options = {}) {
     const btn = document.getElementById('btnDepositSelected') || document.getElementById('btnDepositFennec');
     if (!btn) {
         console.error('Deposit button not found');
@@ -2796,7 +2960,8 @@ async function executeDeposit(inscriptionId) {
 
     // Find the inscription data to get amount
     const insc = selectedInscriptions.find(i => i.inscriptionId === inscriptionId);
-    const amount = insc ? insc.amount : 0;
+    const amount = insc ? insc.amount : Number(amountOverride || 0) || 0;
+    const tick = String(options?.tick || 'FENNEC').trim() || 'FENNEC';
 
     try {
         if (document.getElementById('inscriptionModal')) {
@@ -2805,32 +2970,66 @@ async function executeDeposit(inscriptionId) {
         if (!userPubkey) userPubkey = await window.unisat.getPublicKey();
 
         // Deposit FENNEC inscription (BRC-20 transfer)
-        btn.innerText = 'SIGNING...';
+        btn.innerText = 'CREATING DEPOSIT...';
         btn.disabled = true;
         const params = new URLSearchParams({
             inscriptionId: inscriptionId,
             pubkey: userPubkey,
-            address: userAddress
+            address: userAddress,
+            tick: tick,
+            amount: amount.toString(),
+            assetType: 'brc20',
+            networkType: 'FRACTAL_BITCOIN_MAINNET'
         });
 
         const url = `${BACKEND_URL}?action=create_deposit&${params.toString()}`;
         console.log('=== FENNEC DEPOSIT CREATE ===');
         console.log('URL:', url);
 
-        const res = await fetch(url).then(r => r.json());
-        console.log('Response:', JSON.stringify(res, null, 2));
-
-        if (res.code !== 0) throw new Error(res.msg || 'Failed to create deposit');
+        const __shouldRetryDeposit = msg => /nft|index|inscription/i.test(String(msg || ''));
+        const maxAttempts = 5;
+        let res = null;
+        let lastMsg = '';
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+            res = await fetch(url)
+                .then(r => r.json())
+                .catch(() => null);
+            console.log('Response:', JSON.stringify(res, null, 2));
+            if (res && res.code === 0) break;
+            lastMsg = res?.msg || res?.error || 'Failed to create deposit';
+            if (attempt < maxAttempts && __shouldRetryDeposit(lastMsg)) {
+                btn.innerText = `WAITING FOR INDEX (${attempt + 1}/${maxAttempts})...`;
+                await new Promise(r => setTimeout(r, 2500 * attempt));
+                continue;
+            }
+            throw new Error(lastMsg);
+        }
+        if (!res || res.code !== 0) throw new Error(lastMsg || 'Failed to create deposit');
         if (!res.data?.psbt) throw new Error('No PSBT returned');
 
         console.log('=== SIGNING FENNEC DEPOSIT PSBT ===');
-        const signedPsbt = await window.unisat.signPsbt(res.data.psbt, { autoFinalized: false });
+        btn.innerText = 'SIGNING...';
+        const signOptions = {};
+        if (res.data?.toSignInputs) {
+            signOptions.toSignInputs = res.data.toSignInputs;
+        }
+        if (res.data?.autoFinalized !== undefined) {
+            signOptions.autoFinalized = res.data.autoFinalized;
+        }
+        const resolvedSignOptions = Object.keys(signOptions).length > 0 ? signOptions : { autoFinalized: false };
+        const signedPsbt = await window.unisat.signPsbt(res.data.psbt, resolvedSignOptions);
         console.log('PSBT signed');
 
         // Confirm для BRC-20: ТРЕБУЕТСЯ inscriptionId по документации
         btn.innerText = 'CONFIRMING...';
         const confirmBody = {
+            address: userAddress,
+            amount: amount.toString(),
+            assetType: 'brc20',
+            networkType: 'FRACTAL_BITCOIN_MAINNET',
             psbt: signedPsbt,
+            pubkey: userPubkey,
+            tick: tick,
             inscriptionId: inscriptionId
         };
 
@@ -2857,7 +3056,7 @@ async function executeDeposit(inscriptionId) {
                 pendingInscriptions.push(inscriptionId);
                 localStorage.setItem('pendingDepositInscriptions', JSON.stringify(pendingInscriptions));
             }
-            trackDepositProgress(txid, 'FENNEC');
+            trackDepositProgress(txid, tick);
             showSuccess(`FENNEC deposit successful! TXID: ${txid}`);
             try {
                 if (typeof addPendingOperation === 'function') {
@@ -2867,7 +3066,7 @@ async function executeDeposit(inscriptionId) {
                         status: 'pending',
                         txid: __looksLikeTxid(txid) ? txid : '',
                         address: userAddress,
-                        tick: 'FENNEC',
+                        tick,
                         amount: amt,
                         chain: 'FRACTAL',
                         timestamp: Date.now()
@@ -2930,6 +3129,14 @@ async function setDepositToken(tok, options = {}) {
 
     if (!options.skipFetch) {
         updateDepositUI();
+        if (tok === 'FENNEC') {
+            try {
+                const cardsEl = document.getElementById('inscriptionCards');
+                if (cardsEl && typeof loadFennecInscriptions === 'function') {
+                    await loadFennecInscriptions(false);
+                }
+            } catch (_) {}
+        }
     }
 }
 
@@ -10807,6 +11014,7 @@ function oracleQuick(action) {
 try {
     window.depositSelectedInscriptions = depositSelectedInscriptions;
     window.createFennecInscription = createFennecInscription;
+    window.createFennecInscriptionAndDeposit = createFennecInscriptionAndDeposit;
     window.doWithdraw = doWithdraw;
     window.loadFees = loadFees;
     window.setDepositFee = setDepositFee;
@@ -10816,6 +11024,7 @@ try {
     window.updateDepositUI = updateDepositUI;
     window.updateWithdrawUI = updateWithdrawUI;
     window.setMaxFennecAmount = setMaxFennecAmount;
+    window.toggleInscription = toggleInscription;
     window.setWithdrawToken = setWithdrawToken;
     window.setMaxWithdrawAmount = setMaxWithdrawAmount;
     window.setDepositToken = setDepositToken;

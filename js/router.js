@@ -141,13 +141,17 @@
 
         if (key === 'terminal') {
             try {
-                if (typeof window.seedChartPriceFromCache === 'function') window.seedChartPriceFromCache();
+                if (typeof window.seedChartPriceFromCache === 'function') {
+                    window.seedChartPriceFromCache(window.currentSwapPair || 'FB_FENNEC');
+                }
             } catch (_) {}
             try {
                 if (typeof window.fetchReserves === 'function') window.fetchReserves();
             } catch (_) {}
             try {
-                if (typeof window.updatePriceData === 'function') window.updatePriceData();
+                if (typeof window.updatePriceData === 'function') {
+                    window.updatePriceData(false, window.currentSwapPair || 'FB_FENNEC');
+                }
             } catch (_) {}
             try {
                 if (document.getElementById('priceChart') && typeof window.initChart === 'function') {

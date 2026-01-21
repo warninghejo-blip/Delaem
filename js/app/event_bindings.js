@@ -244,11 +244,23 @@ export function initializeEventBindings() {
     }
 
     // Create inscription button
-    const createInscriptionBtn = document.getElementById('btn-create-inscription');
-    if (createInscriptionBtn) {
-        __bindOnce(createInscriptionBtn, 'click', () => {
+    const createInscriptionBtns = [
+        document.getElementById('btn-create-inscription'),
+        document.getElementById('btnCreateInscription')
+    ].filter(Boolean);
+    createInscriptionBtns.forEach(btn => {
+        __bindOnce(btn, 'click', () => {
             if (typeof window.createFennecInscription === 'function') {
                 window.createFennecInscription();
+            }
+        });
+    });
+
+    const oneStepDepositBtn = document.getElementById('btn-one-step-deposit');
+    if (oneStepDepositBtn) {
+        __bindOnce(oneStepDepositBtn, 'click', () => {
+            if (typeof window.createFennecInscriptionAndDeposit === 'function') {
+                window.createFennecInscriptionAndDeposit();
             }
         });
     }

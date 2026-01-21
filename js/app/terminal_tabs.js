@@ -88,6 +88,11 @@ export function switchTab(tab) {
         __refreshTerminalTab('withdraw', false);
     }
     if (tab === 'swap') {
+        try {
+            if (typeof window.setSwapPair === 'function') {
+                window.setSwapPair('FB_FENNEC');
+            }
+        } catch (_) {}
         __refreshTerminalTab('swap', false);
     }
     if (tab === 'pending') {

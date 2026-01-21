@@ -8,7 +8,15 @@ export function showNotification(message, type = 'info', duration = 3000) {
 
     const notification = document.createElement('div');
     notification.className = 'notification';
-    notification.textContent = message;
+    const title = document.createElement('div');
+    title.className = 'notification-title';
+    title.textContent = String(message ?? '');
+    notification.appendChild(title);
+
+    const time = document.createElement('div');
+    time.className = 'notification-time';
+    time.textContent = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    notification.appendChild(time);
 
     // Add type-specific styling
     if (type === 'error') notification.classList.add('notification-error');
@@ -18,7 +26,7 @@ export function showNotification(message, type = 'info', duration = 3000) {
     container.appendChild(notification);
 
     setTimeout(() => {
-        notification.classList.add('notification-fade-out');
+        notification.classList.add('exit');
         setTimeout(() => notification.remove(), 300);
     }, duration);
 }

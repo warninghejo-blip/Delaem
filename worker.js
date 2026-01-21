@@ -1032,12 +1032,23 @@ Request Context: ${JSON.stringify(context, null, 2)}
 
                     const __swapV1Hint = '';
                     const isFennecPair =
-                        (tick0Cmp === 'FENNEC' && (tick1Cmp === 'SFB___000' || tick1Cmp === 'SFB')) ||
-                        (tick1Cmp === 'FENNEC' && (tick0Cmp === 'SFB___000' || tick0Cmp === 'SFB'));
-                    // Use swap_history for all timeframes (fastest, keyless) for FENNEC pair.
-                    if (isFennecPair) {
-                        // Skip price_line/kline attempts; swap_history parsing below handles all ranges.
-                    }
+                        (tick0Cmp.includes('FENNEC') && tick1Cmp.includes('SFB')) ||
+                        (tick1Cmp.includes('FENNEC') && tick0Cmp.includes('SFB'));
+                    const isBtcPair = tick0Cmp.includes('SBTC') || tick1Cmp.includes('SBTC');
+                    const __pairTickParam = (() => {
+                        if (isBtcPair && tick0Cmp.includes('SFB')) {
+                            const sfb = tick0Cmp.includes('SFB') ? tick0 : tick1;
+                            const sbtc = tick0Cmp.includes('SBTC') ? tick0 : tick1;
+                            return `${sbtc}/${sfb}`;
+                        }
+                        if (isFennecPair) {
+                            const sfb = tick0Cmp.includes('SFB') ? tick0 : tick1;
+                            const fennec = tick0Cmp.includes('FENNEC') ? tick0 : tick1;
+                            return `${sfb}/${fennec}`;
+                        }
+                        return `${tick0}/${tick1}`;
+                    })();
+                    const __pairTickQuery = __pairTickParam ? `&tick=${encodeURIComponent(__pairTickParam)}` : '';
 
                     const startedAt = Date.now();
                     const limit = 500;
@@ -1067,7 +1078,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     while (page < MAX_PAGES) {
                         if (Date.now() - startedAt > 8500) break;
 
-                        let endpointUrl = `${SWAP_BASE}/brc20-swap/swap_history?start=${start}&limit=${limit}`;
+                        let endpointUrl = `${SWAP_BASE}/brc20-swap/swap_history?start=${start}&limit=${limit}${__pairTickQuery}`;
                         let res = null;
                         {
                             const controller = new AbortController();
@@ -1089,7 +1100,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                                 });
                         }
                         if (!res.ok && res.status === 404) {
-                            endpointUrl = `${SWAP_BASE}/indexer/brc20-swap/swap_history?start=${start}&limit=${limit}`;
+                            endpointUrl = `${SWAP_BASE}/indexer/brc20-swap/swap_history?start=${start}&limit=${limit}${__pairTickQuery}`;
                             const controller = new AbortController();
                             const timeoutId = setTimeout(() => {
                                 try {
@@ -1148,7 +1159,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             const aOut = Number(it?.amountOut || 0) || 0;
                             if (!tin || !tout || aIn <= 0 || aOut <= 0) continue;
 
-                            // Хотим price = FB per FENNEC
+                            // Хотим price = quote per base
                             let price = 0;
                             if (tinCmp === tick1Cmp && toutCmp === tick0Cmp) {
                                 // FENNEC -> FB

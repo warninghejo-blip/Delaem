@@ -9,10 +9,10 @@
 
 @keyframes tickerMarquee {
     0% {
-        transform: translateX(0);
+        transform: translateX(100%);
     }
     100% {
-        transform: translateX(-50%);
+        transform: translateX(-100%);
     }
 }
 
@@ -26,6 +26,9 @@
     padding-left: 0 !important;
     display: flex !important;
     align-items: center !important;
+    justify-content: flex-start !important;
+    width: 100% !important;
+    flex: 1 1 auto;
     overflow: hidden !important;
 }
 
@@ -105,6 +108,7 @@ body {
     color: #f3f3f3;
     min-height: 100vh;
     overflow-x: hidden;
+    scrollbar-gutter: stable;
 }
 
 body::before {
@@ -313,8 +317,10 @@ input[type='number'] {
         font-size: 10px !important;
         padding: 8px 0 !important;
     }
+}
 
-    /* Hide social icons on very small screens to prioritize navigation */
+@media (max-width: 520px) {
+    /* Hide social icons only on narrow screens to avoid layout jumps */
     header a[href*='twitter'],
     header a[href*='telegram'] {
         display: none;
@@ -984,6 +990,10 @@ button:active {
 }
 
 /* Notifications */
+#notificationsContainer {
+    width: min(360px, 92vw);
+    max-width: 92vw;
+}
 .notification {
     position: relative;
     display: flex;
@@ -1006,7 +1016,10 @@ button:active {
         inset 0 1px 0 rgba(255, 255, 255, 0.12),
         inset 0 -1px 0 rgba(255, 107, 53, 0.1);
     z-index: 10000;
-    min-width: 320px;
+    min-width: 0;
+    width: min(360px, 92vw);
+    max-width: 92vw;
+    box-sizing: border-box;
     margin-bottom: 12px;
     animation: slideIn 0.45s cubic-bezier(0.68, -0.55, 0.265, 1.55);
     backdrop-filter: blur(28px) saturate(1.4);
@@ -1019,6 +1032,7 @@ button:active {
     font-size: 14px;
     line-height: 1.25;
     letter-spacing: 0.02em;
+    overflow-wrap: anywhere;
 }
 .notification .notification-time {
     margin-top: 6px;

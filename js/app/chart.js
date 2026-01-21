@@ -1,4 +1,5 @@
-import { BACKEND_URL, safeFetchJson, __fennecDedupe } from './core.js';
+import { BACKEND_URL, safeFetchJson, __fennecDedupe, T_SFB, T_FENNEC, T_SBTC } from './core.js';
+import { getState, subscribe } from './state.js';
 
 // Chart.js is loaded globally via CDN in index.html
 // eslint-disable-next-line no-undef
@@ -9,6 +10,100 @@ try {
 } catch (_) {}
 
 const __FENNEC_PRICE_CACHE_VERSION = '2026-01-18-1';
+const __LEGACY_PRICE_KEY = 'fennec_prices';
+const __CHART_PAIRS = {
+    FB_FENNEC: {
+        base: T_FENNEC,
+        quote: T_SFB,
+        label: 'FENNEC/FB',
+        invertIfAbove: 10,
+        maxPrice: 10,
+        minPrice: 1e-12
+    },
+    BTC_FB: {
+        base: T_SBTC,
+        quote: T_SFB,
+        label: 'BTC/FB',
+        invertIfAbove: null,
+        maxPrice: 1e12,
+        minPrice: 1e-12
+    }
+};
+
+function __normalizePairKey(pair) {
+    const raw = String(pair || '')
+        .trim()
+        .toUpperCase();
+    return raw === 'BTC_FB' ? 'BTC_FB' : 'FB_FENNEC';
+}
+
+function __getSwapPairKey() {
+    try {
+        const statePair = typeof getState === 'function' ? getState('currentSwapPair') : null;
+        if (statePair) return __normalizePairKey(statePair);
+    } catch (_) {}
+    try {
+        if (window.currentSwapPair) return __normalizePairKey(window.currentSwapPair);
+    } catch (_) {}
+    return 'FB_FENNEC';
+}
+
+function __getChartPairMeta(pairKey) {
+    const key = __normalizePairKey(pairKey || __getSwapPairKey());
+    return __CHART_PAIRS[key] || __CHART_PAIRS.FB_FENNEC;
+}
+
+function __getPriceStorageKey(pairKey) {
+    const key = __normalizePairKey(pairKey);
+    return `fennec_prices_${key.toLowerCase()}`;
+}
+
+function __readStoredPrices(pairKey) {
+    try {
+        const key = __getPriceStorageKey(pairKey);
+        const raw = localStorage.getItem(key);
+        if (raw) return JSON.parse(raw);
+        const normalizedKey = __normalizePairKey(pairKey);
+        if (normalizedKey === 'FB_FENNEC') {
+            const legacy = localStorage.getItem(__LEGACY_PRICE_KEY);
+            if (legacy) return JSON.parse(legacy);
+        }
+    } catch (_) {}
+    return [];
+}
+
+function __writeStoredPrices(pairKey, points) {
+    try {
+        const key = __getPriceStorageKey(pairKey);
+        const payload = JSON.stringify(points || []);
+        localStorage.setItem(key, payload);
+        if (__normalizePairKey(pairKey) === 'FB_FENNEC') {
+            localStorage.setItem(__LEGACY_PRICE_KEY, payload);
+        }
+    } catch (_) {}
+}
+
+function __normalizeTickSymbol(tick) {
+    const s = String(tick || '')
+        .trim()
+        .toUpperCase();
+    if (!s) return '';
+    if (s.includes('FENNEC')) return 'FENNEC';
+    if (s.includes('SBTC')) return 'SBTC';
+    if (s.includes('SFB')) return 'SFB';
+    return s;
+}
+
+function __syncChartPairLabel(pairKey) {
+    try {
+        const meta = __getChartPairMeta(pairKey);
+        const labelEl = document.getElementById('chartPairLabel');
+        if (labelEl) labelEl.innerText = meta.label;
+        if (priceChart && priceChart.data && priceChart.data.datasets && priceChart.data.datasets[0]) {
+            priceChart.data.datasets[0].label = meta.label;
+        }
+    } catch (_) {}
+}
 
 function resetChartData(force = false) {
     try {
@@ -16,7 +111,12 @@ function resetChartData(force = false) {
         const prev = String(localStorage.getItem(verKey) || '').trim();
         if (force || prev !== __FENNEC_PRICE_CACHE_VERSION) {
             try {
-                localStorage.removeItem('fennec_prices');
+                const keys = [__LEGACY_PRICE_KEY, __getPriceStorageKey('FB_FENNEC'), __getPriceStorageKey('BTC_FB')];
+                keys.forEach(key => {
+                    try {
+                        localStorage.removeItem(key);
+                    } catch (_) {}
+                });
             } catch (_) {}
             try {
                 localStorage.setItem(verKey, __FENNEC_PRICE_CACHE_VERSION);
@@ -28,8 +128,8 @@ function resetChartData(force = false) {
 function __normalizePriceSeries(points, nowMs) {
     try {
         const now = Number(nowMs || Date.now()) || Date.now();
-        const ninetyMs = 365 * 24 * 60 * 60 * 1000;
-        const cutoff90 = now - ninetyMs;
+        const historyMs = 5 * 365 * 24 * 60 * 60 * 1000;
+        const cutoff90 = now - historyMs;
         const src = Array.isArray(points) ? points : [];
         const filtered = src
             .map(p => {
@@ -63,6 +163,7 @@ function __normalizePriceSeries(points, nowMs) {
 let chartTimeframe = '7d';
 let priceChart = null;
 const globalPrices = { btc: 0, fb: 0, fennec: 0 };
+let __pairWatcherBound = false;
 
 try {
     resetChartData(false);
@@ -98,18 +199,78 @@ function __storeDashboardPricesToCache() {
     } catch (_) {}
 }
 
-function seedChartPriceFromCache() {
+function seedChartPriceFromCache(pairKey) {
     try {
-        const stored = JSON.parse(localStorage.getItem('fennec_prices') || '[]');
+        const pair = __normalizePairKey(pairKey || __getSwapPairKey());
+        const stored = __readStoredPrices(pair);
         if (!Array.isArray(stored) || stored.length === 0) return;
         const last = stored[stored.length - 1];
         const p = last && last.price !== undefined ? Number(last.price) : NaN;
         if (!Number.isFinite(p) || p <= 0) return;
-        globalPrices.fennec = globalPrices.fennec > 0 ? globalPrices.fennec : p;
+        if (pair === 'FB_FENNEC') {
+            globalPrices.fennec = globalPrices.fennec > 0 ? globalPrices.fennec : p;
+        }
         const priceEl = document.getElementById('chartPrice') || document.getElementById('currentPrice');
         if (priceEl && (!String(priceEl.innerText || '').trim() || String(priceEl.innerText || '').trim() === '--')) {
             priceEl.dataset.price = p.toFixed(6);
             priceEl.innerText = p.toFixed(6);
+        }
+        __syncChartPairLabel(pair);
+    } catch (_) {}
+}
+
+function __handlePairChange(nextPair) {
+    const pair = __normalizePairKey(nextPair || __getSwapPairKey());
+    __syncChartPairLabel(pair);
+    try {
+        const poolCache = window.poolCache && typeof window.poolCache === 'object' ? window.poolCache : null;
+        if (poolCache) {
+            poolCache.data = null;
+            poolCache.timestamp = 0;
+        }
+    } catch (_) {}
+    try {
+        if (priceChart && priceChart.data && priceChart.data.datasets && priceChart.data.datasets[0]) {
+            priceChart.data.labels = [];
+            priceChart.data.datasets[0].data = [];
+            priceChart.update('none');
+        }
+    } catch (_) {}
+    try {
+        const priceEl = document.getElementById('chartPrice') || document.getElementById('currentPrice');
+        const changeEl = document.getElementById('chartPriceChange') || document.getElementById('priceChange');
+        if (priceEl) {
+            priceEl.dataset.price = '';
+            priceEl.innerText = '--';
+        }
+        if (changeEl) changeEl.innerText = '--';
+    } catch (_) {}
+    try {
+        const marketCapEl = document.getElementById('marketCap');
+        const volume24hEl = document.getElementById('volume24h');
+        const volume7dEl = document.getElementById('volume7d');
+        const volume30dEl = document.getElementById('volume30d');
+        if (marketCapEl) marketCapEl.innerText = '--';
+        if (volume24hEl) volume24hEl.innerText = '--';
+        if (volume7dEl) volume7dEl.innerText = '--';
+        if (volume30dEl) volume30dEl.innerText = '--';
+    } catch (_) {}
+    seedChartPriceFromCache(pair);
+    if (!document.getElementById('priceChart')) return;
+    if (priceChart) {
+        setChartTimeframe(chartTimeframe);
+    }
+    updatePriceData(true, pair).catch(() => null);
+}
+
+function __bindPairListener() {
+    if (__pairWatcherBound) return;
+    __pairWatcherBound = true;
+    try {
+        if (typeof subscribe === 'function') {
+            subscribe('currentSwapPair', pair => {
+                __handlePairChange(pair);
+            });
         }
     } catch (_) {}
 }
@@ -153,7 +314,7 @@ function initChart() {
             labels: [],
             datasets: [
                 {
-                    label: 'FENNEC/FB',
+                    label: __getChartPairMeta(__getSwapPairKey()).label,
                     data: [],
                     borderColor: '#FF6B35',
                     backgroundColor: 'rgba(255, 107, 53, 0.1)',
@@ -205,6 +366,7 @@ function initChart() {
     window.myChart = priceChart;
 
     console.log('Chart initialized');
+    __syncChartPairLabel(__getSwapPairKey());
 
     try {
         // Terminal timeframe buttons (terminal.html uses ids, no inline onclick)
@@ -238,17 +400,24 @@ function initChart() {
     updatePriceData().catch(() => null);
 }
 
-async function loadHistoricalPrices() {
+async function loadHistoricalPrices(pairKey) {
     try {
         const __chartDebug =
             (typeof window !== 'undefined' && (window.__fennecChartDebug === true || window.__debugChart === true)) ||
             (typeof localStorage !== 'undefined' && localStorage.getItem('fennec_debug_chart') === '1') ||
             (typeof location !== 'undefined' && /[?&]debug_chart=1/.test(location.search));
 
-        if (__chartDebug) console.log('Loading history from InSwap...', chartTimeframe);
+        const pair = __normalizePairKey(pairKey || __getSwapPairKey());
+        const meta = __getChartPairMeta(pair);
+        const tick0 = meta.quote;
+        const tick1 = meta.base;
+
+        if (__chartDebug) console.log('Loading history from InSwap...', pair, chartTimeframe);
 
         const timeRange = chartTimeframe;
-        const __url = `${BACKEND_URL}?action=price_line&tick0=sFB___000&tick1=FENNEC&timeRange=${encodeURIComponent(timeRange)}`;
+        const __url = `${BACKEND_URL}?action=price_line&tick0=${encodeURIComponent(tick0)}&tick1=${encodeURIComponent(
+            tick1
+        )}&timeRange=${encodeURIComponent(timeRange)}`;
         const json = await safeFetchJson(__url, {
             timeoutMs: 25000,
             retries: 0,
@@ -260,11 +429,11 @@ async function loadHistoricalPrices() {
         if (__chartDebug) console.log('Price line API response:', json);
 
         if (json.code === 0 && json.data && json.data.list && json.data.list.length > 0) {
-            // API returns price directly in item.price field (FB per FENNEC)
+            // API returns price directly in item.price field (quote per base)
             const apiData = json.data.list
                 .map(item => {
                     let price = parseFloat(item.price);
-                    if (Number.isFinite(price) && price > 10) {
+                    if (Number.isFinite(price) && meta.invertIfAbove && price > meta.invertIfAbove) {
                         const inv = 1 / price;
                         if (Number.isFinite(inv) && inv > 0) price = inv;
                     }
@@ -272,7 +441,13 @@ async function loadHistoricalPrices() {
                     const timestamp = tsRaw > 1000000000000 ? tsRaw : tsRaw * 1000;
 
                     // Validate price is reasonable
-                    if (isNaN(price) || price <= 0 || !Number.isFinite(price) || price > 1000000 || price < 1e-12) {
+                    if (
+                        isNaN(price) ||
+                        price <= 0 ||
+                        !Number.isFinite(price) ||
+                        price > meta.maxPrice ||
+                        price < meta.minPrice
+                    ) {
                         console.warn('Invalid price filtered:', price, item);
                         return null;
                     }
@@ -287,7 +462,7 @@ async function loadHistoricalPrices() {
 
             if (apiData.length > 0) {
                 // Get existing data from localStorage
-                const existing = JSON.parse(localStorage.getItem('fennec_prices') || '[]');
+                const existing = __readStoredPrices(pair);
 
                 // For all timeframes, merge existing data with new API data
                 // Don't remove existing data - it might be needed for current timeframe
@@ -303,10 +478,10 @@ async function loadHistoricalPrices() {
                 }
                 const deduplicated = Array.from(seen.values()).sort((a, b) => a.timestamp - b.timestamp);
                 const normalized = __normalizePriceSeries(deduplicated, Date.now());
-                localStorage.setItem('fennec_prices', JSON.stringify(normalized));
+                __writeStoredPrices(pair, normalized);
                 if (__chartDebug)
                     console.log(`Chart data saved: ${apiData.length} new points, ${normalized.length} total points`);
-                if (__chartDebug) console.log(`Timeframe: ${chartTimeframe}, timeRange: ${timeRange}`);
+                if (__chartDebug) console.log(`Pair: ${pair}, timeframe: ${chartTimeframe}, timeRange: ${timeRange}`);
             } else {
                 if (__chartDebug) console.warn(`No valid price data from API for ${timeRange}`);
             }
@@ -315,32 +490,44 @@ async function loadHistoricalPrices() {
         }
 
         // Always update chart after loading (even if no new data)
-        updateChart();
+        updateChart(pair);
     } catch (e) {
         console.error('Failed to load prices:', e);
         // Still try to update chart with existing data
-        updateChart();
+        updateChart(pairKey);
     }
 }
 
-async function updatePriceData(force = false) {
+async function updatePriceData(force = false, pairKey) {
+    const pair = __normalizePairKey(pairKey || __getSwapPairKey());
+    const meta = __getChartPairMeta(pair);
+    const baseTick = meta.base;
+    const quoteTick = meta.quote;
     const __now = Date.now();
     try {
         window.__fennecPriceFetchState =
             window.__fennecPriceFetchState && typeof window.__fennecPriceFetchState === 'object'
                 ? window.__fennecPriceFetchState
-                : { lastFetchAt: 0 };
-        const last = Number(window.__fennecPriceFetchState.lastFetchAt || 0) || 0;
+                : {};
+        const map = window.__fennecPriceFetchState;
+        const state = map[pair] && typeof map[pair] === 'object' ? map[pair] : { lastFetchAt: 0 };
+        const last = Number(state.lastFetchAt || 0) || 0;
         if (!force && last > 0 && __now - last < 60000) return;
-        window.__fennecPriceFetchState.lastFetchAt = __now;
+        state.lastFetchAt = __now;
+        map[pair] = state;
     } catch (_) {}
 
-    return await __fennecDedupe('updatePriceData', async () => {
+    return await __fennecDedupe(`updatePriceData:${pair}`, async () => {
         try {
-            const json = await safeFetchJson(`${BACKEND_URL}?action=quote`, {
-                timeoutMs: 12000,
-                retries: 2
-            });
+            const json = await safeFetchJson(
+                `${BACKEND_URL}?action=quote&tick0=${encodeURIComponent(baseTick)}&tick1=${encodeURIComponent(
+                    quoteTick
+                )}`,
+                {
+                    timeoutMs: 12000,
+                    retries: 2
+                }
+            );
             if (!json) throw new Error('Failed to fetch quote');
 
             let data = null;
@@ -352,21 +539,27 @@ async function updatePriceData(force = false) {
             if (data && data.amount0 && data.amount1) {
                 const amount0 = parseFloat(data.amount0);
                 const amount1 = parseFloat(data.amount1);
-                // Determine which is FENNEC and which is FB
-                const isFennecFirst = data.tick0 && data.tick0.includes('FENNEC');
-                // Price = FB per FENNEC (how much FB you get for 1 FENNEC)
-                // If FENNEC is first: amount0 = FENNEC, amount1 = FB, so price = FB/FENNEC = amount1/amount0
-                // If FB is first: amount0 = FB, amount1 = FENNEC, so price = FB/FENNEC = amount0/amount1
-                const price = isFennecFirst ? amount1 / amount0 : amount0 / amount1;
+                const baseSym = __normalizeTickSymbol(baseTick);
+                const quoteSym = __normalizeTickSymbol(quoteTick);
+                const t0 = __normalizeTickSymbol(data.tick0);
+                const t1 = __normalizeTickSymbol(data.tick1);
+                let price = 0;
+                if (t0 === baseSym && t1 === quoteSym) {
+                    price = amount1 / amount0;
+                } else if (t0 === quoteSym && t1 === baseSym) {
+                    price = amount0 / amount1;
+                }
+                if (Number.isFinite(price) && meta.invertIfAbove && price > meta.invertIfAbove) {
+                    price = 1 / price;
+                }
 
-                // Validate price is reasonable (between 0.00001 and 10 FB per FENNEC)
-                if (isNaN(price) || price <= 0 || price > 10 || price < 0.00001) {
+                if (!Number.isFinite(price) || price <= 0 || price > meta.maxPrice || price < meta.minPrice) {
                     console.warn('Invalid price calculated:', price, 'from', data);
                     return;
                 }
                 const timestamp = Date.now();
 
-                const stored = JSON.parse(localStorage.getItem('fennec_prices') || '[]');
+                const stored = __readStoredPrices(pair);
                 const lastPoint = stored[stored.length - 1];
 
                 // Добавляем точку если прошло > 1 минуты или цена изменилась значительно
@@ -377,9 +570,9 @@ async function updatePriceData(force = false) {
                 ) {
                     stored.push({ price, timestamp });
                     const normalized = __normalizePriceSeries(stored, timestamp);
-                    localStorage.setItem('fennec_prices', JSON.stringify(normalized));
-                    console.log(`New price: ${price.toFixed(6)} FB/FENNEC`);
-                    updateChart();
+                    __writeStoredPrices(pair, normalized);
+                    console.log(`New price: ${price.toFixed(6)} ${meta.label}`);
+                    updateChart(pair);
                 }
             }
         } catch (e) {
@@ -388,15 +581,23 @@ async function updatePriceData(force = false) {
     });
 }
 
-function updateChart() {
+function updateChart(pairKey) {
     if (!priceChart) return;
+    const pair = __normalizePairKey(pairKey || __getSwapPairKey());
+    const meta = __getChartPairMeta(pair);
+    __syncChartPairLabel(pair);
+    try {
+        if (priceChart.data && priceChart.data.datasets && priceChart.data.datasets[0]) {
+            priceChart.data.datasets[0].label = meta.label;
+        }
+    } catch (_) {}
 
     const __chartDebug =
         (typeof window !== 'undefined' && (window.__fennecChartDebug === true || window.__debugChart === true)) ||
         (typeof localStorage !== 'undefined' && localStorage.getItem('fennec_debug_chart') === '1') ||
         (typeof location !== 'undefined' && /[?&]debug_chart=1/.test(location.search));
 
-    const stored = JSON.parse(localStorage.getItem('fennec_prices') || '[]');
+    const stored = __readStoredPrices(pair);
     const now = Date.now();
 
     // Фильтруем по таймфрейму
@@ -556,12 +757,14 @@ function updateChart() {
 }
 
 // Get pool info and update market stats from pool_info API
-async function updateMarketStats(_fennecPriceInFB) {
+async function updateMarketStats(_fennecPriceInFB, pairKey) {
     try {
         const marketCapEl = document.getElementById('marketCap');
         const volume24hEl = document.getElementById('volume24h');
         const volume7dEl = document.getElementById('volume7d');
         const volume30dEl = document.getElementById('volume30d');
+        const pair = __normalizePairKey(pairKey || __getSwapPairKey());
+        const meta = __getChartPairMeta(pair);
 
         const safeNum = v => {
             if (v === null || v === undefined) return 0;
@@ -580,11 +783,39 @@ async function updateMarketStats(_fennecPriceInFB) {
             return `$${Math.round(v).toLocaleString('en-US')}`;
         };
 
+        const baseSym = __normalizeTickSymbol(meta.base);
+        const quoteSym = __normalizeTickSymbol(meta.quote);
+        const isPoolMatch = data => {
+            if (!data || typeof data !== 'object') return false;
+            const t0 = __normalizeTickSymbol(data.tick0);
+            const t1 = __normalizeTickSymbol(data.tick1);
+            if (!t0 || !t1) return false;
+            return (t0 === baseSym && t1 === quoteSym) || (t0 === quoteSym && t1 === baseSym);
+        };
+
         const poolCache = window.poolCache && typeof window.poolCache === 'object' ? window.poolCache : null;
-        let poolData = poolCache && poolCache.data ? poolCache.data : null;
+        let poolData = poolCache && poolCache.data && isPoolMatch(poolCache.data) ? poolCache.data : null;
         if (!poolData) {
-            await (typeof window.fetchReserves === 'function' ? window.fetchReserves() : Promise.resolve());
-            poolData = poolCache && poolCache.data ? poolCache.data : null;
+            const now = Date.now();
+            const fetchPoolInfo = async (tick0, tick1) => {
+                const url = `${BACKEND_URL}?action=pool_info&tick0=${encodeURIComponent(
+                    tick0
+                )}&tick1=${encodeURIComponent(tick1)}&t=${now}`;
+                const json = await safeFetchJson(url, {
+                    timeoutMs: 12000,
+                    retries: 2,
+                    headers: { Accept: 'application/json' }
+                }).catch(() => null);
+                const data = json?.data && typeof json.data === 'object' ? json.data : null;
+                if (!data || !data.tick0) return null;
+                return data;
+            };
+
+            poolData = (await fetchPoolInfo(meta.base, meta.quote)) || (await fetchPoolInfo(meta.quote, meta.base));
+            if (poolData && poolCache) {
+                poolCache.data = poolData;
+                poolCache.timestamp = now;
+            }
         }
 
         if (poolData) {
@@ -680,6 +911,8 @@ async function updateMarketStats(_fennecPriceInFB) {
 
 function setChartTimeframe(tf) {
     chartTimeframe = tf;
+    const pair = __normalizePairKey(__getSwapPairKey());
+    __syncChartPairLabel(pair);
 
     // Show loading indicator
     const chartContainer = document.querySelector('.chart-container');
@@ -732,13 +965,13 @@ function setChartTimeframe(tf) {
     } catch (_) {}
 
     // IMPORTANT: Reload historical data for new timeframe FIRST, then update chart
-    __fennecDedupe(`loadHistoricalPrices:${String(tf || '').toLowerCase()}`, async () => {
-        await loadHistoricalPrices();
+    __fennecDedupe(`loadHistoricalPrices:${pair}:${String(tf || '').toLowerCase()}`, async () => {
+        await loadHistoricalPrices(pair);
         return true;
     })
         .then(() => {
             // Update chart with new data
-            updateChart();
+            updateChart(pair);
             // Remove loading indicator
             try {
                 const root = document.querySelector('.chart-container') || document;
@@ -748,7 +981,7 @@ function setChartTimeframe(tf) {
         .catch(e => {
             console.error('Chart loading error:', e);
             // Still update chart with existing data
-            updateChart();
+            updateChart(pair);
             try {
                 const root = document.querySelector('.chart-container') || document;
                 root.querySelectorAll('#chartLoading').forEach(el => el.remove());
@@ -779,7 +1012,7 @@ async function updateLiveTicker() {
             const tickerContent = tickerEl.querySelector('#ticker-content') || tickerEl;
 
             // Seed instantly from cache so it never stays blank on slow API
-            seedChartPriceFromCache();
+            seedChartPriceFromCache('FB_FENNEC');
             __seedDashboardPricesFromCache();
 
             const dash = await fetch(`${BACKEND_URL}?action=get_dashboard_data`, {
@@ -920,7 +1153,11 @@ function __maybeInitChart() {
     } catch (_) {}
 
     try {
-        seedChartPriceFromCache();
+        seedChartPriceFromCache(__getSwapPairKey());
+    } catch (_) {}
+
+    try {
+        __bindPairListener();
     } catch (_) {}
 
     try {
