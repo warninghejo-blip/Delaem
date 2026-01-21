@@ -9,3 +9,7 @@
 
 /index.html
   Cache-Control: no-store
+
+/build_meta.json
+  Content-Type: application/json; charset=utf-8
+  Cache-Control: no-store

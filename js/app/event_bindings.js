@@ -48,7 +48,8 @@ const depositTokenButtons = [
 // Withdraw token buttons
 const withdrawTokenButtons = [
     { id: 'wd-sfb', token: 'sFB' },
-    { id: 'wd-fennec', token: 'FENNEC' }
+    { id: 'wd-fennec', token: 'FENNEC' },
+    { id: 'wd-btc', token: 'BTC' }
 ];
 
 /**

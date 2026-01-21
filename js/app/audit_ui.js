@@ -494,6 +494,16 @@ function __escapeHtml(s) {
         .replace(/'/g, '&#039;');
 }
 
+function __ensureAuditContainerSizing() {
+    try {
+        const container = document.getElementById('auditContainer');
+        if (!container) return;
+        container.style.minHeight = '560px';
+        container.style.display = 'flex';
+        container.style.justifyContent = 'center';
+    } catch (_) {}
+}
+
 function __isValidAuditIdentity(identity, addr) {
     try {
         if (!identity || typeof identity !== 'object') return false;
@@ -838,6 +848,8 @@ async function initAudit() {
     const container = document.getElementById('auditContainer');
     if (!container) return;
 
+    __ensureAuditContainerSizing();
+
     // ПРИНУДИТЕЛЬНАЯ ОЧИСТКА при смене кошелька или любом вызове
     const addrNow = String(window.userAddress || userAddress || '').trim();
     if (initAuditLoading) return;
@@ -995,6 +1007,16 @@ async function initAudit() {
             const sweepHtml = isLite
                 ? ''
                 : '<div style="position: absolute; top: 0; left: -25%; width: 40%; height: 100%; background: linear-gradient(90deg, transparent 0%, rgba(255,160,0,0) 20%, rgba(255,160,0,0.18) 35%, rgba(255,160,0,0.95) 50%, rgba(255,160,0,0.18) 65%, rgba(255,160,0,0) 80%, transparent 100%); animation: openSweep 2.5s ease-in-out infinite;"></div>';
+            const sweepStyle = isLite
+                ? ''
+                : `<style>
+                                                @keyframes openSweep {
+                                                    0% { left: -25%; opacity: 0; }
+                                                    12% { opacity: 1; }
+                                                    88% { opacity: 1; }
+                                                    100% { left: 110%; opacity: 0; }
+                                                }
+                                            </style>`;
             container.innerHTML = `
                                             <div class="w-full flex items-start justify-center" style="min-height: 560px;">
                                                 <div class="flex flex-col items-center justify-center" style="max-width: 360px; width: 100%; padding: 0px 20px; gap: 32px;">
@@ -1016,14 +1038,7 @@ async function initAudit() {
                                                     </div>
                                                 </div>
                                             </div>
-                                            <style>
-                                                @keyframes openSweep {
-                                                    0% { left: -25%; opacity: 0; }
-                                                    12% { opacity: 1; }
-                                                    88% { opacity: 1; }
-                                                    100% { left: 110%; opacity: 0; }
-                                                }
-                                            </style>
+                                            ${sweepStyle}
                                         `;
             try {
                 if (window.__openProgressInterval) {
@@ -1043,6 +1058,7 @@ async function initAudit() {
                 const progressBar = document.getElementById('openProgress');
                 const progressPercent = document.getElementById('openPercent');
                 const progressMessage = document.getElementById('openMessage');
+                const intervalMs = isLite ? 750 : 300;
 
                 window.__openProgressInterval = setInterval(() => {
                     progress = Math.min(95, progress + Math.random() * 3 + 1);
@@ -1052,7 +1068,7 @@ async function initAudit() {
                         msgIndex++;
                         if (progressMessage) progressMessage.textContent = messages[msgIndex];
                     }
-                }, 300);
+                }, intervalMs);
             } catch (_) {}
             return;
         }
@@ -1071,6 +1087,16 @@ async function initAudit() {
             const sweepHtml = isLite
                 ? ''
                 : '<div id="scanSweep" style="position: absolute; top: 0; left: -25%; width: 40%; height: 100%; background: linear-gradient(90deg, transparent 0%, rgba(255,107,53,0) 20%, rgba(255,107,53,0.18) 35%, rgba(255,107,53,0.92) 50%, rgba(255,107,53,0.18) 65%, rgba(255,107,53,0) 80%, transparent 100%); animation: scanSweep 2.5s ease-in-out infinite;"></div>';
+            const sweepStyle = isLite
+                ? ''
+                : `<style>
+                                                @keyframes scanSweep {
+                                                    0% { left: -25%; opacity: 0; }
+                                                    12% { opacity: 1; }
+                                                    88% { opacity: 1; }
+                                                    100% { left: 110%; opacity: 0; }
+                                                }
+                                            </style>`;
             container.innerHTML = `
                                             <div class="w-full flex items-start justify-center" style="min-height: 560px;">
                                                 <div class="flex flex-col items-center justify-center" style="max-width: 360px; width: 100%; padding: 0px 20px; gap: 32px;">
@@ -1092,14 +1118,7 @@ async function initAudit() {
                                                     </div>
                                                 </div>
                                             </div>
-                                            <style>
-                                                @keyframes scanSweep {
-                                                    0% { left: -25%; opacity: 0; }
-                                                    12% { opacity: 1; }
-                                                    88% { opacity: 1; }
-                                                    100% { left: 110%; opacity: 0; }
-                                                }
-                                            </style>
+                                            ${sweepStyle}
                                         `;
             return;
         }
@@ -1357,6 +1376,8 @@ async function runAudit(forceRefresh = false) {
     } catch (_) {}
     const container = document.getElementById('auditContainer');
 
+    __ensureAuditContainerSizing();
+
     const hasContainer = !!container;
 
     // FIX: Set auditLoading = true BEFORE starting the process
@@ -1411,12 +1432,30 @@ async function runAudit(forceRefresh = false) {
     // ПРИНУДИТЕЛЬНО показываем лоадер в контейнере СРАЗУ
     try {
         if (!hasContainer) throw new Error('no_container');
+        const isLite = window.__fennecLiteMode || false;
+        const cardShadow = isLite
+            ? 'box-shadow: 0 4px 12px rgba(0,0,0,0.4);'
+            : 'box-shadow: inset 0 0 40px rgba(255,107,53,0.15), 0 0 60px rgba(255,107,53,0.25);';
+        const imgFilter = isLite ? '' : 'filter: drop-shadow(0 0 40px rgba(255,107,53,0.4));';
+        const sweepHtml = isLite
+            ? ''
+            : '<div id="scanSweep" style="position: absolute; top: 0; left: -25%; width: 40%; height: 100%; background: linear-gradient(90deg, transparent 0%, rgba(255,107,53,0) 20%, rgba(255,107,53,0.18) 35%, rgba(255,107,53,0.92) 50%, rgba(255,107,53,0.18) 65%, rgba(255,107,53,0) 80%, transparent 100%); animation: scanSweep 2.5s ease-in-out infinite;"></div>';
+        const sweepStyle = isLite
+            ? ''
+            : `<style>
+                                                @keyframes scanSweep {
+                                                    0% { left: -25%; opacity: 0; }
+                                                    12% { opacity: 1; }
+                                                    88% { opacity: 1; }
+                                                    100% { left: 110%; opacity: 0; }
+                                                }
+                                            </style>`;
         container.innerHTML = `
                                             <div class="w-full flex items-start justify-center" style="min-height: 560px;">
                                                 <div class="flex flex-col items-center justify-center" style="max-width: 360px; width: 100%; padding: 0px 20px; gap: 32px;">
-                                                    <div style="position: relative; width: 360px; height: 520px; overflow: hidden; border-radius: 32px; border: 4px solid rgba(255,107,53,0.35); box-shadow: inset 0 0 40px rgba(255,107,53,0.15), 0 0 60px rgba(255,107,53,0.25); display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.6);">
-                                                        <img src="/img/FENNECID.png" style="width: 110%; height: 110%; object-fit: cover; object-position: center; filter: drop-shadow(0 0 40px rgba(255,107,53,0.4));" onerror="this.style.display='none';" />
-                                                        <div id="scanSweep" style="position: absolute; top: 0; left: -25%; width: 40%; height: 100%; background: linear-gradient(90deg, transparent 0%, rgba(255,107,53,0) 20%, rgba(255,107,53,0.18) 35%, rgba(255,107,53,0.92) 50%, rgba(255,107,53,0.18) 65%, rgba(255,107,53,0) 80%, transparent 100%); animation: scanSweep 2.5s ease-in-out infinite;"></div>
+                                                    <div style="position: relative; width: 360px; height: 520px; overflow: hidden; border-radius: 32px; border: 4px solid rgba(255,107,53,0.35); ${cardShadow} display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.6);">
+                                                        <img src="/img/FENNECID.png" style="width: 110%; height: 110%; object-fit: cover; object-position: center; ${imgFilter}" onerror="this.style.display='none';" />
+                                                        ${sweepHtml}
                                                     </div>
                                                     <div style="width: 100%; max-width: 320px;">
                                                         <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; margin-bottom: 12px;">
@@ -1432,14 +1471,7 @@ async function runAudit(forceRefresh = false) {
                                                     </div>
                                                 </div>
                                             </div>
-                                            <style>
-                                                @keyframes scanSweep {
-                                                    0% { left: -25%; opacity: 0; }
-                                                    12% { opacity: 1; }
-                                                    88% { opacity: 1; }
-                                                    100% { left: 110%; opacity: 0; }
-                                                }
-                                            </style>
+                                            ${sweepStyle}
                                         `;
         // Анимируем прогресс
         const messages = [
@@ -1457,6 +1489,7 @@ async function runAudit(forceRefresh = false) {
         const progressPercent = document.getElementById('scanPercent');
         const progressMessage = document.getElementById('scanMessage');
 
+        const progressIntervalMs = isLite ? 750 : 300;
         const progressInterval = setInterval(() => {
             // Slowly increment progress but never reach 100 until data is ready
             progress = Math.min(95, progress + Math.random() * 3 + 1);
@@ -1468,7 +1501,7 @@ async function runAudit(forceRefresh = false) {
                 msgIndex++;
                 if (progressMessage) progressMessage.textContent = messages[msgIndex];
             }
-        }, 300);
+        }, progressIntervalMs);
 
         window.__scanProgressInterval = progressInterval;
     } catch (_) {}

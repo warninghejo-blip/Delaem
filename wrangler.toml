@@ -1,7 +1,7 @@
 # Cloudflare Worker Configuration
 name = "fennec-api"
 account_id = "81cbc5b7d6c703bae35387c133b3c10d"
-main = "worker.js"
+main = "index.js"
 compatibility_date = "2024-12-05"
 workers_dev = true
 
@@ -10,6 +10,12 @@ workers_dev = true
 kv_namespaces = [
   { binding = "FENNEC_DB", id = "5f3166bbef7d4104921a24de3fe6fe20" }
 ]
+
+[[d1_databases]]
+binding = "FENNEC_D1"
+database_name = "fennec_d1"
+database_id = "1fa4dd5d-206e-4450-a87a-3de698cbacd4"
+migrations_dir = "migrations"
 
 [vars]
 # Environment variables (if needed)

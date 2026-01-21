@@ -22,7 +22,6 @@ REM Check Node.js
 where node >nul 2>&1
 if %errorlevel% neq 0 (
     echo [ERROR] Node.js not found! Please install Node.js first.
-    pause
     goto :fail
 )
 
@@ -30,7 +29,6 @@ REM Check npm
 where npm >nul 2>&1
 if %errorlevel% neq 0 (
     echo [ERROR] npm not found! Please install Node.js first.
-    pause
     goto :fail
 )
 
@@ -41,7 +39,6 @@ if not exist node_modules\ (
     call npm install
     if %errorlevel% neq 0 (
         echo [ERROR] Failed to install dependencies!
-        pause
         goto :fail
     )
     echo [OK] Dependencies installed!
@@ -57,7 +54,6 @@ echo [BUILD] Running npm run build...
 call npm run build
 if %errorlevel% neq 0 (
     echo [ERROR] Build failed!
-    pause
     goto :fail
 )
 echo [OK] Build completed successfully!
@@ -102,7 +98,6 @@ if !WORKER_EXIT_CODE! neq 0 (
     echo Exit code: !WORKER_EXIT_CODE!
     echo.
     call :showlogtail
-    pause
     goto :fail
 )
 
@@ -139,7 +134,6 @@ if !PAGES_EXIT_CODE! neq 0 (
     echo Exit code: !PAGES_EXIT_CODE!
     echo.
     call :showlogtail
-    pause
     goto :fail
 )
 
@@ -160,7 +154,6 @@ echo Pages Site: https://fennec-swap.pages.dev
 echo.
 echo Both Worker and Pages have been deployed successfully!
 echo.
-pause
 
 popd
 
@@ -177,6 +170,5 @@ exit /b 0
 call :showlogtail
 echo.
 echo [FAIL] Script ended with error. See log: %LOG_FILE%
-pause
 popd
 exit /b 1

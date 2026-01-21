@@ -1,5 +1,10 @@
 import * as btc from '@scure/btc-signer';
 import { hex } from '@scure/base';
+import { handleIdAction } from './id.js';
+import { handleAnalyticsAction, handleReferralAction } from './database.js';
+import { handleAuditAction } from './audit.js';
+import { handleAiAction } from './ai.js';
+import { handleDexAction } from './dex.js';
 
 // Global Stealth Headers для обхода rate limiting
 const STEALTH_HEADERS = {
@@ -10,8 +15,8 @@ const STEALTH_HEADERS = {
     'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
     'Sec-Ch-Ua-Mobile': '?0',
     'Sec-Ch-Ua-Platform': '"Windows"',
-    Referer: 'https://fractal.unisat.io/',
-    Origin: 'https://fractal.unisat.io'
+    Referer: 'https://fennecbtc.xyz/',
+    Origin: 'https://fennecbtc.xyz'
 };
 
 let __provenanceSigner = null;
@@ -734,81 +739,62 @@ Request Context: ${JSON.stringify(context, null, 2)}
 
             // ИСПРАВЛЕНИЕ: Удален алиас fractal_audit -> audit_data (конфликт handlers)
 
+            const modularCtx = {
+                action,
+                request,
+                env,
+                sendJSON,
+                url,
+                __rateLimit,
+                ctx
+            };
+
+            const idResult = await handleIdAction(modularCtx);
+            if (idResult) return idResult;
+
+            const referralResult = await handleReferralAction(modularCtx);
+            if (referralResult) return referralResult;
+
+            const analyticsResult = await handleAnalyticsAction(modularCtx);
+            if (analyticsResult) return analyticsResult;
+
+            const auditResult = await handleAuditAction({
+                ...modularCtx,
+                smartFetch,
+                upstreamHeaders,
+                SWAP_BASE,
+                __disableInswap
+            });
+            if (auditResult) return auditResult;
+
+            const aiResult = await handleAiAction({
+                ...modularCtx,
+                env,
+                callGemini,
+                __disableInswap,
+                upstreamHeaders,
+                SWAP_BASE
+            });
+            if (aiResult) return aiResult;
+
+            const dexResult = await handleDexAction({
+                ...modularCtx,
+                ctx,
+                requireUniSatKey,
+                DEFAULT_FEE_TICK,
+                SWAP_BASE,
+                FRACTAL_BASE,
+                upstreamHeaders,
+                unisatApiHeaders,
+                __normalizeSwapTick,
+                smartFetch,
+                API_KEY
+            });
+            if (dexResult) return dexResult;
+
             // worker_info endpoint для проверки версии деплоя
             if (action === 'worker_info') {
                 return sendJSON({ code: 0, data: { worker_build: __workerBuild } });
-            }
-
-            if (action === 'fennec_id_register') {
-                if (String(request.method || 'GET').toUpperCase() !== 'POST') {
-                    return sendJSON({ code: -1, msg: 'Method not allowed' }, 405);
-                }
-
-                if (!env?.FENNEC_DB) {
-                    return sendJSON({ code: -1, msg: 'FENNEC_DB is not configured on the server.' }, 200);
-                }
-
-                const body = await request.json().catch(() => null);
-                if (!body || typeof body !== 'object') {
-                    return sendJSON({ code: -1, msg: 'Invalid JSON body' }, 200);
-                }
-
-                const address = String(body.address || body.addr || '').trim();
-                const inscriptionId = String(body.inscriptionId || body.inscription_id || body.id || '').trim();
-                if (!address || !inscriptionId) {
-                    return sendJSON({ code: -1, msg: 'Missing address or inscriptionId' }, 200);
-                }
-
-                const addrKey = address.toLowerCase();
-                const updatedAt = Date.now();
-                const key = `fennec_id_v3:${addrKey}`;
-
-                try {
-                    await env.FENNEC_DB.put(key, JSON.stringify({ inscriptionId, updatedAt, address: addrKey }), {
-                        metadata: { updatedAt }
-                    });
-                } catch (e) {
-                    return sendJSON({ code: -1, msg: e?.message || String(e) }, 200);
-                }
-
-                return sendJSON({ code: 0, data: { address: addrKey, inscriptionId, updatedAt } }, 200);
-            }
-
-            if (action === 'fennec_id_lookup') {
-                if (!env?.FENNEC_DB) {
-                    return sendJSON({ code: -1, msg: 'FENNEC_DB is not configured on the server.' }, 200);
-                }
-
-                const address = String(url.searchParams.get('address') || url.searchParams.get('addr') || '').trim();
-                if (!address) {
-                    return sendJSON({ code: -1, msg: 'Missing address' }, 200);
-                }
-
-                const addrKey = address.toLowerCase();
-                const key = `fennec_id_v3:${addrKey}`;
-                try {
-                    const raw = await env.FENNEC_DB.get(key);
-                    if (!raw) {
-                        return sendJSON({ code: 0, data: null }, 200);
-                    }
-                    const parsed = (() => {
-                        try {
-                            return JSON.parse(raw);
-                        } catch (_) {
-                            return null;
-                        }
-                    })();
-
-                    const inscriptionId = String(parsed?.inscriptionId || '').trim();
-                    const updatedAt = Number(parsed?.updatedAt || 0) || 0;
-                    if (!inscriptionId) {
-                        return sendJSON({ code: 0, data: null }, 200);
-                    }
-
-                    return sendJSON({ code: 0, data: { address: addrKey, inscriptionId, updatedAt } }, 200);
-                } catch (e) {
-                    return sendJSON({ code: -1, msg: e?.message || String(e) }, 200);
-                }
             }
 
             // Совместимость: quote endpoint для фронта
@@ -1044,263 +1030,13 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     const nowMs = Date.now();
                     const cutoffMs = nowMs - __rangeMs(timeRange);
 
-                    let __swapV1Hint = '';
+                    const __swapV1Hint = '';
                     const isFennecPair =
                         (tick0Cmp === 'FENNEC' && (tick1Cmp === 'SFB___000' || tick1Cmp === 'SFB')) ||
                         (tick1Cmp === 'FENNEC' && (tick0Cmp === 'SFB___000' || tick0Cmp === 'SFB'));
-                    const __isShortTimeframe = (() => {
-                        const v = String(timeRange || '').toLowerCase();
-                        return v === '1h' || v === '24h';
-                    })();
-
-                    // CRITICAL FIX: For 1h/24h, skip UniSat entirely - use ONLY swap_history
-                    // UniSat brc20_kline causes 7s delay. Direct swap_history parsing = <500ms response.
-                    if (isFennecPair && __isShortTimeframe) {
-                        // Skip all price_line/kline attempts for short timeframes
-                        // Go directly to swap_history parsing below
-                    } else if (isFennecPair && !__isShortTimeframe) {
-                        // For longer timeframes (7d/30d/all), try InSwap price_line then UniSat kline
-                        try {
-                            const tr = String(timeRange || '').toLowerCase() === 'all' ? '90d' : String(timeRange);
-                            const baseNoV1 = String(SWAP_BASE || '').replace(/\/v1\/?$/i, '');
-                            const __attempts = [];
-                            const __pushAttempt = (host, status, code, len) => {
-                                try {
-                                    const h = String(host || '').trim();
-                                    const s = Number(status || 0) || 0;
-                                    const c = code !== undefined && code !== null ? Number(code) : NaN;
-                                    const l = Number(len || 0) || 0;
-                                    if (__attempts.length < 6) __attempts.push({ h, s, c, l });
-                                } catch (_) {}
-                            };
-
-                            const candidates = [];
-                            const queries = [
-                                `tick0=FENNEC&tick1=sFB___000&timeRange=${encodeURIComponent(tr)}`,
-                                `tick0=sFB___000&tick1=FENNEC&timeRange=${encodeURIComponent(tr)}`
-                            ];
-                            queries.push(
-                                `tick0=FENNEC&tick1=FB&timeRange=${encodeURIComponent(tr)}`,
-                                `tick0=FB&tick1=FENNEC&timeRange=${encodeURIComponent(tr)}`,
-                                `tick0=FENNEC&tick1=sFB&timeRange=${encodeURIComponent(tr)}`,
-                                `tick0=sFB&tick1=FENNEC&timeRange=${encodeURIComponent(tr)}`
-                            );
-                            for (const q of queries) {
-                                candidates.push(
-                                    ...[
-                                        `https://inswap.cc/fractal-api/swap-v1/price_line?${q}`,
-                                        `${baseNoV1}/fractal-api/swap-v1/price_line?${q}`,
-                                        `${SWAP_BASE}/brc20-swap/price_line?${q}`,
-                                        `${baseNoV1}/fractal-api/v1/brc20-swap/price_line?${q}`,
-                                        `${baseNoV1}/swap-v1/price_line?${q}`,
-                                        `${SWAP_BASE}/swap-v1/price_line?${q}`
-                                    ].filter(Boolean)
-                                );
-                            }
-
-                            const __swapPriceLineStartedAt = Date.now();
-                            for (const endpointUrl of candidates) {
-                                if (Date.now() - __swapPriceLineStartedAt > 6500) break;
-                                let endpointHost = '';
-                                let __needInvert = false;
-                                try {
-                                    const u0 = new URL(endpointUrl);
-                                    endpointHost = u0.hostname;
-                                    const q0 = String(u0.searchParams.get('tick0') || '').toUpperCase();
-                                    const q1 = String(u0.searchParams.get('tick1') || '').toUpperCase();
-                                    __needInvert = q0 && q1 && q0 !== 'FENNEC' && q1 === 'FENNEC';
-                                } catch (_) {}
-                                const headers0 = (() => {
-                                    if (endpointHost && endpointHost.toLowerCase().includes('inswap.cc')) {
-                                        const h = { ...upstreamHeaders };
-                                        try {
-                                            delete h.Authorization;
-                                        } catch (_) {}
-                                        return h;
-                                    }
-                                    return upstreamHeaders;
-                                })();
-                                const controller = new AbortController();
-                                const timeoutId = setTimeout(() => {
-                                    try {
-                                        controller.abort();
-                                    } catch (_) {}
-                                }, 2500);
-                                const res = await fetch(endpointUrl, {
-                                    method: 'GET',
-                                    headers: headers0,
-                                    signal: controller.signal
-                                })
-                                    .catch(() => null)
-                                    .finally(() => {
-                                        try {
-                                            clearTimeout(timeoutId);
-                                        } catch (_) {}
-                                    });
-                                if (!res) {
-                                    __pushAttempt(endpointHost || 'fetch_null', 0, null, 0);
-                                    continue;
-                                }
-                                const json = res.ok ? await res.json().catch(() => null) : null;
-                                const rawList = (() => {
-                                    if (!json || typeof json !== 'object') return [];
-                                    if (Array.isArray(json.data?.list)) return json.data.list;
-                                    if (Array.isArray(json.data?.data)) return json.data.data;
-                                    if (Array.isArray(json.data)) return json.data;
-                                    if (Array.isArray(json.list)) return json.list;
-                                    return [];
-                                })();
-                                __pushAttempt(endpointHost || 'unknown', res.status, json?.code, rawList.length);
-                                if (!res.ok) continue;
-                                if (!rawList.length) continue;
-
-                                const out = [];
-                                for (const it of rawList) {
-                                    const tsRaw = Number(it?.ts ?? it?.timestamp ?? 0) || 0;
-                                    const ts = tsRaw > 1000000000000 ? Math.floor(tsRaw / 1000) : Math.floor(tsRaw);
-                                    const priceNum0 = Number(it?.price ?? it?.close ?? 0) || 0;
-                                    if (!(ts > 0 && priceNum0 > 0)) continue;
-                                    let priceNum = __needInvert ? 1 / priceNum0 : priceNum0;
-                                    if (priceNum > 10) priceNum = 1 / priceNum;
-                                    if (!(priceNum > 0) || !Number.isFinite(priceNum)) continue;
-                                    out.push({ ts, price: String(priceNum) });
-                                }
-                                out.sort((a, b) => (a.ts || 0) - (b.ts || 0));
-
-                                if (out.length) {
-                                    return sendJSON(
-                                        {
-                                            code: 0,
-                                            data: {
-                                                list: out,
-                                                source: `swap_v1_price_line:${endpointUrl}`,
-                                                build: __workerBuild
-                                            }
-                                        },
-                                        200,
-                                        120,
-                                        'public'
-                                    );
-                                }
-                            }
-
-                            try {
-                                __swapV1Hint = __attempts
-                                    .map(a => {
-                                        const host = String(a?.h || '').trim();
-                                        const st = Number(a?.s || 0) || 0;
-                                        const l = Number(a?.l || 0) || 0;
-                                        return `${host}:${st}:${l}`;
-                                    })
-                                    .slice(0, 4)
-                                    .join(',');
-                            } catch (_) {}
-                        } catch (e) {
-                            void e;
-                        }
-
-                        // Try UniSat kline for longer timeframes
-                        try {
-                            if (isFennecPair) {
-                                const stepMs = (() => {
-                                    const v = String(timeRange || '').toLowerCase();
-                                    if (v === '1h') return 60 * 1000;
-                                    if (v === '24h') return 5 * 60 * 1000;
-                                    if (v === '7d') return 60 * 60 * 1000;
-                                    if (v === '30d') return 4 * 60 * 60 * 1000;
-                                    if (v === '90d') return 12 * 60 * 60 * 1000;
-                                    if (v === 'all') return 24 * 60 * 60 * 1000;
-                                    return 60 * 60 * 1000;
-                                })();
-
-                                const timeStart = cutoffMs;
-                                const timeEnd = nowMs;
-
-                                let effStepMs = stepMs;
-                                const maxPoints = 2016;
-                                const span = Math.max(0, timeEnd - timeStart);
-                                if (span > 0 && Math.floor(span / effStepMs) > maxPoints) {
-                                    effStepMs = Math.ceil(span / maxPoints);
-                                }
-
-                                const klineUrl =
-                                    'https://open-api-fractal.unisat.io/v3/market/brc20/auction/brc20_kline';
-
-                                const tryPayloads = [
-                                    {
-                                        units: 'ms',
-                                        body: {
-                                            tick: 'FENNEC',
-                                            timeStart,
-                                            timeEnd,
-                                            timeStep: effStepMs
-                                        },
-                                        mapTs: x => x
-                                    },
-                                    {
-                                        units: 's',
-                                        body: {
-                                            tick: 'FENNEC',
-                                            timeStart: Math.floor(timeStart / 1000),
-                                            timeEnd: Math.floor(timeEnd / 1000),
-                                            timeStep: Math.max(1, Math.floor(effStepMs / 1000))
-                                        },
-                                        mapTs: x => x
-                                    }
-                                ];
-
-                                for (const attempt of tryPayloads) {
-                                    const klineResult = await smartFetch(klineUrl, {
-                                        method: 'POST',
-                                        body: JSON.stringify(attempt.body),
-                                        timeoutMs: 2500
-                                    }).catch(() => null);
-
-                                    if (!klineResult || klineResult.code !== 0) continue;
-
-                                    const arr = Array.isArray(klineResult?.data)
-                                        ? klineResult.data
-                                        : Array.isArray(klineResult?.data?.list)
-                                          ? klineResult.data.list
-                                          : Array.isArray(klineResult?.data?.data)
-                                            ? klineResult.data.data
-                                            : [];
-                                    if (!arr.length) continue;
-
-                                    const out = [];
-                                    for (const p of arr) {
-                                        const tsRaw = Number(p?.timestamp ?? p?.ts ?? p?.time ?? 0) || 0;
-                                        const priceNum0 = Number(p?.price ?? p?.close ?? p?.curPrice ?? 0) || 0;
-                                        if (!(tsRaw > 0 && priceNum0 > 0)) continue;
-                                        const tsMs = tsRaw > 1000000000000 ? tsRaw : tsRaw * 1000;
-                                        const ts = Math.floor(tsMs / 1000);
-                                        if (!(ts > 0)) continue;
-                                        let priceNum = priceNum0;
-                                        if (priceNum > 10) priceNum = 1 / priceNum;
-                                        if (!(priceNum > 0) || !Number.isFinite(priceNum)) continue;
-                                        out.push({ ts, price: String(priceNum) });
-                                    }
-                                    out.sort((a, b) => (a.ts || 0) - (b.ts || 0));
-                                    if (out.length) {
-                                        return sendJSON(
-                                            {
-                                                code: 0,
-                                                data: {
-                                                    list: out,
-                                                    source: `brc20_kline_${attempt.units}_smartfetch`,
-                                                    build: __workerBuild
-                                                }
-                                            },
-                                            200,
-                                            120,
-                                            'public'
-                                        );
-                                    }
-                                }
-                            }
-                        } catch (e) {
-                            void e;
-                        }
+                    // Use swap_history for all timeframes (fastest, keyless) for FENNEC pair.
+                    if (isFennecPair) {
+                        // Skip price_line/kline attempts; swap_history parsing below handles all ranges.
                     }
 
                     const startedAt = Date.now();
@@ -1423,8 +1159,6 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             } else {
                                 continue;
                             }
-
-                            if (price > 10) price = 1 / price;
 
                             if (!(price > 0)) continue;
                             outList.push({ ts, price: String(price) });
@@ -1693,6 +1427,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     const hasFennecInLP = !!(d.has_fennec_in_lp || d.hasFennecInLP);
 
                     const fennecTotal = Number(d.fennec_native_balance || 0) || 0;
+                    const isFennecMaxi = fennecTotal >= 10000 || fennecLpValueUSD >= 5;
                     const isMempoolRider = txCount >= 10000;
                     const abandonedUtxoCountNum = Number.isFinite(Number(d.abandoned_utxo_count))
                         ? Number(d.abandoned_utxo_count)
@@ -1719,7 +1454,7 @@ Request Context: ${JSON.stringify(context, null, 2)}
                             icon: '',
                             desc: 'The desert is thirsty, but your well runs deep.'
                         });
-                    if (fennecTotal >= 10000 || hasFennecInLP)
+                    if (isFennecMaxi)
                         badges.push({
                             name: 'FENNEC MAXI',
                             icon: '',
@@ -2599,15 +2334,10 @@ Request Context: ${JSON.stringify(context, null, 2)}
 
                 fee = estimateFee(1 + selected.length, 3);
                 let change = totalIn - burnValue - payAmount - fee;
-                let withChange = change >= 546n;
+                const withChange = change >= 546n;
                 if (!withChange) {
-                    fee = estimateFee(1 + selected.length, 2);
-                    change = totalIn - burnValue - payAmount - fee;
-                    withChange = false;
-                    if (change > 0n) {
-                        fee = fee + change;
-                        change = 0n;
-                    }
+                    fee = fee + change;
+                    change = 0n;
                 }
 
                 const tx = new btc.Transaction();
@@ -2665,600 +2395,6 @@ Request Context: ${JSON.stringify(context, null, 2)}
                         }
                     }
                 });
-            }
-
-            if (action === 'pre_add_liq') {
-                try {
-                    requireUniSatKey();
-                    const proxyParams = new URLSearchParams(url.searchParams);
-                    proxyParams.delete('action');
-                    proxyParams.delete('rememberPayType');
-
-                    if (!proxyParams.has('feeTick')) proxyParams.set('feeTick', DEFAULT_FEE_TICK);
-                    if (!proxyParams.has('payType')) proxyParams.set('payType', 'tick');
-
-                    let endpointUrl = `${SWAP_BASE}/brc20-swap/pre_add_liq?${proxyParams.toString()}`;
-                    let response = await fetch(endpointUrl, {
-                        headers: unisatApiHeaders
-                    });
-                    if (!response.ok && response.status === 404) {
-                        endpointUrl = `${SWAP_BASE}/indexer/brc20-swap/pre_add_liq?${proxyParams.toString()}`;
-                        response = await fetch(endpointUrl, { headers: unisatApiHeaders });
-                    }
-                    return sendJSON(await response.json(), response.status);
-                } catch (e) {
-                    return sendJSON({ code: -1, msg: e?.message || String(e) }, 500);
-                }
-            }
-
-            if (action === 'add_liq') {
-                try {
-                    requireUniSatKey();
-                    const body = await request.json();
-
-                    if (body && typeof body === 'object') {
-                        if (!('feeTick' in body)) body.feeTick = DEFAULT_FEE_TICK;
-                        if (!('payType' in body)) body.payType = 'tick';
-                        if ('rememberPayType' in body) delete body.rememberPayType;
-                    }
-
-                    const headers = {
-                        ...unisatApiHeaders,
-                        'Content-Type': 'application/json'
-                    };
-
-                    let endpointUrl = `${SWAP_BASE}/brc20-swap/add_liq`;
-                    let response = await fetch(endpointUrl, {
-                        method: 'POST',
-                        headers,
-                        body: JSON.stringify(body)
-                    });
-                    if (!response.ok && response.status === 404) {
-                        endpointUrl = `${SWAP_BASE}/indexer/brc20-swap/add_liq`;
-                        response = await fetch(endpointUrl, {
-                            method: 'POST',
-                            headers,
-                            body: JSON.stringify(body)
-                        });
-                    }
-                    return sendJSON(await response.json(), response.status);
-                } catch (e) {
-                    return sendJSON({ code: -1, msg: e?.message || String(e) }, 500);
-                }
-            }
-
-            if (action === 'quote_remove_liq') {
-                try {
-                    requireUniSatKey();
-                    const proxyParams = new URLSearchParams(url.searchParams);
-                    proxyParams.delete('action');
-                    proxyParams.delete('rememberPayType');
-
-                    let endpointUrl = `${SWAP_BASE}/brc20-swap/quote_remove_liq?${proxyParams.toString()}`;
-                    let response = await fetch(endpointUrl, {
-                        headers: unisatApiHeaders
-                    });
-                    if (!response.ok && response.status === 404) {
-                        endpointUrl = `${SWAP_BASE}/indexer/brc20-swap/quote_remove_liq?${proxyParams.toString()}`;
-                        response = await fetch(endpointUrl, { headers: unisatApiHeaders });
-                    }
-                    return sendJSON(await response.json(), response.status);
-                } catch (e) {
-                    return sendJSON({ code: -1, msg: e?.message || String(e) }, 500);
-                }
-            }
-
-            if (action === 'pre_remove_liq') {
-                try {
-                    requireUniSatKey();
-                    const proxyParams = new URLSearchParams(url.searchParams);
-                    proxyParams.delete('action');
-                    proxyParams.delete('rememberPayType');
-
-                    if (!proxyParams.has('feeTick')) proxyParams.set('feeTick', DEFAULT_FEE_TICK);
-                    if (!proxyParams.has('payType')) proxyParams.set('payType', 'tick');
-
-                    let endpointUrl = `${SWAP_BASE}/brc20-swap/pre_remove_liq?${proxyParams.toString()}`;
-                    let response = await fetch(endpointUrl, {
-                        headers: unisatApiHeaders
-                    });
-                    if (!response.ok && response.status === 404) {
-                        endpointUrl = `${SWAP_BASE}/indexer/brc20-swap/pre_remove_liq?${proxyParams.toString()}`;
-                        response = await fetch(endpointUrl, { headers: unisatApiHeaders });
-                    }
-                    return sendJSON(await response.json(), response.status);
-                } catch (e) {
-                    return sendJSON({ code: -1, msg: e?.message || String(e) }, 500);
-                }
-            }
-
-            if (action === 'remove_liq') {
-                try {
-                    requireUniSatKey();
-                    const body = await request.json();
-
-                    if (body && typeof body === 'object') {
-                        if (!('feeTick' in body)) body.feeTick = DEFAULT_FEE_TICK;
-                        if (!('payType' in body)) body.payType = 'tick';
-                        if ('rememberPayType' in body) delete body.rememberPayType;
-                    }
-
-                    const headers = {
-                        ...unisatApiHeaders,
-                        'Content-Type': 'application/json'
-                    };
-
-                    let endpointUrl = `${SWAP_BASE}/brc20-swap/remove_liq`;
-                    let response = await fetch(endpointUrl, {
-                        method: 'POST',
-                        headers,
-                        body: JSON.stringify(body)
-                    });
-                    if (!response.ok && response.status === 404) {
-                        endpointUrl = `${SWAP_BASE}/indexer/brc20-swap/remove_liq`;
-                        response = await fetch(endpointUrl, {
-                            method: 'POST',
-                            headers,
-                            body: JSON.stringify(body)
-                        });
-                    }
-                    return sendJSON(await response.json(), response.status);
-                } catch (e) {
-                    return sendJSON({ code: -1, msg: e?.message || String(e) }, 500);
-                }
-            }
-
-            if (action === 'deposit_balance') {
-                const address = url.searchParams.get('address');
-                const tick = url.searchParams.get('tick');
-                if (!address || !tick) return sendJSON({ code: -1, msg: 'Missing address or tick' }, 200);
-                try {
-                    const endpoint = `${FRACTAL_BASE}/indexer/address/${encodeURIComponent(
-                        address
-                    )}/brc20/${encodeURIComponent(tick)}/info`;
-                    const res = await fetch(endpoint, {
-                        headers: upstreamHeaders
-                    });
-                    const json = await res.json().catch(() => null);
-                    const transferable =
-                        json?.data?.transferableBalance ||
-                        json?.data?.balance?.transferableBalance ||
-                        json?.data?.availableBalance ||
-                        json?.data?.balance?.availableBalance ||
-                        '0';
-                    return sendJSON({
-                        code: 0,
-                        msg: 'OK',
-                        data: {
-                            externalBalance: { brc20: { transferable } }
-                        }
-                    });
-                } catch (e) {
-                    return sendJSON({ code: -1, msg: e?.message || String(e) }, 200);
-                }
-            }
-
-            if (action === 'transferable_inscriptions') {
-                const address = String(url.searchParams.get('address') || '').trim();
-                const tick = String(url.searchParams.get('tick') || '').trim();
-                const start = Math.max(0, parseInt(String(url.searchParams.get('start') || '0'), 10) || 0);
-                const limit = Math.min(
-                    1000,
-                    Math.max(1, parseInt(String(url.searchParams.get('limit') || '16'), 10) || 16)
-                );
-                if (!address || !tick) return sendJSON({ error: 'Missing address or tick' }, 400);
-                if (!API_KEY) return sendJSON({ error: 'UNISAT_API_KEY required' }, 403);
-                try {
-                    const endpoint =
-                        `${FRACTAL_BASE}/indexer/address/${encodeURIComponent(address)}/brc20/` +
-                        `${encodeURIComponent(tick)}/transferable-inscriptions?start=${start}&limit=${limit}`;
-                    const res = await fetch(endpoint, { headers: upstreamHeaders });
-                    const json = await res.json().catch(() => null);
-                    if (json && typeof json === 'object' && json.data && typeof json.data === 'object') {
-                        const d = json.data;
-                        let list = [];
-                        if (Array.isArray(d.list)) list = d.list;
-                        else if (Array.isArray(d.detail)) list = d.detail;
-                        else if (d.detail && typeof d.detail === 'object') list = [d.detail];
-                        else if (Array.isArray(d.inscriptions)) list = d.inscriptions;
-                        else if (Array.isArray(d.data)) list = d.data;
-                        json.data = { ...d, list };
-                    }
-                    return sendJSON(json || { code: -1, msg: 'Invalid upstream response' }, res.status);
-                } catch (e) {
-                    return sendJSON({ error: e?.message || String(e) }, 500);
-                }
-            }
-
-            if (action === 'quote_swap') {
-                const tickIn = __normalizeSwapTick(url.searchParams.get('tickIn'));
-                const tickOut = __normalizeSwapTick(url.searchParams.get('tickOut'));
-                const exactType = String(url.searchParams.get('exactType') || 'exactIn');
-                const amount = Number(url.searchParams.get('amount') || 0);
-                if (!tickIn || !tickOut || !Number.isFinite(amount) || amount <= 0) {
-                    return sendJSON({ code: -1, msg: 'Missing or invalid params' }, 200);
-                }
-
-                const __num = v => {
-                    const n = Number(v);
-                    return Number.isFinite(n) ? n : 0;
-                };
-
-                const __extractReserves = d => {
-                    if (!d || typeof d !== 'object') return null;
-                    const t0 = __normalizeSwapTick(d.tick0);
-                    const t1 = __normalizeSwapTick(d.tick1);
-                    const r0 = __num(d.amount0 ?? d.reserve0 ?? d.r0 ?? d.liq0);
-                    const r1 = __num(d.amount1 ?? d.reserve1 ?? d.r1 ?? d.liq1);
-                    if (!t0 || !t1 || r0 <= 0 || r1 <= 0) return null;
-                    return { t0, t1, r0, r1 };
-                };
-
-                try {
-                    const query = `?tick0=${encodeURIComponent(tickIn)}&tick1=${encodeURIComponent(tickOut)}`;
-                    let poolUrl = `${SWAP_BASE}/brc20-swap/pool_info${query}`;
-                    let res = await fetch(poolUrl, { headers: upstreamHeaders });
-                    if (!res.ok && res.status === 404) {
-                        poolUrl = `${SWAP_BASE}/indexer/brc20-swap/pool_info${query}`;
-                        res = await fetch(poolUrl, { headers: upstreamHeaders });
-                    }
-                    if (!res.ok) {
-                        return sendJSON(
-                            {
-                                code: -1,
-                                msg: `API error: ${res.status} ${res.statusText}`,
-                                url: poolUrl
-                            },
-                            res.status
-                        );
-                    }
-                    const json = await res.json().catch(() => null);
-                    const data = json?.data && typeof json.data === 'object' ? json.data : json;
-                    const r = __extractReserves(data);
-                    if (!r) return sendJSON({ code: -1, msg: 'Pool reserves unavailable' }, 200);
-
-                    let rIn = 0;
-                    let rOut = 0;
-                    if (tickIn === r.t0 && tickOut === r.t1) {
-                        rIn = r.r0;
-                        rOut = r.r1;
-                    } else if (tickIn === r.t1 && tickOut === r.t0) {
-                        rIn = r.r1;
-                        rOut = r.r0;
-                    } else {
-                        return sendJSON({ code: -1, msg: 'Pool does not match requested pair' }, 200);
-                    }
-
-                    const feeMul = 985;
-                    const feeDiv = 1000;
-
-                    if (exactType === 'exactOut') {
-                        const desiredOut = amount;
-                        if (desiredOut >= rOut) return sendJSON({ code: -1, msg: 'Insufficient liquidity' }, 200);
-                        const numerator = desiredOut * rIn * feeDiv;
-                        const denominator = (rOut - desiredOut) * feeMul;
-                        if (denominator <= 0) return sendJSON({ code: -1, msg: 'Invalid quote' }, 200);
-                        const needIn = numerator / denominator;
-                        return sendJSON({
-                            code: 0,
-                            msg: 'OK',
-                            data: {
-                                expect: String(needIn),
-                                amountIn: String(needIn),
-                                amountOut: String(desiredOut)
-                            }
-                        });
-                    }
-
-                    const amountIn = amount;
-                    const feeIn = amountIn * feeMul;
-                    const amountOut = (feeIn * rOut) / (rIn * feeDiv + feeIn);
-                    return sendJSON({
-                        code: 0,
-                        msg: 'OK',
-                        data: {
-                            expect: String(amountOut),
-                            amountIn: String(amountIn),
-                            amountOut: String(amountOut)
-                        }
-                    });
-                } catch (e) {
-                    return sendJSON({ code: -1, msg: e?.message || String(e) }, 200);
-                }
-            }
-
-            // 5. PROXY GET (InSwap) - включает quote_swap
-            const ALLOWED_GET = [
-                'create_swap',
-                'create_deposit',
-                'create_withdraw',
-                'config',
-                'deposit_list',
-                'withdraw_history',
-                'deposit_process',
-                'withdraw_process',
-                'swap_history',
-                'pool_info'
-            ];
-
-            if (ALLOWED_GET.includes(action)) {
-                // Кэшируем только глобальные GET, которые одинаковы для всех (например swap_history)
-                // Это снижает нагрузку и ускоряет UI, но не кэшируем персональные операции.
-                if (action === 'swap_history') {
-                    try {
-                        const cache = caches.default;
-                        const cacheKeyUrl = new URL(request.url);
-                        cacheKeyUrl.searchParams.delete('action');
-                        // фиксированный ключ для одного и того же запроса
-                        const swapCacheKey = new Request(
-                            `https://fennec-api.pages.dev/swap_history?${cacheKeyUrl.searchParams.toString()}`,
-                            {
-                                method: 'GET'
-                            }
-                        );
-                        const cached = await cache.match(swapCacheKey);
-                        if (cached) return cached;
-
-                        const proxyParams = new URLSearchParams(url.searchParams);
-                        proxyParams.delete('action');
-                        const endpoint = action;
-                        let endpointUrl = `${SWAP_BASE}/brc20-swap/${endpoint}?${proxyParams.toString()}`;
-                        let response = await fetch(endpointUrl, {
-                            method: 'GET',
-                            headers: upstreamHeaders
-                        });
-                        if (!response.ok && response.status === 404) {
-                            endpointUrl = `${SWAP_BASE}/indexer/brc20-swap/${endpoint}?${proxyParams.toString()}`;
-                            response = await fetch(endpointUrl, {
-                                method: 'GET',
-                                headers: upstreamHeaders
-                            });
-                        }
-                        const json = await response.json();
-                        const out = sendJSON(json, response.status);
-                        out.headers.set('Cache-Control', 's-maxage=60, max-age=30');
-                        if (ctx?.waitUntil) ctx.waitUntil(cache.put(swapCacheKey, out.clone()));
-                        else await cache.put(swapCacheKey, out.clone());
-                        return out;
-                    } catch (_) {
-                        // fallback to uncached below
-                    }
-                }
-                const proxyParams = new URLSearchParams(url.searchParams);
-                proxyParams.delete('action');
-
-                const __maybeNormalizeParam = name => {
-                    if (!proxyParams.has(name)) return;
-                    proxyParams.set(name, __normalizeSwapTick(proxyParams.get(name)));
-                };
-
-                __maybeNormalizeParam('tick0');
-                __maybeNormalizeParam('tick1');
-                __maybeNormalizeParam('tick');
-                __maybeNormalizeParam('tickIn');
-                __maybeNormalizeParam('tickOut');
-                __maybeNormalizeParam('feeTick');
-
-                let endpoint = action;
-                if (action === 'create_swap') endpoint = 'pre_swap';
-
-                const isBridgeCreateDeposit =
-                    action === 'create_deposit' && !proxyParams.has('inscriptionId') && proxyParams.has('networkType');
-                const isBridgeCreateWithdraw =
-                    action === 'create_withdraw' && (proxyParams.has('networkType') || proxyParams.has('feeRate'));
-                void isBridgeCreateDeposit;
-                void isBridgeCreateWithdraw;
-
-                let endpointUrl = `${SWAP_BASE}/brc20-swap/${endpoint}?${proxyParams.toString()}`;
-                let response = await fetch(endpointUrl, {
-                    method: 'GET',
-                    headers: upstreamHeaders
-                });
-                if (!response.ok && response.status === 404) {
-                    endpointUrl = `${SWAP_BASE}/indexer/brc20-swap/${endpoint}?${proxyParams.toString()}`;
-                    response = await fetch(endpointUrl, {
-                        method: 'GET',
-                        headers: upstreamHeaders
-                    });
-                }
-                return sendJSON(await response.json(), response.status);
-            }
-
-            // 6. PROXY POST
-            if (['submit_swap', 'confirm_deposit', 'confirm_withdraw'].includes(action)) {
-                const body = await request.json();
-                let endpoint = action;
-                if (action === 'submit_swap') endpoint = 'swap';
-                const isBrc20DepositConfirm =
-                    action === 'confirm_deposit' && body && typeof body === 'object' && 'inscriptionId' in body;
-                const isSwapSubmit = action === 'submit_swap';
-                if (isSwapSubmit || isBrc20DepositConfirm) {
-                    let endpointUrl = `${SWAP_BASE}/brc20-swap/${endpoint}`;
-                    let response = await fetch(endpointUrl, {
-                        method: 'POST',
-                        headers: upstreamHeaders,
-                        body: JSON.stringify(body)
-                    });
-                    if (!response.ok && response.status === 404) {
-                        endpointUrl = `${SWAP_BASE}/indexer/brc20-swap/${endpoint}`;
-                        response = await fetch(endpointUrl, {
-                            method: 'POST',
-                            headers: upstreamHeaders,
-                            body: JSON.stringify(body)
-                        });
-                    }
-                    return sendJSON(await response.json(), response.status);
-                }
-
-                let endpointUrl = `${SWAP_BASE}/brc20-swap/${endpoint}`;
-                let response = await fetch(endpointUrl, {
-                    method: 'POST',
-                    headers: upstreamHeaders,
-                    body: JSON.stringify(body)
-                });
-                if (!response.ok && response.status === 404) {
-                    endpointUrl = `${SWAP_BASE}/indexer/brc20-swap/${endpoint}`;
-                    response = await fetch(endpointUrl, {
-                        method: 'POST',
-                        headers: upstreamHeaders,
-                        body: JSON.stringify(body)
-                    });
-                }
-                return sendJSON(await response.json(), response.status);
-            }
-
-            // 7. BALANCE
-            // ОПТИМИЗАЦИЯ: Batch балансов для уменьшения запросов
-            if (action === 'balance_batch') {
-                const address = url.searchParams.get('address');
-                const ticks = url.searchParams.get('ticks')?.split(',') || [];
-                const walletOnly = url.searchParams.get('walletOnly') === 'true';
-
-                if (!address || ticks.length === 0) {
-                    return sendJSON({ error: 'Missing address or ticks' }, 200);
-                }
-
-                // Загружаем все балансы параллельно
-                const balancePromises = ticks.map(async tick => {
-                    if (walletOnly) {
-                        return fetch(`${FRACTAL_BASE}/indexer/address/${address}/brc20/${tick}/info`, {
-                            headers: upstreamHeaders
-                        })
-                            .then(r => r.json())
-                            .then(data => ({ tick, data }))
-                            .catch(e => ({ tick, error: e.message }));
-                    } else {
-                        // ИСПРАВЛЕНИЕ: Пробуем сначала без /indexer/, затем с /indexer/ (fallback)
-                        let balanceUrl = `${SWAP_BASE}/brc20-swap/balance?address=${address}&tick=${tick}`;
-                        let balanceRes = await fetch(balanceUrl, {
-                            headers: upstreamHeaders
-                        });
-
-                        // Fallback: если не работает без /indexer/, пробуем с /indexer/
-                        if (!balanceRes.ok && balanceRes.status === 404) {
-                            balanceUrl = `${SWAP_BASE}/indexer/brc20-swap/balance?address=${address}&tick=${tick}`;
-                            balanceRes = await fetch(balanceUrl, {
-                                headers: upstreamHeaders
-                            });
-                        }
-
-                        try {
-                            const data = await balanceRes.json();
-                            return { tick, data };
-                        } catch (e) {
-                            return { tick, error: e.message };
-                        }
-                    }
-                });
-
-                const results = await Promise.all(balancePromises);
-                const balances = {};
-                results.forEach(({ tick, data, error }) => {
-                    balances[tick] = error ? { error } : data;
-                });
-
-                return sendJSON({ code: 0, data: balances });
-            }
-
-            if (action === 'balance') {
-                const address = url.searchParams.get('address');
-                const tick = url.searchParams.get('tick') || 'sFB___000';
-                const walletOnly = url.searchParams.get('walletOnly') === 'true';
-                if (walletOnly) {
-                    try {
-                        const result = await smartFetch(
-                            `${FRACTAL_BASE}/indexer/address/${address}/brc20/${tick}/info`
-                        );
-                        if (!result || result.code !== 0) {
-                            return sendJSON({ error: `API error: ${result?.msg || 'Unknown error'}` }, 500);
-                        }
-                        return sendJSON(result);
-                    } catch (e) {
-                        return sendJSON({ error: `Fetch error: ${e.message}` }, 500);
-                    }
-                } else {
-                    try {
-                        let balanceUrl = `${SWAP_BASE}/brc20-swap/balance?address=${address}&tick=${tick}`;
-                        let res = await fetch(balanceUrl, { headers: upstreamHeaders });
-                        if (!res.ok && res.status === 404) {
-                            balanceUrl = `${SWAP_BASE}/indexer/brc20-swap/balance?address=${address}&tick=${tick}`;
-                            res = await fetch(balanceUrl, { headers: upstreamHeaders });
-                        }
-
-                        if (!res.ok) {
-                            return sendJSON(
-                                {
-                                    error: `API error: ${res.status} ${res.statusText}`,
-                                    url: balanceUrl
-                                },
-                                res.status
-                            );
-                        }
-                        const text = await res.text();
-                        if (!text || text.trim().length === 0) {
-                            return sendJSON({ error: 'Empty response from API' }, 500);
-                        }
-                        try {
-                            return sendJSON(JSON.parse(text));
-                        } catch (parseError) {
-                            return sendJSON(
-                                {
-                                    error: `JSON parse error: ${parseError.message}`,
-                                    raw: text.substring(0, 200)
-                                },
-                                500
-                            );
-                        }
-                    } catch (e) {
-                        return sendJSON({ error: `Fetch error: ${e.message}` }, 500);
-                    }
-                }
-            }
-
-            // 8. FIP-101 HISTORY (smartFetch: Free → Paid)
-            if (action === 'history') {
-                const address = url.searchParams.get('address');
-                const tick = url.searchParams.get('tick');
-
-                if (!address) return sendJSON({ code: -1, msg: 'No address' }, 400);
-
-                let targetUrl;
-                if (tick && tick !== 'FB') {
-                    targetUrl = `${FRACTAL_BASE}/indexer/address/${address}/brc20/${tick}/history?type=transfer&start=0&limit=10`;
-                } else {
-                    targetUrl = `${FRACTAL_BASE}/indexer/address/${address}/history?cursor=0&size=10`;
-                }
-
-                const result = await smartFetch(targetUrl).catch(() => null);
-                if (!result || result.code !== 0) {
-                    return sendJSON({ code: 0, data: { list: [] } }, 200);
-                }
-                return sendJSON(result, 200);
-            }
-
-            // 9. FULL UTXO DATA (smartFetch: Free → Paid)
-            if (action === 'full_utxo_data') {
-                const address = url.searchParams.get('address');
-                const cursor = url.searchParams.get('cursor') || '0';
-                const size = url.searchParams.get('size') || '50';
-
-                if (!address) return sendJSON({ error: 'Missing address' }, 200);
-
-                const endpoint = `${FRACTAL_BASE}/indexer/address/${address}/utxo-data?cursor=${cursor}&size=${size}`;
-                const result = await smartFetch(endpoint).catch(() => null);
-
-                if (result && result.code === 0) {
-                    return sendJSON(result, 200);
-                }
-
-                return sendJSON(
-                    {
-                        code: 0,
-                        data: { list: [], total: 0 },
-                        msg: 'UTXO data unavailable'
-                    },
-                    200
-                );
             }
 
             // --- FENNEC ID DATA (Simplified: Prices + Summary only) ---
@@ -3608,6 +2744,39 @@ Request Context: ${JSON.stringify(context, null, 2)}
 
                 try {
                     void pubkey;
+                    const fetchSwapJson = async pathWithQuery => {
+                        const endpoints = [
+                            `${SWAP_BASE}/brc20-swap/${pathWithQuery}`,
+                            `${SWAP_BASE}/indexer/brc20-swap/${pathWithQuery}`
+                        ];
+                        for (const endpoint of endpoints) {
+                            try {
+                                const res = await fetch(endpoint, {
+                                    headers: upstreamHeaders
+                                });
+                                if (!res || !res.ok) {
+                                    if (res?.status === 404) continue;
+                                    return null;
+                                }
+                                return await res.json().catch(() => null);
+                            } catch (_) {
+                                void _;
+                            }
+                        }
+                        return null;
+                    };
+
+                    const addressSafe = encodeURIComponent(address);
+                    let allBalance = await fetchSwapJson(`all_balance?address=${addressSafe}`);
+                    if (!allBalance?.data || typeof allBalance.data !== 'object') {
+                        const fallbackBalance = await fetchSwapJson(`address/${addressSafe}/balance`);
+                        if (fallbackBalance?.data && typeof fallbackBalance.data === 'object')
+                            allBalance = fallbackBalance;
+                    }
+                    const liquidityData = await fetchSwapJson(`address/${addressSafe}/liquidity`);
+                    const addressUsd = await fetchSwapJson(`address_usd?address=${addressSafe}`);
+                    const userInfo = await fetchSwapJson(`user_info?address=${addressSafe}`);
+
                     const myPoolListUrl = `${SWAP_BASE}/brc20-swap/my_pool_list?address=${address}&start=0&limit=100`;
                     let myPoolListRes = await fetch(myPoolListUrl, {
                         headers: upstreamHeaders
@@ -3620,23 +2789,65 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     }
                     const myPoolList = myPoolListRes?.ok ? await myPoolListRes.json().catch(() => null) : null;
 
+                    const allBalanceData =
+                        allBalance?.data && typeof allBalance.data === 'object' ? allBalance.data : allBalance || {};
+                    const allBalanceList = Array.isArray(allBalanceData?.list)
+                        ? allBalanceData.list
+                        : Array.isArray(allBalanceData?.detail)
+                          ? allBalanceData.detail
+                          : null;
+                    const tokens = (() => {
+                        if (allBalanceData && typeof allBalanceData.tokens === 'object' && allBalanceData.tokens)
+                            return allBalanceData.tokens;
+                        if (allBalanceList) {
+                            const out = {};
+                            for (const item of allBalanceList) {
+                                const tick = String(item?.tick || item?.ticker || '').trim();
+                                if (!tick) continue;
+                                out[tick] = item;
+                            }
+                            return out;
+                        }
+                        if (allBalanceData && typeof allBalanceData === 'object' && !Array.isArray(allBalanceData))
+                            return allBalanceData;
+                        return {};
+                    })();
+                    const lpPositions = (() => {
+                        if (Array.isArray(allBalanceData?.lp_positions)) return allBalanceData.lp_positions;
+                        if (Array.isArray(liquidityData?.data?.list)) return liquidityData.data.list;
+                        if (Array.isArray(liquidityData?.data)) return liquidityData.data;
+                        return [];
+                    })();
+                    const totalUsd = Number(
+                        addressUsd?.data?.totalUsd ||
+                            addressUsd?.data?.total_usd ||
+                            allBalanceData?.totalUsd ||
+                            allBalanceData?.total_usd ||
+                            0
+                    );
+
                     // Собираем summary данные из InSwap (как в коде пользователя)
                     const summary = {
                         address: address,
                         // Балансы из all_balance (getAllBalance)
-                        all_balance: {},
+                        all_balance: allBalanceData || {},
                         // LP данные из my_pool_list (myPoolList)
-                        lp_list: myPoolList?.data?.list || [],
-                        lp_count: myPoolList?.data?.list?.length || 0,
+                        lp_list: myPoolList?.data?.list || lpPositions,
+                        lp_count: (myPoolList?.data?.list || lpPositions || []).length || 0,
                         lp_total_usd: myPoolList?.data?.totalLpUSD || 0,
                         // Net worth из address_usd (getAddressUsd) или all_balance
-                        total_usd: 0,
+                        total_usd: Number.isFinite(totalUsd) ? totalUsd : 0,
                         // User info (userInfo) - дополнительная информация о пользователе
-                        user_info: {},
+                        user_info:
+                            userInfo?.data && typeof userInfo.data === 'object'
+                                ? userInfo.data
+                                : userInfo && typeof userInfo === 'object'
+                                  ? userInfo
+                                  : {},
                         // Детали по токенам (обработанные из all_balance)
-                        tokens: {},
+                        tokens,
                         // LP позиции (если есть в all_balance)
-                        lp_positions: [],
+                        lp_positions: lpPositions,
                         synced_at: new Date().toISOString()
                     };
 
@@ -3644,6 +2855,9 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     if (__debugEnabled) {
                         out._debug = {
                             source: 'inswap_summary',
+                            all_balance_ok: !!(allBalance && allBalance.data),
+                            address_usd_ok: !!(addressUsd && addressUsd.data),
+                            user_info_ok: !!(userInfo && userInfo.data),
                             my_pool_list_code: myPoolList?.code,
                             my_pool_list_msg: myPoolList?.msg,
                             tokens_count: Object.keys(summary.tokens).length,
@@ -3664,292 +2878,6 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     return response;
                 } catch (e) {
                     return sendJSON({ error: 'InSwap Summary error: ' + e.message }, 500);
-                }
-            }
-
-            // --- AUDIT DATA / FRACTAL AUDIT (Smart Logic: TX Count First → Genesis History) ---
-            if (action === 'audit_data' || action === 'fractal_audit') {
-                const address = url.searchParams.get('address');
-                if (!address) return sendJSON({ error: 'Address required' }, 400);
-
-                const response = {
-                    address,
-                    audit_time: new Date().toISOString(),
-                    stages: { tx_count: 'pending', history: 'pending', wealth: 'pending', collections: 'pending' }
-                };
-
-                try {
-                    // STAGE A: TX COUNT & WALLET AGE
-                    // 1. Try UniSat Summary (smartFetch: Free → Paid)
-                    let tx_count = 0;
-                    const summary = await smartFetch(
-                        `https://open-api-fractal.unisat.io/v1/indexer/address/${address}/summary`
-                    ).catch(() => null);
-
-                    if (summary?.data?.txCount !== undefined) {
-                        tx_count = Number(summary.data.txCount || 0) || 0;
-                    } else {
-                        // Fallback: Mempool (Free)
-                        const mempoolRes = await fetch(`https://mempool.fractalbitcoin.io/api/address/${address}`);
-                        const mempoolStats = await mempoolRes.json().catch(() => ({}));
-                        const chain = mempoolStats.chain_stats || {};
-                        const mem = mempoolStats.mempool_stats || {};
-                        tx_count = Number(chain.tx_count || 0) + Number(mem.tx_count || 0) || 0;
-                    }
-                    response.tx_count = tx_count;
-                    response.stages.tx_count = 'done';
-
-                    // 2. Genesis Transaction Timestamp (Simple "Total - 1" Logic)
-                    response.first_tx_ts = 0;
-                    if (tx_count > 0) {
-                        const offset = tx_count - 1;
-                        const genesisHistory = await smartFetch(
-                            `https://open-api-fractal.unisat.io/v1/indexer/address/${address}/history?cursor=${offset}&size=1`
-                        ).catch(() => null);
-                        const genesisTx = genesisHistory?.data?.detail?.[0];
-                        if (genesisTx?.timestamp) {
-                            response.first_tx_ts = Number(genesisTx.timestamp) || 0;
-                        }
-                    }
-                    response.stages.history = 'done';
-
-                    await new Promise(r => setTimeout(r, 200));
-
-                    // STAGE B: WEALTH (MONEY)
-                    // Native Balance (Mempool)
-                    const mempoolRes = await fetch(`https://mempool.fractalbitcoin.io/api/address/${address}`);
-                    const mempoolStats = await mempoolRes.json().catch(() => ({}));
-                    const chain = mempoolStats.chain_stats || {};
-                    const native_balance_sats = Number(chain.funded_txo_sum || 0) - Number(chain.spent_txo_sum || 0);
-                    response.native_balance = native_balance_sats / 1e8 || 0;
-
-                    // InSwap Balance + Liquidity (restore old logic)
-                    let inswap_fb_balance = 0;
-                    let inswap_fennec_balance = 0;
-                    try {
-                        const inswapBase = 'https://brc20-swap-fractal.unisat.io/brc20-swap/v1';
-
-                        // Fetch user balance
-                        const balanceUrl = `${inswapBase}/address/${address}/balance`;
-                        const balanceRes = await fetch(balanceUrl, { headers: upstreamHeaders }).catch(() => null);
-                        let balanceData = null;
-                        if (balanceRes && balanceRes.ok) {
-                            balanceData = await balanceRes.json().catch(() => null);
-                        }
-
-                        // Fetch user liquidity
-                        const liquidityUrl = `${inswapBase}/address/${address}/liquidity`;
-                        const liquidityRes = await fetch(liquidityUrl, { headers: upstreamHeaders }).catch(() => null);
-                        let liquidityData = null;
-                        if (liquidityRes && liquidityRes.ok) {
-                            liquidityData = await liquidityRes.json().catch(() => null);
-                        }
-
-                        // Sum FB from balance
-                        if (balanceData?.data) {
-                            const fbBal = balanceData.data.sFB___000 || balanceData.data.sFB || 0;
-                            inswap_fb_balance += Number(fbBal) || 0;
-
-                            const fennecBal = balanceData.data.FENNEC || 0;
-                            inswap_fennec_balance += Number(fennecBal) || 0;
-                        }
-
-                        // Sum FB from liquidity positions
-                        if (liquidityData?.data?.list && Array.isArray(liquidityData.data.list)) {
-                            for (const lp of liquidityData.data.list) {
-                                if (lp.tick0 === 'sFB___000' || lp.tick0 === 'sFB') {
-                                    inswap_fb_balance += Number(lp.amount0 || 0);
-                                }
-                                if (lp.tick1 === 'sFB___000' || lp.tick1 === 'sFB') {
-                                    inswap_fb_balance += Number(lp.amount1 || 0);
-                                }
-                                if (lp.tick0 === 'FENNEC') {
-                                    inswap_fennec_balance += Number(lp.amount0 || 0);
-                                }
-                                if (lp.tick1 === 'FENNEC') {
-                                    inswap_fennec_balance += Number(lp.amount1 || 0);
-                                }
-                            }
-                        }
-
-                        // Convert sats to BTC if needed
-                        if (inswap_fb_balance > 1000000) {
-                            inswap_fb_balance = inswap_fb_balance / 1e8;
-                        }
-                    } catch (_) {}
-                    response.inswap_fb_balance = inswap_fb_balance;
-                    response.inswap_fennec_balance = inswap_fennec_balance;
-
-                    // Add InSwap FB balance to total native balance
-                    response.native_balance += inswap_fb_balance;
-
-                    // BRC20 Summary with DEDUPLICATION (smartFetch)
-                    const brc20 = await smartFetch(
-                        `https://open-api-fractal.unisat.io/v1/indexer/address/${address}/brc20/summary?start=0&limit=100`
-                    ).catch(() => ({ data: { total: 0, detail: [] } }));
-
-                    // Use Map to deduplicate tokens by ticker
-                    const tokenMap = new Map();
-                    const brc20List = brc20.data?.detail || [];
-                    for (const token of brc20List) {
-                        const ticker = String(token.ticker || '').toUpperCase();
-                        if (!ticker) continue;
-
-                        const existing = tokenMap.get(ticker);
-                        const balance = Number(token.overallBalance || token.balance || 0);
-
-                        // CRITICAL: Filter out zero-balance tokens
-                        if (balance <= 0) continue;
-
-                        if (!existing || balance > existing.balance) {
-                            tokenMap.set(ticker, {
-                                ticker,
-                                balance,
-                                price_usd: Number(token.price_usd || 0),
-                                value_usd: balance * Number(token.price_usd || 0)
-                            });
-                        }
-                    }
-
-                    // Add InSwap FENNEC balance - merge with existing or create new entry
-                    if (inswap_fennec_balance > 0) {
-                        const existing = tokenMap.get('FENNEC');
-                        if (existing) {
-                            // Merge: add InSwap balance to existing wallet balance
-                            existing.balance += inswap_fennec_balance;
-                            existing.value_usd = existing.balance * (existing.price_usd || 0);
-                            existing.source = existing.source ? `${existing.source}+inswap` : 'inswap';
-                        } else {
-                            // Create new FENNEC entry from InSwap
-                            tokenMap.set('FENNEC', {
-                                ticker: 'FENNEC',
-                                balance: inswap_fennec_balance,
-                                price_usd: 0,
-                                value_usd: 0,
-                                source: 'inswap'
-                            });
-                        }
-                    }
-
-                    // Ensure FENNEC is always present in the list (even with 0 balance for tracking)
-                    if (!tokenMap.has('FENNEC')) {
-                        tokenMap.set('FENNEC', {
-                            ticker: 'FENNEC',
-                            balance: 0,
-                            price_usd: 0,
-                            value_usd: 0,
-                            source: 'placeholder'
-                        });
-                    }
-
-                    response.brc20_summary = { total: tokenMap.size, list: Array.from(tokenMap.values()) };
-                    response.brc20_count = tokenMap.size;
-
-                    // Runes Balance (smartFetch)
-                    const runes = await smartFetch(
-                        `https://open-api-fractal.unisat.io/v1/indexer/address/${address}/runes/balance-list?start=0&limit=100`
-                    ).catch(() => ({ data: { total: 0 } }));
-                    response.runes_count = runes.data?.total || 0;
-
-                    // UTXO Count (smartFetch)
-                    const utxos = await smartFetch(
-                        `https://open-api-fractal.unisat.io/v1/indexer/address/${address}/inscription-utxo-data?cursor=0&size=20`
-                    ).catch(() => ({ data: { total: 0 } }));
-                    response.utxo_count = utxos.data?.total || 0;
-
-                    response.stages.wealth = 'done';
-
-                    await new Promise(r => setTimeout(r, 200));
-
-                    // STAGE C: COLLECTIONS (ORDINALS)
-                    const colData = await smartFetch(
-                        'https://open-api-fractal.unisat.io/v3/market/collection/auction/collection_summary',
-                        {
-                            method: 'POST',
-                            body: JSON.stringify({ address })
-                        }
-                    ).catch(() => ({ data: { list: [] } }));
-
-                    const colList = colData.data?.list || [];
-                    const fennecBox = colList.find(c => c.collectionId === 'fennec_boxes');
-
-                    // CRITICAL: Ordinals count is SUM of all collections' total field
-                    response.ordinals_count = colList.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
-                    response.total_collections = colList.length;
-                    response.fennec_boxes_count = fennecBox ? Number(fennecBox.total) || 0 : 0;
-                    response.has_fennec_boxes = response.fennec_boxes_count > 0;
-                    response.all_collections = colList;
-                    response.stages.collections = 'done';
-
-                    // STAGE D: CALCULATE NETWORTH
-                    // Get FB price from Binance BTC/USDT as proxy
-                    let fb_price_usd = 0;
-                    let fennec_price_usd = 0;
-
-                    try {
-                        // Fetch Bitcoin price from Binance as proxy for FB
-                        const binanceRes = await fetch(
-                            'https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT'
-                        ).catch(() => null);
-
-                        if (binanceRes && binanceRes.ok) {
-                            const binanceData = await binanceRes.json().catch(() => null);
-                            fb_price_usd = Number(binanceData?.price || 0);
-                        }
-                    } catch (_) {}
-
-                    // Get FENNEC price from InSwap pool
-                    try {
-                        const inswapBase = 'https://brc20-swap-fractal.unisat.io/brc20-swap/v1';
-                        const poolUrl = `${inswapBase}/pool/info?tick0=FENNEC&tick1=sFB___000`;
-                        const poolRes = await fetch(poolUrl, { headers: upstreamHeaders }).catch(() => null);
-                        if (poolRes && poolRes.ok) {
-                            const poolData = await poolRes.json().catch(() => null);
-                            if (poolData?.code === 0 && poolData?.data) {
-                                // Calculate FENNEC price: (amount_sFB / amount_FENNEC) * FB_price_usd
-                                // tick0=FENNEC, tick1=sFB___000, so amount0=FENNEC, amount1=sFB
-                                const fennecAmount = Number(poolData.data.amount0 || 0);
-                                const sfbAmount = Number(poolData.data.amount1 || 0);
-                                if (fennecAmount > 0 && sfbAmount > 0 && fb_price_usd > 0) {
-                                    const fennec_in_fb = sfbAmount / fennecAmount;
-                                    fennec_price_usd = fennec_in_fb * fb_price_usd;
-                                }
-                            }
-                        }
-                    } catch (_) {}
-
-                    // Calculate total networth
-                    const fb_value = response.native_balance * fb_price_usd;
-
-                    // Calculate token values with FENNEC price
-                    let tokens_value = 0;
-                    for (const token of response.brc20_summary.list) {
-                        if (token.ticker === 'FENNEC') {
-                            tokens_value += token.balance * fennec_price_usd;
-                            token.price_usd = fennec_price_usd;
-                            token.value_usd = token.balance * fennec_price_usd;
-                        } else {
-                            tokens_value += token.value_usd || 0;
-                        }
-                    }
-
-                    response.total_usd = fb_value + tokens_value;
-                    response.fb_price_usd = fb_price_usd;
-                    response.fennec_price_usd = fennec_price_usd;
-
-                    // Holdings summary for UI
-                    response.holdings = {
-                        native: { balance: response.native_balance, value_usd: fb_value },
-                        tokens: response.brc20_summary.list
-                    };
-                    response.networth = response.total_usd;
-
-                    // Legacy fields for UI compatibility
-                    response.data = { ...response };
-
-                    return sendJSON({ code: 0, data: response });
-                } catch (e) {
-                    return sendJSON({ error: e.message, stack: e.stack }, 500);
                 }
             }
 
@@ -3983,274 +2911,6 @@ Request Context: ${JSON.stringify(context, null, 2)}
             // Полностью заменен на компактную оптимизированную версию с smartFetch выше (строки 3764-3834)
             // Старая версия использовала сложную логику кэширования, throttling, safeFetch, multiple sources
             // Новая версия: простая, быстрая, использует smartFetch (Free -> Paid fallback)
-
-            // --- AI CHAT (OpenAI) ---
-            if (action === 'chat') {
-                if (request.method !== 'POST') return sendJSON({ error: 'Method not allowed' }, 405);
-
-                let userMessage = '';
-                let history = [];
-                let uiContext = {};
-
-                const __fallbackChat = text => {
-                    const raw = String(text || '').trim();
-                    const t = raw.toLowerCase();
-
-                    const numMatch = raw.match(/(\d+(?:\.\d+)?)/);
-                    const amount = numMatch ? numMatch[1] : '';
-
-                    const mkReply = (msg, actionObj) => {
-                        const safeMsg = String(msg || '').trim();
-                        if (actionObj) return `${safeMsg}\n\n|||${JSON.stringify(actionObj)}|||`;
-                        return safeMsg;
-                    };
-
-                    if (t.includes('connect') && t.includes('wallet')) {
-                        return mkReply('AI is temporarily unavailable. I can still trigger wallet connection.', {
-                            type: 'CONNECT_WALLET',
-                            params: {}
-                        });
-                    }
-
-                    if (t.includes('deposit')) {
-                        return mkReply('AI is temporarily unavailable. I can still open the deposit tab.', {
-                            type: 'OPEN_DEPOSIT',
-                            params: {}
-                        });
-                    }
-
-                    if (t.includes('withdraw')) {
-                        return mkReply('AI is temporarily unavailable. I can still open the withdraw tab.', {
-                            type: 'OPEN_WITHDRAW',
-                            params: {}
-                        });
-                    }
-
-                    if (t.includes('swap') || t.includes('buy') || t.includes('sell')) {
-                        const hasBtc = t.includes('btc');
-                        const pair = hasBtc ? 'BTC_FB' : 'FB_FENNEC';
-
-                        let buy = true;
-                        if (pair === 'FB_FENNEC') {
-                            if (t.includes('sell') && t.includes('fennec')) buy = false;
-                            if (t.includes('to fb')) buy = false;
-                            if (t.includes('buy') && t.includes('fennec')) buy = true;
-                            if (t.includes('to fennec')) buy = true;
-                        } else {
-                            if (t.includes('sell') && (t.includes('fb') || t.includes('sfb'))) buy = false;
-                            if (t.includes('to btc')) buy = false;
-                            if (t.includes('buy') && (t.includes('fb') || t.includes('sfb'))) buy = true;
-                            if (t.includes('to fb')) buy = true;
-                        }
-
-                        return mkReply('AI is temporarily unavailable. I can still prefill the swap form for you.', {
-                            type: 'FILL_SWAP',
-                            params: {
-                                pair,
-                                amount: amount || '0.0',
-                                buy
-                            }
-                        });
-                    }
-
-                    return 'AI is temporarily unavailable (Gemini key missing/blocked). Please try again later.';
-                };
-
-                try {
-                    const ip =
-                        String(request.headers.get('CF-Connecting-IP') || '').trim() ||
-                        String(request.headers.get('X-Forwarded-For') || '')
-                            .split(',')[0]
-                            .trim() ||
-                        'unknown';
-
-                    if (env?.RATE_LIMITER) {
-                        const bucket = Math.floor(Date.now() / 3600000);
-                        const k = `chat:${ip}:${bucket}`;
-                        const v = Number((await env.RATE_LIMITER.get(k)) || 0) || 0;
-                        if (v >= 20) return sendJSON({ reply: 'Too many messages. Chill.' }, 429);
-                        await env.RATE_LIMITER.put(k, String(v + 1), {
-                            expirationTtl: 3600
-                        });
-                    } else {
-                        const rl = __rateLimit(`ip:${ip}:chat`, 20, 3_600_000);
-                        if (!rl.ok) return sendJSON({ reply: 'Too many messages. Chill.' }, 429);
-                    }
-                } catch (_) {
-                    void _;
-                }
-
-                try {
-                    const body = await request.json();
-                    userMessage = body?.message;
-                    history = Array.isArray(body?.history) ? body.history : [];
-                    uiContext = body?.context && typeof body.context === 'object' ? body.context : {};
-                } catch (_) {
-                    void _;
-                }
-
-                try {
-                    const builtinKnowledgeBase = `Fennec Swap is a DEX + terminal on Fractal Bitcoin.
-
-KEY FACTS:
-- Fractal Bitcoin is a Bitcoin-adjacent network with fast blocks (~30s).
-- FENNEC is a BRC-20 token on Fractal.
-- FB (sFB___000) is the native gas / main asset in the UI.
-- BTC (sBTC___000) is bridged BTC inside Fractal.
-
-TERMINAL OPERATIONS:
-- SWAP: FB ↔ FENNEC and BTC ↔ FB.
-- DEPOSIT: funds move from Bitcoin/Fractal into Fractal; balances appear after confirmations.
-- WITHDRAW: funds move from Fractal back to Bitcoin mainnet.
-  - Withdraw often has two tx identifiers: a burn/fee tx on Fractal and a receiveTxid on Bitcoin mainnet.
-
-UNISAT:
-- The site uses UniSat as a browser extension wallet (window.unisat).
-
-FENNEC ID (v6.0, brief):
-- Score (0..100) is derived from Activity/Wealth/Time/Badges, with an optional MAXI multiplier.
-- Rarity thresholds: CUB(0-29), SCOUT(30-49), HUNTER(50-64), ALPHA(65-79), ELDER(80-94), SPIRIT(95-100).
-- MAXI activates if FENNEC >= 10,000 or there is a LP position involving FENNEC.
-
-IF YOU ARE NOT SURE:
-- Say you are not sure.
-- Provide verifiable sources or a search query.`;
-
-                    let knowledgeBase = builtinKnowledgeBase;
-                    try {
-                        const controller = new AbortController();
-                        setTimeout(() => controller.abort(), 1500);
-                        const kbRes = await fetch('https://fennecbtc.xyz/knowledge_en.txt', {
-                            signal: controller.signal
-                        });
-                        if (kbRes.ok) {
-                            const kbText = await kbRes.text();
-                            const trimmed = (kbText || '').trim();
-                            knowledgeBase = trimmed ? `${trimmed}\n\n${builtinKnowledgeBase}` : builtinKnowledgeBase;
-                        }
-                    } catch (e) {
-                        void e;
-                    }
-
-                    let marketData = 'Price unavailable.';
-                    try {
-                        const cacheObj = globalThis.__fennecChatPriceCache || (globalThis.__fennecChatPriceCache = {});
-                        const now = Date.now();
-                        if (cacheObj.ts && cacheObj.text && now - cacheObj.ts < 15000) {
-                            marketData = cacheObj.text;
-                        } else if (!__disableInswap) {
-                            let poolUrl = `${SWAP_BASE}/brc20-swap/pool_info?tick0=FENNEC&tick1=sFB___000`;
-                            let poolRes = await fetch(poolUrl, { headers: upstreamHeaders });
-                            if (!poolRes.ok && poolRes.status === 404) {
-                                poolUrl = `${SWAP_BASE}/indexer/brc20-swap/pool_info?tick0=FENNEC&tick1=sFB___000`;
-                                poolRes = await fetch(poolUrl, { headers: upstreamHeaders });
-                            }
-                            const poolJson = await poolRes.json();
-                            if (poolJson.data) {
-                                const fennec = parseFloat(poolJson.data.amount0 || poolJson.data.amount1);
-                                const fb = parseFloat(poolJson.data.amount1 || poolJson.data.amount0);
-                                const price = (fb / fennec).toFixed(8);
-                                marketData = `PRICE: 1 FENNEC = ${price} FB.`;
-                                cacheObj.ts = now;
-                                cacheObj.text = marketData;
-                            }
-                        }
-                    } catch (e) {
-                        void e;
-                    }
-
-                    const contextStr = `Section: ${uiContext.section || 'home'}, Tab: ${
-                        uiContext.tab || 'none'
-                    }, Swap: ${uiContext.swapPair || 'N/A'}`;
-
-                    const systemPrompt = `
-You are Fennec (Fennec Oracle), the AI assistant of the Fennec terminal on Fractal Bitcoin.
-Your goal is to help users trade, debug issues, and understand the ecosystem.
-
-CURRENT UI CONTEXT:
-${contextStr}
-
-KNOWLEDGE BASE:
-${knowledgeBase}
-
-MARKET DATA:
-${marketData}
-
-INSTRUCTIONS:
-1. LANGUAGE: ALWAYS respond in English. Do not output any non-English words. If the user writes in another language, respond in English.
-2. If the question is about Fennec/Fractal/UniSat/Terminal errors, answer precisely using the Knowledge Base.
-3. If you are unsure, say so and provide verifiable sources or a search query.
-4. Style: concise, technical, friendly.
-
-=== TERMINAL FUNCTIONS ===
-SWAP: Swap FB ↔ FENNEC and BTC ↔ FB
-DEPOSIT: Deposit BTC/FB/FENNEC into Fractal
-WITHDRAW: Withdraw to Bitcoin mainnet (burn on Fractal)
-FENNEC ID: Generate and view your Fennec ID card
-
-=== AI COMMANDS ===
-1. NAVIGATE: {"type":"NAVIGATE","params":{"tab":"swap|deposit|withdraw|id"}}
-2. FILL_SWAP: {"type":"FILL_SWAP","params":{"pair":"FB_FENNEC|BTC_FB","amount":"0.5","buy":true|false}}
-   - buy=true: BUY FENNEC (you pay FB/BTC)
-   - buy=false: SELL FENNEC (you pay FENNEC)
-3. EXECUTE_SWAP: auto-execute the swap after filling
-4. CONNECT_WALLET: {"type":"CONNECT_WALLET","params":{}}
-5. OPEN_ID: {"type":"OPEN_ID","params":{}}
-
-EXAMPLES:
-- "swap 0.5 FB to FENNEC" → |||{"type":"FILL_SWAP","params":{"pair":"FB_FENNEC","amount":"0.5","buy":true}}|||
-- "sell 100 FENNEC" → |||{"type":"FILL_SWAP","params":{"pair":"FB_FENNEC","amount":"100","buy":false}}|||
-- "show my ID" → |||{"type":"OPEN_ID","params":{}}|||
-`;
-
-                    let conversationHistory = '';
-                    for (const h of history.slice(-6)) {
-                        const role = h && h.role === 'assistant' ? 'AI' : 'User';
-                        const content = h && typeof h.content === 'string' ? h.content : '';
-                        if (content && content.length <= 500) {
-                            conversationHistory += `${role}: ${content}\n`;
-                        }
-                    }
-
-                    const fullPrompt = `${systemPrompt}\n\n${
-                        conversationHistory ? 'History:\n' + conversationHistory + '\n' : ''
-                    }User: ${String(userMessage || '')}`;
-
-                    const result = await callGemini(fullPrompt, {
-                        purpose: 'chat',
-                        useSearch: true,
-                        temperature: 0.7,
-                        maxModelAttempts: 3,
-                        timeoutMs: 12000
-                    });
-
-                    let replyText = String(result.text || '').trim();
-                    try {
-                        if (replyText && /[\u0400-\u04FF]/.test(replyText)) {
-                            const rewrite = await callGemini(
-                                `Rewrite the following text in English only. Output ONLY English.\n\nTEXT:\n${replyText}`,
-                                {
-                                    purpose: 'chat',
-                                    useSearch: false,
-                                    temperature: 0.2,
-                                    maxModelAttempts: 1,
-                                    timeoutMs: 6000
-                                }
-                            );
-                            const fixed = String(rewrite && rewrite.text ? rewrite.text : '').trim();
-                            if (fixed && !/[\u0400-\u04FF]/.test(fixed)) replyText = fixed;
-                        }
-                    } catch (e) {
-                        void e;
-                    }
-
-                    return sendJSON({ reply: replyText || 'Empty reply.' });
-                } catch (e) {
-                    console.error('Chat error:', e);
-                    const fallbackReply = __fallbackChat(userMessage);
-                    return sendJSON({ reply: fallbackReply || 'AI is temporarily unavailable.' }, 200);
-                }
-            }
 
             // --- GAS ESTIMATE (Прокси для CORS с имитацией браузера) ---
             if (action === 'gas') {
@@ -4322,90 +2982,6 @@ EXAMPLES:
                             'public'
                         );
                     }
-                }
-            }
-
-            // --- QA AGENT CHECK (Gemini) ---
-            if (action === 'qa_agent_check') {
-                if (request.method !== 'POST') return sendJSON({ error: 'Method not allowed' }, 405);
-
-                try {
-                    const body = await request.json();
-                    const { page_state, console_logs, network_errors } = body;
-
-                    const errorLogs = (console_logs || []).filter(l => l.type === 'error');
-                    const hasErrors = errorLogs.length > 0 || (network_errors || []).length > 0;
-
-                    if (!hasErrors) {
-                        return sendJSON({
-                            status: 'PASS',
-                            message: 'Все системы работают нормально. Ошибок не обнаружено.'
-                        });
-                    }
-
-                    const prompt = `Ты QA Lead. Проверь состояние страницы.
-
-Логи: ${JSON.stringify(errorLogs, null, 2)}
-Сетевые ошибки: ${JSON.stringify(network_errors, null, 2)}
-Состояние страницы: ${JSON.stringify(page_state, null, 2)}
-
-Если есть ошибки (красные логи, NaN в балансах, пустые списки):
-Верни JSON: { "status": "FAIL", "windsurf_instruction": "В файле X ошибка Y. Исправь так: ..." }
-
-Если все чисто:
-Верни JSON: { "status": "PASS", "message": "Все системы работают нормально." }`;
-
-                    const result = await callGemini(prompt, {
-                        purpose: 'qa',
-                        temperature: 0.3,
-                        maxModelAttempts: 3,
-                        timeoutMs: 12000
-                    });
-
-                    try {
-                        const parsed = JSON.parse(result.text);
-                        return sendJSON(parsed);
-                    } catch (e) {
-                        return sendJSON({
-                            status: 'FAIL',
-                            windsurf_instruction: result.text
-                        });
-                    }
-                } catch (e) {
-                    return sendJSON({ error: e.message }, 500);
-                }
-            }
-
-            // --- ANALYZE ERROR (Dev Console) ---
-            if (action === 'analyze_error') {
-                if (request.method !== 'POST') return sendJSON({ error: 'Method not allowed' }, 405);
-
-                try {
-                    const body = await request.json();
-                    const { error, stack, variables } = body;
-
-                    const prompt = `Ты Senior Frontend Developer. Произошла ошибка на клиенте.
-
-Error: ${error}
-Stack: ${stack || 'N/A'}
-Важные переменные: ${JSON.stringify(variables, null, 2)}
-
-Задача:
-1. Найди точную причину ошибки.
-2. Предложи быстрое решение (что изменить в коде).
-3. Если это проблема с API или данными, укажи это.
-Будь кратким и техничным.`;
-
-                    const result = await callGemini(prompt, {
-                        purpose: 'analysis',
-                        temperature: 0.3,
-                        maxModelAttempts: 3,
-                        timeoutMs: 12000
-                    });
-
-                    return sendJSON({ analysis: result.text });
-                } catch (e) {
-                    return sendJSON({ analysis: `AI analysis failed: ${e.message}` });
                 }
             }
 

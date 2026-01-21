@@ -46,6 +46,11 @@ export function showSection(id) {
     const navLink = document.getElementById(`nav-${id}`);
     if (navLink) navLink.classList.add('active');
 
+    try {
+        const cleanId = String(id || '').trim();
+        if (cleanId) localStorage.setItem('fennec_last_section', cleanId);
+    } catch (_) {}
+
     // Update hash if hash router is enabled
     try {
         const desired = String(id || '').trim();
@@ -127,12 +132,26 @@ export function setupSectionRouter() {
                     const h = String(window.location.hash || '').replace(/^#/, '');
                     if (h) {
                         showSection(h);
-                    } else {
-                        const firstSection = document.querySelector('.page-section[id^="sec-"]');
-                        if (firstSection) {
-                            const secId = firstSection.id.replace('sec-', '');
-                            showSection(secId);
+                        return;
+                    }
+                    const saved = (() => {
+                        try {
+                            return String(localStorage.getItem('fennec_last_section') || '').trim();
+                        } catch (_) {
+                            return '';
                         }
+                    })();
+                    if (saved) {
+                        const target = document.getElementById(`sec-${saved}`);
+                        if (target) {
+                            showSection(saved);
+                            return;
+                        }
+                    }
+                    const firstSection = document.querySelector('.page-section[id^="sec-"]');
+                    if (firstSection) {
+                        const secId = firstSection.id.replace('sec-', '');
+                        showSection(secId);
                     }
                 } catch (_) {}
             }, 0);

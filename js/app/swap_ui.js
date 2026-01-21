@@ -1,6 +1,46 @@
 import { getState, setState } from './state.js';
 import { BACKEND_URL, T_FENNEC, T_SBTC, T_SFB } from './core.js';
 
+const SWAP_DECIMALS = 8;
+const SWAP_UNIT = 100000000n;
+
+const __toBigIntAmount = value => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return 0n;
+    if (/[eE]/.test(raw)) {
+        try {
+            return __toBigIntAmount(Number(raw).toFixed(SWAP_DECIMALS));
+        } catch (_) {
+            return 0n;
+        }
+    }
+    const cleaned = raw.replace(/,/g, '');
+    const parts = cleaned.split('.');
+    const whole = (parts[0] || '').replace(/\D/g, '') || '0';
+    const frac = (parts[1] || '').replace(/\D/g, '');
+    const fracPadded = (frac + '0'.repeat(SWAP_DECIMALS)).slice(0, SWAP_DECIMALS) || '0';
+    return BigInt(whole) * SWAP_UNIT + BigInt(fracPadded);
+};
+
+const __formatAmount = value => {
+    const v = typeof value === 'bigint' ? value : BigInt(value || 0);
+    if (v <= 0n) return '0';
+    const whole = v / SWAP_UNIT;
+    const frac = v % SWAP_UNIT;
+    if (frac === 0n) return whole.toString();
+    const fracStr = frac.toString().padStart(SWAP_DECIMALS, '0').replace(/0+$/g, '');
+    return `${whole.toString()}.${fracStr}`;
+};
+
+const __formatAmountFixed = value => {
+    const v = typeof value === 'bigint' ? value : BigInt(value || 0);
+    if (v <= 0n) return `0.${'0'.repeat(SWAP_DECIMALS)}`;
+    const whole = v / SWAP_UNIT;
+    const frac = v % SWAP_UNIT;
+    const fracStr = frac.toString().padStart(SWAP_DECIMALS, '0');
+    return `${whole.toString()}.${fracStr}`;
+};
+
 export function switchDir() {
     try {
         const cur = !!getState('isBuying');
@@ -109,7 +149,7 @@ export function setMaxAmount() {
         }
     } catch (_) {}
 
-    let bal = 0;
+    let balBase = 0n;
     try {
         const pair = getState('currentSwapPair');
         const buying = !!getState('isBuying');
@@ -117,21 +157,23 @@ export function setMaxAmount() {
         const pr = window.poolReserves || {};
 
         if (pair === 'FB_FENNEC') {
-            bal = buying ? Number(ub.sFB || 0) : Number(ub.FENNEC || 0);
+            balBase = buying ? __toBigIntAmount(ub.sFB) : __toBigIntAmount(ub.FENNEC);
         } else {
-            bal = buying ? Number(pr.user_sBTC || 0) : Number(ub.sFB || 0);
+            balBase = buying ? __toBigIntAmount(pr.user_sBTC) : __toBigIntAmount(ub.sFB);
         }
     } catch (_) {}
 
-    if (!(bal > 0)) return;
+    if (!(balBase > 0n)) return;
 
-    let feeBuffer = 0;
+    let feeBufferBase = 0n;
     try {
-        if (getState('currentSwapPair') === 'FB_FENNEC' && getState('isBuying')) feeBuffer = 0.05;
+        if (getState('currentSwapPair') === 'FB_FENNEC' && getState('isBuying')) {
+            feeBufferBase = __toBigIntAmount('0.05');
+        }
     } catch (_) {}
 
-    const maxAmount = Math.max(0, bal - feeBuffer);
-    if (maxAmount <= 0) {
+    const maxAmountBase = balBase > feeBufferBase ? balBase - feeBufferBase : 0n;
+    if (maxAmountBase <= 0n) {
         try {
             if (typeof window.showNotification === 'function') {
                 window.showNotification('Not enough FB after reserving 0.05 for fees', 'warning', 2500);
@@ -142,7 +184,7 @@ export function setMaxAmount() {
 
     try {
         const inEl = document.getElementById('swapIn');
-        if (inEl) inEl.value = maxAmount.toFixed(8);
+        if (inEl) inEl.value = __formatAmountFixed(maxAmountBase);
     } catch (_) {}
 
     try {
@@ -180,8 +222,9 @@ export async function doSwap() {
     const inEl = document.getElementById('swapIn');
     const outEl = document.getElementById('swapOut');
     const btn = document.getElementById('swapBtn');
-    let amount = parseFloat(String(inEl?.value || '').trim());
-    if (!amount) {
+    const rawAmount = String(inEl?.value || '').trim();
+    let amountBase = __toBigIntAmount(rawAmount);
+    if (amountBase <= 0n) {
         try {
             if (typeof window.showNotification === 'function') window.showNotification('Enter amount', 'warning', 2000);
         } catch (_) {}
@@ -191,23 +234,23 @@ export async function doSwap() {
     const currentSwapPair = String(getState('currentSwapPair') || window.currentSwapPair || 'FB_FENNEC');
     const isBuying = !!(getState('isBuying') ?? window.isBuying ?? true);
 
-    let bal = 0;
+    let balBase = 0n;
     try {
         const ub = window.userBalances || {};
         const pr = window.poolReserves || {};
         if (currentSwapPair === 'FB_FENNEC') {
-            bal = isBuying ? Number(ub.sFB || 0) : Number(ub.FENNEC || 0);
+            balBase = isBuying ? __toBigIntAmount(ub.sFB) : __toBigIntAmount(ub.FENNEC);
         } else {
-            bal = isBuying ? Number(pr.user_sBTC || 0) : Number(ub.sFB || 0);
+            balBase = isBuying ? __toBigIntAmount(pr.user_sBTC) : __toBigIntAmount(ub.sFB);
         }
     } catch (_) {
-        bal = 0;
+        balBase = 0n;
     }
 
     if (currentSwapPair === 'FB_FENNEC' && isBuying) {
-        const feeBuffer = 0.05;
-        const maxAllowed = Math.max(0, bal - feeBuffer);
-        if (maxAllowed <= 0) {
+        const feeBufferBase = __toBigIntAmount('0.05');
+        const maxAllowedBase = balBase > feeBufferBase ? balBase - feeBufferBase : 0n;
+        if (maxAllowedBase <= 0n) {
             try {
                 if (typeof window.showNotification === 'function') {
                     window.showNotification('Not enough FB after reserving 0.05 for fees', 'warning', 2500);
@@ -215,10 +258,10 @@ export async function doSwap() {
             } catch (_) {}
             return;
         }
-        if (amount > maxAllowed) {
-            amount = maxAllowed;
+        if (amountBase > maxAllowedBase) {
+            amountBase = maxAllowedBase;
             try {
-                if (inEl) inEl.value = amount.toFixed(8);
+                if (inEl) inEl.value = __formatAmountFixed(amountBase);
                 if (typeof window.calc === 'function') window.calc();
             } catch (_) {}
             try {
@@ -228,7 +271,7 @@ export async function doSwap() {
         }
     }
 
-    if (bal < amount) {
+    if (balBase < amountBase) {
         try {
             const m = document.getElementById('depositLinkModal');
             if (m) m.classList.remove('hidden');
@@ -258,9 +301,10 @@ export async function doSwap() {
             tickOut = isBuying ? T_FENNEC : T_SFB;
         }
 
-        let expectedOut = 0;
+        let expectedOutBase = 0n;
         try {
-            const quoteUrl = `${BACKEND_URL}?action=quote_swap&exactType=exactIn&tickIn=${tickIn}&tickOut=${tickOut}&amount=${amount}&address=${encodeURIComponent(userAddress)}`;
+            const amountStr = __formatAmount(amountBase);
+            const quoteUrl = `${BACKEND_URL}?action=quote_swap&exactType=exactIn&tickIn=${tickIn}&tickOut=${tickOut}&amount=${amountStr}&address=${encodeURIComponent(userAddress)}`;
             const quoteRes = await fetch(quoteUrl)
                 .then(r => (r.ok ? r.json() : r.json().catch(() => ({ code: -1 }))))
                 .catch(() => null);
@@ -271,26 +315,28 @@ export async function doSwap() {
                     quoteRes.data.outAmount ||
                     quoteRes.data.receiveAmount ||
                     quoteRes.data.amount;
-                expectedOut = parseFloat(rawAmount);
+                expectedOutBase = __toBigIntAmount(rawAmount);
             }
         } catch (_) {
-            expectedOut = 0;
+            expectedOutBase = 0n;
         }
 
-        if (!expectedOut || expectedOut <= 0) {
-            expectedOut = parseFloat(String(outEl?.value || '').trim());
+        if (!expectedOutBase || expectedOutBase <= 0n) {
+            expectedOutBase = __toBigIntAmount(String(outEl?.value || '').trim());
         }
-        if (!expectedOut || Number.isNaN(expectedOut) || expectedOut <= 0) {
+        if (!expectedOutBase || expectedOutBase <= 0n) {
             throw new Error('Invalid amount: Please enter a valid swap amount');
         }
 
+        const amountStr = __formatAmount(amountBase);
+        const expectedOutStr = __formatAmount(expectedOutBase);
         const ts = Math.floor(Date.now() / 1000);
         const params = new URLSearchParams({
             address: userAddress,
             tickIn,
             tickOut,
-            amountIn: amount.toString(),
-            amountOut: expectedOut.toString(),
+            amountIn: amountStr,
+            amountOut: expectedOutStr,
             slippage: '0.005',
             exactType: 'exactIn',
             ts: String(ts),
@@ -317,8 +363,8 @@ export async function doSwap() {
             address: userAddress,
             tickIn,
             tickOut,
-            amountIn: amount.toString(),
-            amountOut: expectedOut.toString(),
+            amountIn: amountStr,
+            amountOut: expectedOutStr,
             slippage: '0.005',
             exactType: 'exactIn',
             ts: ts,

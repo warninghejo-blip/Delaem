@@ -7,6 +7,70 @@ function __t() {
     };
 }
 
+const LIQ_DECIMALS = 8;
+const LIQ_UNIT = 100000000n;
+
+const __toBigIntAmount = value => {
+    if (typeof value === 'bigint') return value;
+    const raw = String(value ?? '').trim();
+    if (!raw) return 0n;
+    if (/[eE]/.test(raw)) {
+        try {
+            return __toBigIntAmount(Number(raw).toFixed(LIQ_DECIMALS));
+        } catch (_) {
+            return 0n;
+        }
+    }
+    const cleaned = raw.replace(/,/g, '');
+    const parts = cleaned.split('.');
+    const whole = (parts[0] || '').replace(/\D/g, '') || '0';
+    const frac = (parts[1] || '').replace(/\D/g, '');
+    const fracPadded = (frac + '0'.repeat(LIQ_DECIMALS)).slice(0, LIQ_DECIMALS) || '0';
+    return BigInt(whole) * LIQ_UNIT + BigInt(fracPadded);
+};
+
+const __formatAmount = value => {
+    const v = typeof value === 'bigint' ? value : BigInt(value || 0);
+    if (v <= 0n) return '0';
+    const whole = v / LIQ_UNIT;
+    const frac = v % LIQ_UNIT;
+    if (frac === 0n) return whole.toString();
+    const fracStr = frac.toString().padStart(LIQ_DECIMALS, '0').replace(/0+$/g, '');
+    return `${whole.toString()}.${fracStr}`;
+};
+
+const __formatAmountFixed = (value, decimals = LIQ_DECIMALS) => {
+    const v = typeof value === 'bigint' ? value : BigInt(value || 0);
+    const dec = Math.max(0, Math.min(LIQ_DECIMALS, Number(decimals) || 0));
+    if (v <= 0n) return dec ? `0.${'0'.repeat(dec)}` : '0';
+    const scale = 10n ** BigInt(LIQ_DECIMALS - dec);
+    const rounded = scale > 1n ? (v + scale / 2n) / scale : v;
+    const unit = 10n ** BigInt(dec);
+    const whole = rounded / unit;
+    if (dec === 0) return whole.toString();
+    const frac = rounded % unit;
+    const fracStr = frac.toString().padStart(dec, '0');
+    return `${whole.toString()}.${fracStr}`;
+};
+
+const __minBigInt = (a, b) => (a < b ? a : b);
+
+const __sqrtBigInt = n => {
+    if (n <= 0n) return 0n;
+    let x = n;
+    let y = (x + 1n) / 2n;
+    while (y < x) {
+        x = y;
+        y = (x + n / x) / 2n;
+    }
+    return x;
+};
+
+const __mulDiv = (a, b, den) => {
+    if (den <= 0n) return 0n;
+    return (a * b) / den;
+};
+
 function __pairNorm(pair) {
     return pair === 'BTC_FB' ? 'BTC_FB' : 'FB_FENNEC';
 }
@@ -121,23 +185,27 @@ export function __normalizeAmountStr(value, maxDecimals) {
 }
 
 export function computeExpectedLp(amount0, amount1, reserve0, reserve1, poolLp) {
-    const a0 = Number(amount0 || 0);
-    const a1 = Number(amount1 || 0);
-    const r0 = Number(reserve0 || 0);
-    const r1 = Number(reserve1 || 0);
-    const p = Number(poolLp || 0);
-    if (!a0 || !a1) return 0;
+    const a0 = __toBigIntAmount(amount0 || 0);
+    const a1 = __toBigIntAmount(amount1 || 0);
+    const r0 = __toBigIntAmount(reserve0 || 0);
+    const r1 = __toBigIntAmount(reserve1 || 0);
+    const p = __toBigIntAmount(poolLp || 0);
+    if (a0 <= 0n || a1 <= 0n) return 0n;
 
-    if (p > 0 && r0 > 0 && r1 > 0) {
-        return Math.max(0, Math.min((a0 * p) / r0, (a1 * p) / r1));
+    if (p > 0n && r0 > 0n && r1 > 0n) {
+        const out0 = __mulDiv(a0, p, r0);
+        const out1 = __mulDiv(a1, p, r1);
+        return __minBigInt(out0, out1);
     }
-    if (r0 > 0 && r1 > 0) {
-        const pEst = Math.sqrt(r0 * r1);
-        if (Number.isFinite(pEst) && pEst > 0) {
-            return Math.max(0, Math.min((a0 * pEst) / r0, (a1 * pEst) / r1));
+    if (r0 > 0n && r1 > 0n) {
+        const pEst = __sqrtBigInt(r0 * r1);
+        if (pEst > 0n) {
+            const out0 = __mulDiv(a0, pEst, r0);
+            const out1 = __mulDiv(a1, pEst, r1);
+            return __minBigInt(out0, out1);
         }
     }
-    return Math.max(0, Math.sqrt(a0 * a1));
+    return __sqrtBigInt(a0 * a1);
 }
 
 export function getBalanceForTick(tick) {
@@ -166,8 +234,8 @@ export function getLiquidityConfig() {
     const poolLp = lpd?.pair === p ? Number(lpd.poolLp || 0) || 0 : 0;
 
     const mapUiToApiAmounts = (amountUi0, amountUi1) => {
-        const a0 = Number(amountUi0 || 0) || 0;
-        const a1 = Number(amountUi1 || 0) || 0;
+        const a0 = __toBigIntAmount(amountUi0 || 0);
+        const a1 = __toBigIntAmount(amountUi1 || 0);
         if (p === 'FB_FENNEC') {
             const api0IsFennec = (apiTick0 || '').toString().toUpperCase().includes('FENNEC');
             return api0IsFennec ? { amount0: a0, amount1: a1 } : { amount0: a1, amount1: a0 };
@@ -196,8 +264,8 @@ export function updateLiquidityBalancesUI() {
     const cfg = getLiquidityConfig();
     const b0 = document.getElementById('liqBal0');
     const b1 = document.getElementById('liqBal1');
-    if (b0) b0.innerText = Number(cfg.bal0 || 0).toFixed(8);
-    if (b1) b1.innerText = Number(cfg.bal1 || 0).toFixed(8);
+    if (b0) b0.innerText = __formatAmountFixed(__toBigIntAmount(cfg.bal0 || 0), 8);
+    if (b1) b1.innerText = __formatAmountFixed(__toBigIntAmount(cfg.bal1 || 0), 8);
 }
 
 let __liqSyncGuard = false;
@@ -210,35 +278,37 @@ export function syncLiquidityAmounts(changedIndex) {
         const el1 = document.getElementById('liqAmount1');
         if (!el0 || !el1) return;
 
-        const r0 = Number(cfg.reserve0 || 0);
-        const r1 = Number(cfg.reserve1 || 0);
-        const v0 = parseFloat(el0.value || '0') || 0;
-        const v1 = parseFloat(el1.value || '0') || 0;
+        const r0Base = __toBigIntAmount(cfg.reserve0 || 0);
+        const r1Base = __toBigIntAmount(cfg.reserve1 || 0);
+        const v0Base = __toBigIntAmount(el0.value || '0');
+        const v1Base = __toBigIntAmount(el1.value || '0');
 
-        if (r0 > 0 && r1 > 0) {
-            if (changedIndex === 0 && v0 > 0) {
-                el1.value = (v0 * (r1 / r0)).toFixed(8);
+        if (r0Base > 0n && r1Base > 0n) {
+            if (changedIndex === 0 && v0Base > 0n) {
+                const next = (v0Base * r1Base) / r0Base;
+                el1.value = __formatAmountFixed(next, 8);
             }
-            if (changedIndex === 1 && v1 > 0) {
-                el0.value = (v1 * (r0 / r1)).toFixed(8);
+            if (changedIndex === 1 && v1Base > 0n) {
+                const next = (v1Base * r0Base) / r1Base;
+                el0.value = __formatAmountFixed(next, 8);
             }
         }
 
         const lpEl = document.getElementById('liqExpectedLP');
         const lp = computeExpectedLp(
-            parseFloat(el0.value || '0') || 0,
-            parseFloat(el1.value || '0') || 0,
-            r0,
-            r1,
+            __toBigIntAmount(el0.value || '0'),
+            __toBigIntAmount(el1.value || '0'),
+            r0Base,
+            r1Base,
             cfg.poolLp || 0
         );
-        if (lpEl) lpEl.innerText = lp ? lp.toFixed(8) : '--';
+        if (lpEl) lpEl.innerText = lp && lp > 0n ? __formatAmountFixed(lp, 8) : '--';
 
         const btn = document.getElementById('liqSupplyBtn');
         if (btn) {
-            const v0Final = parseFloat(el0.value || '0') || 0;
-            const v1Final = parseFloat(el1.value || '0') || 0;
-            if (v0Final > 0 && v1Final > 0) {
+            const v0Final = __toBigIntAmount(el0.value || '0');
+            const v1Final = __toBigIntAmount(el1.value || '0');
+            if (v0Final > 0n && v1Final > 0n) {
                 btn.disabled = false;
                 btn.classList.remove('opacity-50', 'cursor-not-allowed');
             } else {
@@ -259,17 +329,19 @@ export function setMaxLiqAmount(which) {
     const el1 = document.getElementById('liqAmount1');
     if (!el0 || !el1) return;
 
-    const feeBuffer = 0.05;
-    const max0 = Math.max(0, Number(cfg.bal0 || 0) - (cfg.uiTick0 === __t().T_SFB ? feeBuffer : 0));
-    const max1 = Math.max(0, Number(cfg.bal1 || 0) - (cfg.uiTick1 === __t().T_SFB ? feeBuffer : 0));
+    const feeBufferBase = __toBigIntAmount('0.05');
+    const bal0Base = __toBigIntAmount(cfg.bal0 || 0);
+    const bal1Base = __toBigIntAmount(cfg.bal1 || 0);
+    const max0 = cfg.uiTick0 === __t().T_SFB && bal0Base > feeBufferBase ? bal0Base - feeBufferBase : bal0Base;
+    const max1 = cfg.uiTick1 === __t().T_SFB && bal1Base > feeBufferBase ? bal1Base - feeBufferBase : bal1Base;
 
     if (which === 0) {
-        el0.value = max0.toFixed(8);
+        el0.value = __formatAmountFixed(max0, 8);
         syncLiquidityAmounts(0);
         return;
     }
 
-    el1.value = max1.toFixed(8);
+    el1.value = __formatAmountFixed(max1, 8);
     syncLiquidityAmounts(1);
 }
 
@@ -632,10 +704,10 @@ export function closeRemoveLiquidityModal() {
 
 export function setMaxRemoveLp() {
     const ctx = window.__liqWithdrawCtx || null;
-    const lpAvail = Number(ctx?.lp || 0) || 0;
+    const lpAvail = __toBigIntAmount(ctx?.lp || 0);
     const inp = document.getElementById('removeLpAmount');
     if (!inp) return;
-    inp.value = lpAvail ? __normalizeAmountStr(lpAvail, 8) : '';
+    inp.value = lpAvail && lpAvail > 0n ? __formatAmountFixed(lpAvail, 8) : '';
     updateRemoveLiquidityEstimate();
 }
 
@@ -649,8 +721,8 @@ export async function updateRemoveLiquidityEstimate() {
 
     if (!inp || !recv || !ctx) return;
 
-    const lpVal = Number(inp.value || 0) || 0;
-    if (!lpVal || lpVal <= 0) {
+    const lpValBase = __toBigIntAmount(inp.value || 0);
+    if (!lpValBase || lpValBase <= 0n) {
         recv.textContent = '--';
         if (btn) {
             btn.disabled = true;
@@ -668,7 +740,7 @@ export async function updateRemoveLiquidityEstimate() {
     __removeQuoteTimeout = setTimeout(async () => {
         try {
             const { BACKEND_URL } = __t();
-            const lpStr = __normalizeAmountStr(lpVal, 8);
+            const lpStr = __formatAmount(lpValBase);
             const qUrl =
                 `${BACKEND_URL}?action=quote_remove_liq` +
                 `&address=${encodeURIComponent(window.userAddress)}` +
@@ -700,8 +772,8 @@ export async function updateRemoveLiquidityEstimate() {
                         uiAmt0 = api0IsBtc ? amount0Str : amount1Str;
                         uiAmt1 = api0IsBtc ? amount1Str : amount0Str;
                     }
-                    const amt0Rounded = Number(uiAmt0).toFixed(2);
-                    const amt1Rounded = Number(uiAmt1).toFixed(2);
+                    const amt0Rounded = __formatAmountFixed(__toBigIntAmount(uiAmt0 || 0), 2);
+                    const amt1Rounded = __formatAmountFixed(__toBigIntAmount(uiAmt1 || 0), 2);
                     recv.textContent = `${ctx.uiTick0}: ${amt0Rounded}   |   ${ctx.uiTick1}: ${amt1Rounded}`;
                     if (btn) {
                         btn.disabled = false;
@@ -736,12 +808,20 @@ export async function doRemoveLiquidity() {
         if (!ctx || !ctx.apiTick0 || !ctx.apiTick1) throw new Error('No liquidity context');
 
         const inp = document.getElementById('removeLpAmount');
-        const lpVal = Number(inp?.value || 0) || 0;
-        if (!lpVal || lpVal <= 0) throw new Error('Enter LP amount');
+        const lpValBase = __toBigIntAmount(inp?.value || 0);
+        if (!lpValBase || lpValBase <= 0n) throw new Error('Enter LP amount');
 
-        const lpStr = __normalizeAmountStr(lpVal, 8);
-        if (!lpStr || Number(lpStr) <= 0) throw new Error('Invalid LP amount');
-        if (ctx.lp && lpVal > Number(ctx.lp || 0) * 1.0000001) throw new Error('LP amount exceeds your position');
+        const lpStr = __formatAmount(lpValBase);
+        if (!lpStr || lpValBase <= 0n) throw new Error('Invalid LP amount');
+        if (ctx.lp) {
+            const ctxLpBase = __toBigIntAmount(ctx.lp || 0);
+            if (ctxLpBase > 0n) {
+                let tolerance = ctxLpBase / 10000000n;
+                if (tolerance < 1n) tolerance = 1n;
+                const limit = ctxLpBase + tolerance;
+                if (lpValBase > limit) throw new Error('LP amount exceeds your position');
+            }
+        }
 
         if (btn) {
             btn.disabled = true;
@@ -983,31 +1063,35 @@ export async function doAddLiquidity() {
     const btn = document.getElementById('liqSupplyBtn');
     if (!el0 || !el1 || !btn) return;
 
-    const amount0 = parseFloat(el0.value || '0') || 0;
-    const amount1 = parseFloat(el1.value || '0') || 0;
-    if (!amount0 || !amount1) {
+    const amount0Base = __toBigIntAmount(el0.value || '0');
+    const amount1Base = __toBigIntAmount(el1.value || '0');
+    if (!amount0Base || !amount1Base || amount0Base <= 0n || amount1Base <= 0n) {
         if (typeof window.showNotification === 'function') window.showNotification('Enter amounts', 'warning', 2000);
         return;
     }
 
-    const feeBuffer = 0.05;
+    const feeBufferBase = __toBigIntAmount('0.05');
     const { T_SFB, BACKEND_URL } = __t();
-    if (cfg.uiTick0 === T_SFB && amount0 > Math.max(0, cfg.bal0 - feeBuffer)) {
+    const bal0Base = __toBigIntAmount(cfg.bal0 || 0);
+    const bal1Base = __toBigIntAmount(cfg.bal1 || 0);
+    const max0Base = cfg.uiTick0 === T_SFB && bal0Base > feeBufferBase ? bal0Base - feeBufferBase : bal0Base;
+    const max1Base = cfg.uiTick1 === T_SFB && bal1Base > feeBufferBase ? bal1Base - feeBufferBase : bal1Base;
+    if (cfg.uiTick0 === T_SFB && amount0Base > max0Base) {
         if (typeof window.showNotification === 'function')
             window.showNotification('Reserved 0.05 FB for fees', 'info', 2200);
-        el0.value = Math.max(0, cfg.bal0 - feeBuffer).toFixed(8);
+        el0.value = __formatAmountFixed(max0Base, 8);
         syncLiquidityAmounts(0);
         return;
     }
-    if (cfg.uiTick1 === T_SFB && amount1 > Math.max(0, cfg.bal1 - feeBuffer)) {
+    if (cfg.uiTick1 === T_SFB && amount1Base > max1Base) {
         if (typeof window.showNotification === 'function')
             window.showNotification('Reserved 0.05 FB for fees', 'info', 2200);
-        el1.value = Math.max(0, cfg.bal1 - feeBuffer).toFixed(8);
+        el1.value = __formatAmountFixed(max1Base, 8);
         syncLiquidityAmounts(1);
         return;
     }
 
-    if (amount0 > (cfg.bal0 || 0) || amount1 > (cfg.bal1 || 0)) {
+    if (amount0Base > bal0Base || amount1Base > bal1Base) {
         try {
             document.getElementById('depositLinkModal').classList.remove('hidden');
         } catch (_) {}
@@ -1025,16 +1109,16 @@ export async function doAddLiquidity() {
             } catch (_) {}
 
         const ts = Math.floor(Date.now() / 1000);
-        const expectedLp = computeExpectedLp(amount0, amount1, cfg.reserve0, cfg.reserve1, cfg.poolLp || 0);
-        const lpStr = __normalizeAmountStr(expectedLp || 0, 8);
-        if (!lpStr || Number(lpStr) <= 0) {
+        const expectedLp = computeExpectedLp(amount0Base, amount1Base, cfg.reserve0, cfg.reserve1, cfg.poolLp || 0);
+        if (!expectedLp || expectedLp <= 0n) {
             throw new Error('Invalid LP amount');
         }
+        const lpStr = __formatAmount(expectedLp);
 
-        const apiAmounts = cfg.mapUiToApiAmounts(amount0, amount1);
-        const amount0Str = __normalizeAmountStr(apiAmounts.amount0, 8);
-        const amount1Str = __normalizeAmountStr(apiAmounts.amount1, 8);
-        if (!amount0Str || !amount1Str || Number(amount0Str) <= 0 || Number(amount1Str) <= 0) {
+        const apiAmounts = cfg.mapUiToApiAmounts(amount0Base, amount1Base);
+        const amount0Str = __formatAmount(apiAmounts.amount0);
+        const amount1Str = __formatAmount(apiAmounts.amount1);
+        if (!amount0Str || !amount1Str || apiAmounts.amount0 <= 0n || apiAmounts.amount1 <= 0n) {
             throw new Error('Invalid amount');
         }
 

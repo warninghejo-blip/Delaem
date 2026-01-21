@@ -121,6 +121,146 @@ function __escapeHtml(s) {
         .replace(/'/g, '&#039;');
 }
 
+const REFERRAL_STORAGE_KEY = 'fennec_referral_v1';
+const REFERRAL_CAPTURE_TS_KEY = 'fennec_referral_ts_v1';
+
+const __captureReferral = () => {
+    try {
+        const url = new URL(window.location.href);
+        const params = url.searchParams;
+        const rawRef =
+            params.get('ref') ||
+            params.get('referrer') ||
+            params.get('r') ||
+            params.get('utm_source') ||
+            params.get('utm_campaign') ||
+            '';
+        const ref = String(rawRef || '').trim();
+        const existing = localStorage.getItem(REFERRAL_STORAGE_KEY);
+        const docRef = String(document.referrer || '').trim();
+        const sameHost = (() => {
+            try {
+                if (!docRef) return false;
+                return new URL(docRef).hostname === window.location.hostname;
+            } catch (_) {
+                return false;
+            }
+        })();
+
+        if (ref) {
+            localStorage.setItem(REFERRAL_STORAGE_KEY, ref.slice(0, 140));
+            localStorage.setItem(REFERRAL_CAPTURE_TS_KEY, String(Date.now()));
+            return;
+        }
+
+        if (!existing && docRef && !sameHost) {
+            localStorage.setItem(REFERRAL_STORAGE_KEY, docRef.slice(0, 140));
+            localStorage.setItem(REFERRAL_CAPTURE_TS_KEY, String(Date.now()));
+        }
+    } catch (_) {}
+};
+
+const __getReferralPayload = () => {
+    try {
+        const ref = String(localStorage.getItem(REFERRAL_STORAGE_KEY) || '').trim();
+        if (!ref) return null;
+        const ts = Number(localStorage.getItem(REFERRAL_CAPTURE_TS_KEY) || 0) || Date.now();
+        return {
+            ref,
+            ts,
+            page: String(window.location.pathname || '').trim(),
+            source: 'connect'
+        };
+    } catch (_) {
+        return null;
+    }
+};
+
+const __sendReferralTracking = async addr => {
+    try {
+        const address = String(addr || '').trim();
+        if (!address) return;
+        const payload = __getReferralPayload();
+        if (!payload) return;
+        const sentKey = `fennec_referral_sent:${address.toLowerCase()}`;
+        try {
+            if (localStorage.getItem(sentKey)) return;
+        } catch (_) {}
+
+        const body = {
+            address,
+            ref: payload.ref,
+            source: payload.source,
+            page: payload.page,
+            ts: payload.ts
+        };
+
+        await fetch(`${BACKEND_URL}?action=track_referral`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        }).catch(() => null);
+
+        try {
+            localStorage.setItem(sentKey, '1');
+        } catch (_) {}
+    } catch (_) {}
+};
+
+try {
+    __captureReferral();
+} catch (_) {}
+
+const SWAP_DECIMALS = 8;
+const SWAP_UNIT = 100000000n;
+
+const __toBigIntAmount = value => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return 0n;
+    if (/[eE]/.test(raw)) {
+        try {
+            return __toBigIntAmount(Number(raw).toFixed(SWAP_DECIMALS));
+        } catch (_) {
+            return 0n;
+        }
+    }
+    const cleaned = raw.replace(/,/g, '');
+    const parts = cleaned.split('.');
+    const whole = (parts[0] || '').replace(/\D/g, '') || '0';
+    const frac = (parts[1] || '').replace(/\D/g, '');
+    const fracPadded = (frac + '0'.repeat(SWAP_DECIMALS)).slice(0, SWAP_DECIMALS) || '0';
+    return BigInt(whole) * SWAP_UNIT + BigInt(fracPadded);
+};
+
+const __formatAmount = value => {
+    const v = typeof value === 'bigint' ? value : BigInt(value || 0);
+    if (v <= 0n) return '0';
+    const whole = v / SWAP_UNIT;
+    const frac = v % SWAP_UNIT;
+    if (frac === 0n) return whole.toString();
+    const fracStr = frac.toString().padStart(SWAP_DECIMALS, '0').replace(/0+$/g, '');
+    return `${whole.toString()}.${fracStr}`;
+};
+
+const __formatAmountFixed = (value, decimals = SWAP_DECIMALS) => {
+    const v = typeof value === 'bigint' ? value : BigInt(value || 0);
+    const dec = Math.max(0, Math.min(SWAP_DECIMALS, Number(decimals) || 0));
+    if (v <= 0n) return dec ? `0.${'0'.repeat(dec)}` : '0';
+    const scale = 10n ** BigInt(SWAP_DECIMALS - dec);
+    const rounded = scale > 1n ? (v + scale / 2n) / scale : v;
+    const unit = 10n ** BigInt(dec);
+    const whole = rounded / unit;
+    if (dec === 0) return whole.toString();
+    const frac = rounded % unit;
+    const fracStr = frac.toString().padStart(dec, '0');
+    return `${whole.toString()}.${fracStr}`;
+};
+
+const __divUp = (a, b) => {
+    if (b <= 0n) return 0n;
+    return (a + b - 1n) / b;
+};
+
 async function checkFractalNetwork() {
     const currentChain = await window.unisat.getChain();
     const chainName = typeof currentChain === 'string' ? currentChain : currentChain?.enum || currentChain;
@@ -1039,10 +1179,7 @@ window.connectWallet = async function () {
         } catch (_) {}
 
         try {
-            if (typeof window.initAudit === 'function') setTimeout(() => window.initAudit(), 100);
-        } catch (_) {}
-        try {
-            if (typeof window.prefetchFennecAudit === 'function') window.prefetchFennecAudit(true);
+            __sendReferralTracking(addr);
         } catch (_) {}
         try {
             if (typeof window.refreshFennecIdStatus === 'function') window.refreshFennecIdStatus(false);
@@ -1372,9 +1509,12 @@ function debounceReverse() {
 }
 
 async function calc() {
-    const val = parseFloat(document.getElementById('swapIn').value);
-    if (!val) {
-        document.getElementById('swapOut').value = '';
+    const inEl = document.getElementById('swapIn');
+    const outEl = document.getElementById('swapOut');
+    const rawVal = String(inEl?.value || '').trim();
+    const valBase = __toBigIntAmount(rawVal);
+    if (valBase <= 0n) {
+        if (outEl) outEl.value = '';
         return 0;
     }
 
@@ -1399,7 +1539,8 @@ async function calc() {
             // Используем fallback расчет если адрес недоступен
             throw new Error('Address required');
         }
-        const quoteUrl = `${BACKEND_URL}${separator}action=quote_swap&exactType=exactIn&tickIn=${tickIn}&tickOut=${tickOut}&amount=${val}&address=${userAddress}`;
+        const amountStr = __formatAmount(valBase);
+        const quoteUrl = `${BACKEND_URL}${separator}action=quote_swap&exactType=exactIn&tickIn=${tickIn}&tickOut=${tickOut}&amount=${amountStr}&address=${userAddress}`;
         console.log('Quote request:', quoteUrl);
         const quoteRes = await fetch(quoteUrl).then(r => {
             if (!r.ok) {
@@ -1427,15 +1568,16 @@ async function calc() {
                     quoteRes.data.amount;
             }
 
-            const amountOut = parseFloat(rawAmount);
+            const amountOutBase = __toBigIntAmount(rawAmount);
 
-            console.log(`Parsed amountOut: ${amountOut} from raw: ${rawAmount}`);
+            console.log(`Parsed amountOut: ${amountOutBase} from raw: ${rawAmount}`);
 
-            if (amountOut > 0) {
-                document.getElementById('swapOut').value = amountOut.toFixed(6);
+            if (amountOutBase > 0n) {
+                if (outEl) outEl.value = __formatAmountFixed(amountOutBase, 6);
 
                 // Обновляем курс
-                const rate = amountOut / val;
+                const rate =
+                    parseFloat(__formatAmount(amountOutBase)) / Math.max(1e-12, parseFloat(__formatAmount(valBase)));
                 let rateText;
                 if (currentSwapPair === 'FB_FENNEC') {
                     rateText = `1 ${isBuying ? 'FB' : 'FENNEC'} ≈ ${rate.toFixed(2)} ${isBuying ? 'FENNEC' : 'FB'}`;
@@ -1444,7 +1586,7 @@ async function calc() {
                     rateText = `1 ${isBuying ? 'BTC' : 'FB'} ≈ ${rate.toFixed(2)} ${isBuying ? 'FB' : 'BTC'}`;
                 }
                 document.getElementById('rateVal').innerText = rateText;
-                return amountOut;
+                return amountOutBase;
             } else {
                 console.warn('quote_swap returned invalid amountOut:', quoteRes.data);
             }
@@ -1457,24 +1599,27 @@ async function calc() {
     }
 
     // Fallback: расчет из резервов (аналогично FB-FENNEC)
-    let rIn, rOut;
+    let rInBase;
+    let rOutBase;
     if (currentSwapPair === 'FB_FENNEC') {
-        rIn = isBuying ? poolReserves.sFB : poolReserves.FENNEC;
-        rOut = isBuying ? poolReserves.FENNEC : poolReserves.sFB;
+        rInBase = __toBigIntAmount(isBuying ? poolReserves.sFB : poolReserves.FENNEC);
+        rOutBase = __toBigIntAmount(isBuying ? poolReserves.FENNEC : poolReserves.sFB);
     } else {
         // BTC_FB - используем резервы из пула sBTC/sFB
-        rIn = isBuying ? poolReserves.BTC : poolReserves.sFB;
-        rOut = isBuying ? poolReserves.sFB : poolReserves.BTC;
+        rInBase = __toBigIntAmount(isBuying ? poolReserves.BTC : poolReserves.sFB);
+        rOutBase = __toBigIntAmount(isBuying ? poolReserves.sFB : poolReserves.BTC);
     }
-    if (rIn === 0 || rOut === 0) {
+    if (!rInBase || !rOutBase || rInBase <= 0n || rOutBase <= 0n) {
         console.warn('Pool reserves are zero, cannot calculate');
         return 0;
     }
     // AMM формула: out = (amountIn * 985 * rOut) / (rIn * 1000 + amountIn * 985)
-    const fee = val * 985;
-    const out = (fee * rOut) / (rIn * 1000 + fee);
-    const rate = out / val;
-    document.getElementById('swapOut').value = out.toFixed(6);
+    const feeMul = 985n;
+    const feeDiv = 1000n;
+    const fee = valBase * feeMul;
+    const outBase = (fee * rOutBase) / (rInBase * feeDiv + fee);
+    const rate = parseFloat(__formatAmount(outBase)) / Math.max(1e-12, parseFloat(__formatAmount(valBase)));
+    if (outEl) outEl.value = __formatAmountFixed(outBase, 6);
     // Update rate display based on current pair
     let rateText;
     if (currentSwapPair === 'FB_FENNEC') {
@@ -1484,13 +1629,16 @@ async function calc() {
         rateText = `1 ${isBuying ? 'BTC' : 'FB'} ≈ ${rate.toFixed(2)} ${isBuying ? 'FB' : 'BTC'}`;
     }
     document.getElementById('rateVal').innerText = rateText;
-    return out;
+    return outBase;
 }
 
 async function calcReverse() {
-    const desiredOut = parseFloat(document.getElementById('swapOut').value);
-    if (!desiredOut) {
-        document.getElementById('swapIn').value = '';
+    const inEl = document.getElementById('swapIn');
+    const outEl = document.getElementById('swapOut');
+    const rawOut = String(outEl?.value || '').trim();
+    const desiredOutBase = __toBigIntAmount(rawOut);
+    if (desiredOutBase <= 0n) {
+        if (inEl) inEl.value = '';
         return;
     }
 
@@ -1513,7 +1661,8 @@ async function calcReverse() {
             console.warn('No address for quote_swap, using fallback calculation...');
             throw new Error('Address required');
         }
-        const quoteUrl = `${BACKEND_URL}${separator}action=quote_swap&exactType=exactOut&tickIn=${tickIn}&tickOut=${tickOut}&amount=${desiredOut}&address=${userAddress}`;
+        const amountStr = __formatAmount(desiredOutBase);
+        const quoteUrl = `${BACKEND_URL}${separator}action=quote_swap&exactType=exactOut&tickIn=${tickIn}&tickOut=${tickOut}&amount=${amountStr}&address=${userAddress}`;
 
         const quoteRes = await fetch(quoteUrl).then(r => {
             if (!r.ok) {
@@ -1536,15 +1685,17 @@ async function calcReverse() {
                     quoteRes.data.amountIn || quoteRes.data.inAmount || quoteRes.data.payAmount || quoteRes.data.amount;
             }
 
-            const amountIn = parseFloat(rawAmount);
+            const amountInBase = __toBigIntAmount(rawAmount);
 
-            console.log(`Parsed amountIn: ${amountIn} from raw: ${rawAmount}`);
+            console.log(`Parsed amountIn: ${amountInBase} from raw: ${rawAmount}`);
 
-            if (amountIn > 0) {
-                document.getElementById('swapIn').value = amountIn.toFixed(6);
+            if (amountInBase > 0n) {
+                if (inEl) inEl.value = __formatAmountFixed(amountInBase, 6);
 
                 // Обновляем курс
-                const rate = desiredOut / amountIn;
+                const rate =
+                    parseFloat(__formatAmount(desiredOutBase)) /
+                    Math.max(1e-12, parseFloat(__formatAmount(amountInBase)));
                 let rateText;
                 if (currentSwapPair === 'FB_FENNEC') {
                     rateText = `1 ${isBuying ? 'FB' : 'FENNEC'} ≈ ${rate.toFixed(2)} ${isBuying ? 'FENNEC' : 'FB'}`;
@@ -1565,26 +1716,30 @@ async function calcReverse() {
     }
 
     // Fallback: расчет из резервов (старый метод)
-    let rIn, rOut;
+    let rInBase;
+    let rOutBase;
     if (currentSwapPair === 'FB_FENNEC') {
-        rIn = isBuying ? poolReserves.sFB : poolReserves.FENNEC;
-        rOut = isBuying ? poolReserves.FENNEC : poolReserves.sFB;
+        rInBase = __toBigIntAmount(isBuying ? poolReserves.sFB : poolReserves.FENNEC);
+        rOutBase = __toBigIntAmount(isBuying ? poolReserves.FENNEC : poolReserves.sFB);
     } else {
         // BTC_FB
-        rIn = isBuying ? poolReserves.BTC : poolReserves.sFB;
-        rOut = isBuying ? poolReserves.sFB : poolReserves.BTC;
+        rInBase = __toBigIntAmount(isBuying ? poolReserves.BTC : poolReserves.sFB);
+        rOutBase = __toBigIntAmount(isBuying ? poolReserves.sFB : poolReserves.BTC);
     }
-    if (rOut === 0) return;
+    if (!rOutBase || rOutBase <= 0n) return;
 
     // Обратная формула AMM: amountIn = (desiredOut * rIn * 1000) / ((rOut - desiredOut) * 985)
-    const numerator = desiredOut * rIn * 1000;
-    const denominator = (rOut - desiredOut) * 985;
-    if (denominator <= 0) return alert('Amount too large for pool');
+    const feeMul = 985n;
+    const feeDiv = 1000n;
+    if (desiredOutBase >= rOutBase) return alert('Amount too large for pool');
+    const numerator = desiredOutBase * rInBase * feeDiv;
+    const denominator = (rOutBase - desiredOutBase) * feeMul;
+    if (denominator <= 0n) return alert('Amount too large for pool');
 
-    const amountIn = numerator / denominator;
-    document.getElementById('swapIn').value = amountIn.toFixed(6);
+    const amountInBase = __divUp(numerator, denominator);
+    if (inEl) inEl.value = __formatAmountFixed(amountInBase, 6);
 
-    const rate = desiredOut / amountIn;
+    const rate = parseFloat(__formatAmount(desiredOutBase)) / Math.max(1e-12, parseFloat(__formatAmount(amountInBase)));
     // Update rate display based on current pair
     let rateText;
     if (currentSwapPair === 'FB_FENNEC') {
@@ -2792,17 +2947,29 @@ function updateDepositUI() {
 // WITHDRAW (FIXED: NetworkType + Smart Sign)
 async function setWithdrawToken(tok) {
     withdrawToken = tok;
-    document.getElementById('wd-sfb').className =
-        `flex-1 py-2 rounded-lg text-xs font-bold border transition cursor-pointer ${tok === 'sFB' ? 'border-fennec text-fennec bg-fennec/10' : 'border-gray-700 text-gray-500 hover:text-white'}`;
-    document.getElementById('wd-fennec').className =
-        `flex-1 py-2 rounded-lg text-xs font-bold border transition cursor-pointer ${tok === 'FENNEC' ? 'border-fennec text-fennec bg-fennec/10' : 'border-gray-700 text-gray-500 hover:text-white'}`;
-    document.getElementById('wdTickerLabel').innerText = tok === 'sFB' ? 'FB' : 'FENNEC';
+    const sfbBtn = document.getElementById('wd-sfb');
+    const fennecBtn = document.getElementById('wd-fennec');
+    const btcBtn = document.getElementById('wd-btc');
+    if (sfbBtn) {
+        sfbBtn.className = `flex-1 py-2 rounded-lg text-xs font-bold border transition cursor-pointer ${tok === 'sFB' ? 'border-fennec text-fennec bg-fennec/10' : 'border-gray-700 text-gray-500 hover:text-white'}`;
+    }
+    if (fennecBtn) {
+        fennecBtn.className = `flex-1 py-2 rounded-lg text-xs font-bold border transition cursor-pointer ${tok === 'FENNEC' ? 'border-fennec text-fennec bg-fennec/10' : 'border-gray-700 text-gray-500 hover:text-white'}`;
+    }
+    if (btcBtn) {
+        btcBtn.className = `flex-1 py-2 rounded-lg text-xs font-bold border transition cursor-pointer ${tok === 'BTC' ? 'border-fennec text-fennec bg-fennec/10' : 'border-gray-700 text-gray-500 hover:text-white'}`;
+    }
+    const wdLabel = document.getElementById('wdTickerLabel');
+    if (wdLabel) wdLabel.innerText = tok === 'sFB' ? 'FB' : tok === 'BTC' ? 'BTC' : 'FENNEC';
     // Load fees when switching tokens
     await loadFees('withdraw');
     // Placeholder и min только для FB (min 1), для BRC-20 нет минимума
     if (tok === 'sFB') {
         document.getElementById('wdAmount').placeholder = '1.0';
         document.getElementById('wdAmount').min = '1';
+    } else if (tok === 'BTC') {
+        document.getElementById('wdAmount').placeholder = '0.00001';
+        document.getElementById('wdAmount').min = '0.00001';
     } else {
         document.getElementById('wdAmount').placeholder = '0.0';
         document.getElementById('wdAmount').min = '0';
@@ -2810,10 +2977,16 @@ async function setWithdrawToken(tok) {
     updateWithdrawUI();
 }
 function updateWithdrawUI() {
-    const bal = withdrawToken === 'sFB' ? userBalances.sFB : userBalances.FENNEC;
-    const token = withdrawToken === 'sFB' ? 'FB' : 'FENNEC';
+    const bal =
+        withdrawToken === 'sFB'
+            ? userBalances.sFB
+            : withdrawToken === 'BTC'
+              ? poolReserves.user_sBTC
+              : userBalances.FENNEC;
+    const token = withdrawToken === 'sFB' ? 'FB' : withdrawToken === 'BTC' ? 'BTC' : 'FENNEC';
     const balEl = document.getElementById('wd-bal');
-    const minText = withdrawToken === 'sFB' ? ` (Min: 1 ${token})` : '';
+    const minText =
+        withdrawToken === 'sFB' ? ` (Min: 1 ${token})` : withdrawToken === 'BTC' ? ` (Min: 0.00001 ${token})` : '';
     if (balEl) balEl.innerText = `Available: ${bal.toFixed(4)}${minText}`;
 }
 
@@ -2822,7 +2995,12 @@ function setMaxWithdrawAmount() {
         window.connectWallet();
         return;
     }
-    const bal = withdrawToken === 'sFB' ? userBalances.sFB : userBalances.FENNEC;
+    const bal =
+        withdrawToken === 'sFB'
+            ? userBalances.sFB
+            : withdrawToken === 'BTC'
+              ? poolReserves.user_sBTC
+              : userBalances.FENNEC;
     const wdAmountEl = document.getElementById('wdAmount');
     if (wdAmountEl && bal > 0) {
         wdAmountEl.value = bal.toFixed(8);
@@ -2860,11 +3038,13 @@ async function doWithdraw() {
     const amount = parseFloat(document.getElementById('wdAmount').value);
     // ИСПРАВЛЕНИЕ ОТ GEMINI: Определяем параметры правильно
     const isFennec = withdrawToken === 'FENNEC';
-    const tick = isFennec ? T_FENNEC : T_SFB;
+    const isBtc = withdrawToken === 'BTC';
+    const tick = isFennec ? T_FENNEC : isBtc ? T_BTC : T_SFB;
     const assetType = isFennec ? 'brc20' : 'btc';
 
     // Проверки минимума
-    if (!isFennec && (!amount || amount < 1)) return alert('Enter amount (min 1 FB)');
+    if (!isFennec && !isBtc && (!amount || amount < 1)) return alert('Enter amount (min 1 FB)');
+    if (isBtc && (!amount || amount < 0.00001)) return alert('Enter amount (min 0.00001 BTC)');
     if (isFennec && (!amount || amount <= 0)) return alert('Enter amount');
 
     const btn = document.getElementById('btnWithdraw');

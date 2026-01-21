@@ -9,6 +9,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 
 const rootDir = path.resolve(__dirname, '..');
 const outputDir = path.join(rootDir, 'pages_upload');
@@ -140,6 +141,28 @@ function build() {
         }
     }
     console.log(`✅ Copied ${copiedConfig} config files\n`);
+
+    // Step 5: Generate build_meta.json (for deploy verification)
+    console.log('🧾 Writing build_meta.json...');
+    let gitCommit = '';
+    try {
+        gitCommit = String(execSync('git rev-parse HEAD', { cwd: rootDir }).toString() || '').trim();
+    } catch (_) {
+        gitCommit = '';
+    }
+    const gitCommitShort = gitCommit ? gitCommit.slice(0, 7) : '';
+    const buildMeta = {
+        built_at: new Date().toISOString(),
+        git_commit: gitCommit,
+        git_commit_short: gitCommitShort,
+        output_dir: 'pages_upload'
+    };
+    try {
+        fs.writeFileSync(path.join(outputDir, 'build_meta.json'), JSON.stringify(buildMeta, null, 2));
+        console.log('✅ build_meta.json written\n');
+    } catch (error) {
+        console.error('⚠ Failed to write build_meta.json:', error.message);
+    }
 
     console.log('🎉 Build complete! Output: pages_upload/');
     console.log('💡 You can now deploy the pages_upload/ folder\n');

@@ -13,6 +13,8 @@ const CONFIG = {
     maxRetries: 5
 };
 
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
 async function runQACycle() {
     console.log('\n🤖 === FENNEC QA CYCLE START ===\n');
 
@@ -70,7 +72,7 @@ async function runQACycle() {
             });
 
             // Ждем инициализации
-            await page.waitForTimeout(3000);
+            await sleep(3000);
 
             // Сбор состояния страницы
             const pageState = await page.evaluate(() => {
@@ -98,11 +100,18 @@ async function runQACycle() {
                 const tabs = ['Swap', 'Deposit', 'Audit'];
                 for (const tab of tabs) {
                     try {
-                        const button = await page.$x(`//button[contains(text(), "${tab}")]`);
-                        if (button.length > 0) {
-                            await button[0].click();
-                            await page.waitForTimeout(1000);
+                        const clicked = await page.evaluate(label => {
+                            const buttons = Array.from(document.querySelectorAll('button'));
+                            const match = buttons.find(btn => btn.textContent && btn.textContent.includes(label));
+                            if (!match) return false;
+                            match.click();
+                            return true;
+                        }, tab);
+                        if (clicked) {
+                            await sleep(1000);
                             console.log(`✅ Кликнул вкладку: ${tab}`);
+                        } else {
+                            console.log(`⚠️ Вкладка ${tab} не найдена`);
                         }
                     } catch (e) {
                         console.log(`⚠️ Не удалось кликнуть ${tab}: ${e.message}`);
