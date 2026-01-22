@@ -140,6 +140,8 @@ export default {
             'create_inscription',
             'burn_remint_psbt',
             'push_psbt',
+            'address_utxos',
+            'build_psbt',
             'deposit_create',
             'deposit_confirm',
             'deposit_create_simple',
@@ -1778,6 +1780,109 @@ Request Context: ${JSON.stringify(context, null, 2)}
                     }
                 });
                 return sendJSON(await response.json(), response.status);
+            }
+
+            if (action === 'address_utxos') {
+                requireUniSatKey();
+                const address = String(url.searchParams.get('address') || '').trim();
+                const cursor = Math.max(0, Number(url.searchParams.get('cursor') || 0) || 0);
+                const size = Math.min(200, Math.max(1, Number(url.searchParams.get('limit') || 200) || 200));
+                if (!address) return sendJSON({ code: -1, msg: 'Missing address' }, 200);
+
+                const endpoint = `${FRACTAL_BASE}/indexer/address/${encodeURIComponent(
+                    address
+                )}/utxo-data?cursor=${cursor}&size=${size}`;
+                const response = await fetch(endpoint, {
+                    method: 'GET',
+                    headers: {
+                        ...unisatApiHeaders,
+                        ...authHeaders(),
+                        Accept: 'application/json'
+                    }
+                });
+                return sendJSON(await response.json().catch(() => null), response.status);
+            }
+
+            if (action === 'build_psbt') {
+                const body = await request.json().catch(() => null);
+                if (!body || typeof body !== 'object') return sendJSON({ code: -1, msg: 'Invalid JSON body' }, 200);
+
+                const inputs = Array.isArray(body.inputs) ? body.inputs : [];
+                const outputs = Array.isArray(body.outputs) ? body.outputs : [];
+                const pubkeyHex = String(body.pubkey || body.publicKey || body.public_key || '').trim();
+                if (!inputs.length || !outputs.length) {
+                    return sendJSON({ code: -1, msg: 'Missing inputs or outputs' }, 200);
+                }
+
+                const toBigInt = value => {
+                    try {
+                        if (typeof value === 'bigint') return value;
+                        if (typeof value === 'number') return BigInt(Math.trunc(value));
+                        const raw = String(value ?? '').trim();
+                        if (!raw) return 0n;
+                        if (raw.includes('.')) return BigInt(Math.trunc(Number(raw)));
+                        return BigInt(raw);
+                    } catch (_) {
+                        return 0n;
+                    }
+                };
+                const xOnlyFromPubkey = pkHex => {
+                    const p = String(pkHex || '')
+                        .trim()
+                        .toLowerCase();
+                    if (!p) return '';
+                    if (p.length === 66 && (p.startsWith('02') || p.startsWith('03'))) return p.slice(2);
+                    if (p.length === 64) return p;
+                    return '';
+                };
+                const isTaprootScript = s => {
+                    const h = String(s || '')
+                        .trim()
+                        .toLowerCase();
+                    return h.startsWith('5120') && h.length === 68;
+                };
+
+                const xOnlyHex = xOnlyFromPubkey(pubkeyHex);
+                const tapInternalKeyBytes = xOnlyHex ? hex.decode(xOnlyHex) : null;
+
+                const tx = new btc.Transaction();
+                for (const input of inputs) {
+                    const txid = String(input?.txid || '').trim();
+                    const vout = Number(input?.vout ?? input?.index ?? 0);
+                    const satoshi = toBigInt(input?.satoshi ?? input?.value ?? 0);
+                    const scriptPk = String(input?.scriptPk || input?.script_pk || '').trim();
+                    if (!txid || !Number.isFinite(vout) || satoshi <= 0n || !scriptPk) {
+                        return sendJSON({ code: -1, msg: 'Invalid input' }, 200);
+                    }
+                    const scriptBytes = hex.decode(scriptPk);
+                    const entry = {
+                        txid,
+                        index: vout,
+                        witnessUtxo: { script: scriptBytes, amount: satoshi }
+                    };
+                    if (tapInternalKeyBytes && isTaprootScript(scriptPk)) {
+                        entry.tapInternalKey = tapInternalKeyBytes;
+                    }
+                    tx.addInput(entry);
+                }
+
+                for (let i = 0; i < tx.inputsLength; i += 1) {
+                    try {
+                        tx.updateInput(i, { sighashType: btc.SigHash.ALL });
+                    } catch (_) {
+                        void _;
+                    }
+                }
+
+                for (const output of outputs) {
+                    const address = String(output?.address || '').trim();
+                    const amount = toBigInt(output?.satoshi ?? output?.value ?? 0);
+                    if (!address || amount <= 0n) continue;
+                    tx.addOutputAddress(address, amount);
+                }
+
+                const psbt = hex.encode(tx.toPSBT());
+                return sendJSON({ code: 0, data: { psbt } }, 200);
             }
 
             if (action === 'inscription_content') {

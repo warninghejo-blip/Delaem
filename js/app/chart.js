@@ -261,6 +261,7 @@ function __handlePairChange(nextPair) {
         setChartTimeframe(chartTimeframe);
     }
     updatePriceData(true, pair).catch(() => null);
+    updateMarketStats(undefined, pair).catch(() => null);
 }
 
 function __bindPairListener() {
@@ -414,7 +415,9 @@ async function loadHistoricalPrices(pairKey) {
 
         if (__chartDebug) console.log('Loading history from InSwap...', pair, chartTimeframe);
 
-        const timeRange = chartTimeframe;
+        const baseRange = chartTimeframe === 'all' ? '90d' : chartTimeframe;
+        const isBtcPair = pair === 'BTC_FB';
+        const timeRange = isBtcPair && baseRange !== '1h' && baseRange !== '24h' ? '90d' : baseRange;
         const __url = `${BACKEND_URL}?action=price_line&tick0=${encodeURIComponent(tick0)}&tick1=${encodeURIComponent(
             tick1
         )}&timeRange=${encodeURIComponent(timeRange)}`;
@@ -738,7 +741,7 @@ function updateChart(pairKey) {
         }
 
         // Update market cap and volume
-        updateMarketStats(current);
+        updateMarketStats(current, pair);
     } else if (filtered.length === 1) {
         // Only one point - show it
         const priceEl = document.getElementById('chartPrice') || document.getElementById('currentPrice');
@@ -752,7 +755,7 @@ function updateChart(pairKey) {
 
     // Update market cap even if only one point
     if (filtered.length > 0) {
-        updateMarketStats(filtered[filtered.length - 1].price);
+        updateMarketStats(filtered[filtered.length - 1].price, pair);
     }
 }
 

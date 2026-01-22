@@ -2802,10 +2802,14 @@ async function createInscriptionWithAmount(amount, options = {}) {
         // Step 4: Start tracking inscription status in background
         trackInscriptionStatus(orderId, amount, {
             tick,
+            intervalMs: opts.autoDeposit ? 2000 : undefined,
             onReady: opts.autoDeposit
                 ? async inscriptionId => {
                       try {
-                          await new Promise(r => setTimeout(r, 3500));
+                          if (btn) {
+                              btn.innerText = 'SIGN DEPOSIT...';
+                              btn.disabled = true;
+                          }
                           await executeDeposit(inscriptionId, amount, { tick });
                       } catch (e) {
                           console.error('Auto-deposit error:', e);
@@ -2824,10 +2828,8 @@ async function createInscriptionWithAmount(amount, options = {}) {
                 : null
         });
 
-        if (btn) btn.innerText = 'CREATING...';
-        if (opts.autoDeposit) {
-            showSuccess(`Transfer created! Auto-deposit will start once it's ready. Order ID: ${orderId}`);
-        } else {
+        if (btn) btn.innerText = opts.autoDeposit ? 'AWAITING INSCRIPTION...' : 'CREATING...';
+        if (!opts.autoDeposit) {
             showSuccess(`Inscription order created! It will appear in the list when ready. Order ID: ${orderId}`);
         }
     } catch (e) {
@@ -2969,6 +2971,63 @@ async function executeDeposit(inscriptionId, amountOverride, options = {}) {
         }
         if (!userPubkey) userPubkey = await window.unisat.getPublicKey();
 
+        const __shortDelay = ms => new Promise(r => setTimeout(r, ms));
+        const __fetchJson = async input => {
+            const res = await fetch(input).catch(() => null);
+            if (!res || !res.ok) return null;
+            return await res.json().catch(() => null);
+        };
+        const __findUtxoWithInscription = async (inscId, retries = 6) => {
+            const maxAttempts = Math.max(1, retries);
+            for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+                const info = await __fetchJson(
+                    `${BACKEND_URL}?action=inscription_info&inscriptionId=${encodeURIComponent(inscId)}`
+                );
+                const utxo = info?.data?.utxo || null;
+                if (utxo && utxo.txid) return utxo;
+                await __shortDelay(700 + attempt * 350);
+            }
+            return null;
+        };
+        const __loadAddressUtxos = async (addr, retries = 4) => {
+            const list = [];
+            for (let attempt = 0; attempt < retries; attempt += 1) {
+                const res = await __fetchJson(
+                    `${BACKEND_URL}?action=address_utxos&address=${encodeURIComponent(addr)}&limit=200&withInscription=1`
+                );
+                const data = res?.data || {};
+                const raw = Array.isArray(data.list) ? data.list : Array.isArray(data.utxo) ? data.utxo : [];
+                if (raw.length > 0) {
+                    raw.forEach(u => list.push(u));
+                    break;
+                }
+                await __shortDelay(900 + attempt * 500);
+            }
+            return list;
+        };
+        const __toBigInt = value => {
+            try {
+                if (typeof value === 'bigint') return value;
+                if (typeof value === 'number' && Number.isFinite(value)) return BigInt(Math.trunc(value));
+                const raw = String(value ?? '').trim();
+                if (!raw) return 0n;
+                if (raw.includes('.')) return BigInt(Math.trunc(Number(raw)));
+                return BigInt(raw);
+            } catch (_) {
+                return 0n;
+            }
+        };
+        const __formatSats = value => __toBigInt(value).toString();
+        const __normalizeUtxo = u => {
+            if (!u || typeof u !== 'object') return null;
+            const txid = String(u.txid || '').trim();
+            const vout = Number(u.vout ?? u.index ?? 0);
+            const satoshi = __toBigInt(u.satoshi || 0);
+            const scriptPk = String(u.scriptPk || u.script_pk || '').trim();
+            if (!txid || !Number.isFinite(vout) || satoshi <= 0n || !scriptPk) return null;
+            return { txid, vout, satoshi, scriptPk, inscriptions: u.inscriptions || [] };
+        };
+
         // Deposit FENNEC inscription (BRC-20 transfer)
         btn.innerText = 'CREATING DEPOSIT...';
         btn.disabled = true;
@@ -2999,26 +3058,168 @@ async function executeDeposit(inscriptionId, amountOverride, options = {}) {
             lastMsg = res?.msg || res?.error || 'Failed to create deposit';
             if (attempt < maxAttempts && __shouldRetryDeposit(lastMsg)) {
                 btn.innerText = `WAITING FOR INDEX (${attempt + 1}/${maxAttempts})...`;
-                await new Promise(r => setTimeout(r, 2500 * attempt));
+                await __shortDelay(2500 * attempt);
                 continue;
             }
             throw new Error(lastMsg);
         }
         if (!res || res.code !== 0) throw new Error(lastMsg || 'Failed to create deposit');
-        if (!res.data?.psbt) throw new Error('No PSBT returned');
 
-        console.log('=== SIGNING FENNEC DEPOSIT PSBT ===');
-        btn.innerText = 'SIGNING...';
-        const signOptions = {};
-        if (res.data?.toSignInputs) {
-            signOptions.toSignInputs = res.data.toSignInputs;
+        let signedPsbt = null;
+        let psbtReady = false;
+        let depositTxid = '';
+        if (res.data?.psbt) {
+            console.log('=== SIGNING FENNEC DEPOSIT PSBT ===');
+            btn.innerText = 'SIGNING...';
+            const signOptions = {};
+            if (res.data?.toSignInputs) {
+                signOptions.toSignInputs = res.data.toSignInputs;
+            }
+            if (res.data?.autoFinalized !== undefined) {
+                signOptions.autoFinalized = res.data.autoFinalized;
+            }
+            const resolvedSignOptions = Object.keys(signOptions).length > 0 ? signOptions : { autoFinalized: false };
+            signedPsbt = await window.unisat.signPsbt(res.data.psbt, resolvedSignOptions);
+            psbtReady = true;
+            console.log('PSBT signed');
         }
-        if (res.data?.autoFinalized !== undefined) {
-            signOptions.autoFinalized = res.data.autoFinalized;
+
+        if (!psbtReady) {
+            console.log('=== BUILDING SINGLE-STEP PSBT ===');
+            btn.innerText = 'BUILDING PSBT...';
+            await __shortDelay(600);
+
+            const payAddress = String(res?.data?.payAddress || res?.data?.pay_address || '').trim();
+            const payAmount = __toBigInt(res?.data?.amount || 0);
+            const inscriptionTarget = String(
+                res?.data?.receiveAddress ||
+                    res?.data?.depositAddress ||
+                    res?.data?.address ||
+                    res?.data?.inscriptionAddress ||
+                    payAddress ||
+                    userAddress
+            ).trim();
+            if (!inscriptionTarget) throw new Error('Deposit order missing target address');
+
+            const inscUtxo = await __findUtxoWithInscription(inscriptionId, 8);
+            if (!inscUtxo) throw new Error('Inscription UTXO not found yet');
+            const inscTxid = String(inscUtxo.txid || '').trim();
+            const inscVout = Number(inscUtxo.vout ?? inscUtxo.index ?? 0);
+            const inscSats = __toBigInt(inscUtxo.satoshi || 0);
+            const inscScript = String(inscUtxo.scriptPk || inscUtxo.script_pk || '').trim();
+            if (!inscTxid || !Number.isFinite(inscVout) || !inscScript || inscSats <= 0n) {
+                throw new Error('Invalid inscription UTXO data');
+            }
+
+            const utxoList = await __loadAddressUtxos(userAddress, 5);
+            const normalized = utxoList.map(__normalizeUtxo).filter(Boolean);
+            const inscKey = `${inscTxid}:${inscVout}`;
+            const spendable = normalized
+                .filter(u => `${u.txid}:${u.vout}` !== inscKey)
+                .filter(u => !(Array.isArray(u.inscriptions) && u.inscriptions.length > 0))
+                .sort((a, b) => (a.satoshi > b.satoshi ? -1 : a.satoshi < b.satoshi ? 1 : 0));
+
+            const feeRate = Math.max(1, Number(res?.data?.feeRate || res?.data?.fee_rate || depositFeeRate || 2) || 2);
+            const baseVb = 12;
+            const inVb = 75;
+            const outVb = 43;
+            const estimateFee = (inputsCount, outputsCount) =>
+                BigInt(Math.ceil((baseVb + inputsCount * inVb + outputsCount * outVb) * feeRate));
+
+            const selected = [];
+            let totalIn = inscSats;
+            const baseOutputs = 1 + (payAmount > 0n && payAddress ? 1 : 0);
+            const outputCount = baseOutputs + 1;
+            let fee = estimateFee(1, outputCount);
+            let required = inscSats + payAmount + fee;
+            for (const u of spendable) {
+                if (totalIn >= required) break;
+                selected.push(u);
+                totalIn += u.satoshi;
+                fee = estimateFee(1 + selected.length, outputCount);
+                required = inscSats + payAmount + fee;
+            }
+
+            if (totalIn < inscSats + payAmount + estimateFee(1 + selected.length, baseOutputs)) {
+                throw new Error('Insufficient funds for single-step deposit');
+            }
+
+            fee = estimateFee(1 + selected.length, outputCount);
+            let change = totalIn - inscSats - payAmount - fee;
+            const withChange = change >= 546n;
+            if (!withChange) {
+                fee += change;
+                change = 0n;
+            }
+
+            const inputs = [];
+            const outputs = [];
+
+            inputs.push({
+                txid: inscTxid,
+                vout: inscVout,
+                scriptPk: inscScript,
+                satoshi: __formatSats(inscSats)
+            });
+            selected.forEach(u => {
+                inputs.push({
+                    txid: u.txid,
+                    vout: u.vout,
+                    scriptPk: u.scriptPk,
+                    satoshi: __formatSats(u.satoshi)
+                });
+            });
+
+            outputs.push({ address: inscriptionTarget, satoshi: __formatSats(inscSats) });
+            if (payAmount > 0n && payAddress) {
+                outputs.push({ address: payAddress, satoshi: __formatSats(payAmount) });
+            }
+            if (withChange && change >= 546n) outputs.push({ address: userAddress, satoshi: __formatSats(change) });
+
+            const psbtRes = await fetch(`${BACKEND_URL}?action=build_psbt`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-public-key': userPubkey,
+                    'x-address': userAddress
+                },
+                body: JSON.stringify({
+                    address: userAddress,
+                    pubkey: userPubkey,
+                    inputs,
+                    outputs
+                })
+            }).then(r => r.json());
+
+            if (!psbtRes || psbtRes.code !== 0 || !psbtRes.data?.psbt) {
+                throw new Error(psbtRes?.msg || psbtRes?.error || 'Failed to build PSBT');
+            }
+
+            btn.innerText = 'SIGNING...';
+            signedPsbt = await window.unisat.signPsbt(psbtRes.data.psbt, { autoFinalized: true });
+            psbtReady = true;
+
+            btn.innerText = 'BROADCASTING...';
+            if (typeof window.unisat.pushPsbt === 'function') {
+                const pushed = await window.unisat.pushPsbt(signedPsbt);
+                depositTxid = __looksLikeTxid(pushed) ? pushed : __pickTxid(pushed) || '';
+            } else {
+                const pushed = await fetch(`${BACKEND_URL}?action=push_psbt`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-public-key': userPubkey,
+                        'x-address': userAddress
+                    },
+                    body: JSON.stringify({ psbt: signedPsbt })
+                }).then(r => r.json());
+                depositTxid = __pickTxid(pushed?.data) || __pickTxid(pushed) || '';
+            }
+
+            await __shortDelay(400);
         }
-        const resolvedSignOptions = Object.keys(signOptions).length > 0 ? signOptions : { autoFinalized: false };
-        const signedPsbt = await window.unisat.signPsbt(res.data.psbt, resolvedSignOptions);
-        console.log('PSBT signed');
+
+        if (!signedPsbt) throw new Error('No signed PSBT available');
 
         // Confirm для BRC-20: ТРЕБУЕТСЯ inscriptionId по документации
         btn.innerText = 'CONFIRMING...';
@@ -3036,28 +3237,28 @@ async function executeDeposit(inscriptionId, amountOverride, options = {}) {
         console.log('=== FENNEC DEPOSIT CONFIRM ===');
         console.log('Body:', JSON.stringify(confirmBody, null, 2));
 
-        const conf = await fetch(`${BACKEND_URL}?action=confirm_deposit`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-public-key': userPubkey,
-                'x-address': userAddress
-            },
-            body: JSON.stringify(confirmBody)
-        }).then(r => r.json());
-
-        console.log('Confirm response:', JSON.stringify(conf, null, 2));
-
-        if (conf.code === 0) {
-            const txid = __pickTxid(conf?.data) || __pickTxid(conf) || conf.data || 'FENNEC deposited!';
-            // Block inscription from being used again
+        const __confirmDeposit = async () =>
+            fetch(`${BACKEND_URL}?action=confirm_deposit`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-public-key': userPubkey,
+                    'x-address': userAddress
+                },
+                body: JSON.stringify(confirmBody)
+            })
+                .then(r => r.json())
+                .catch(() => null);
+        const __isPendingConfirm = msg => /pending|confirm/i.test(String(msg || ''));
+        const __finalizeDeposit = (txidValue, note) => {
+            const txid = txidValue || 'FENNEC deposited!';
             const pendingInscriptions = JSON.parse(localStorage.getItem('pendingDepositInscriptions') || '[]');
             if (!pendingInscriptions.includes(inscriptionId)) {
                 pendingInscriptions.push(inscriptionId);
                 localStorage.setItem('pendingDepositInscriptions', JSON.stringify(pendingInscriptions));
             }
-            trackDepositProgress(txid, tick);
-            showSuccess(`FENNEC deposit successful! TXID: ${txid}`);
+            if (txid) trackDepositProgress(txid, tick);
+            showSuccess(note || `FENNEC deposit successful! TXID: ${txid}`);
             try {
                 if (typeof addPendingOperation === 'function') {
                     const amt = Number(amount || 0) || 0;
@@ -3075,9 +3276,40 @@ async function executeDeposit(inscriptionId, amountOverride, options = {}) {
             } catch (_) {}
             selectedInscriptions.length = 0;
             updateSelectedAmount();
-            loadFennecInscriptions(); // Refresh list
+            loadFennecInscriptions();
             setTimeout(checkBalance, 2000);
-        } else throw new Error(conf.msg || 'Confirmation failed');
+        };
+
+        let conf = null;
+        let pendingConfirm = false;
+        const maxConfirmAttempts = 6;
+        for (let attempt = 1; attempt <= maxConfirmAttempts; attempt += 1) {
+            btn.innerText = attempt === 1 ? 'CONFIRMING...' : `FINALIZING (${attempt}/${maxConfirmAttempts})...`;
+            conf = await __confirmDeposit();
+            console.log('Confirm response:', JSON.stringify(conf, null, 2));
+            if (conf && conf.code === 0) break;
+            const msg = String(conf?.msg || conf?.error || '').toLowerCase();
+            if (msg && __isPendingConfirm(msg)) {
+                pendingConfirm = true;
+                await __shortDelay(1200 + attempt * 400);
+                continue;
+            }
+            pendingConfirm = false;
+            break;
+        }
+
+        const resolvedTxid =
+            __pickTxid(conf?.data) ||
+            __pickTxid(conf) ||
+            depositTxid ||
+            (typeof conf?.data === 'string' ? conf.data : '');
+        if (conf && conf.code === 0) {
+            __finalizeDeposit(resolvedTxid, `FENNEC deposit successful! TXID: ${resolvedTxid || 'Submitted'}`);
+        } else if (pendingConfirm) {
+            __finalizeDeposit(resolvedTxid || depositTxid, 'Deposit submitted. Awaiting confirmation.');
+        } else {
+            throw new Error(conf?.msg || 'Confirmation failed');
+        }
     } catch (e) {
         console.error('FENNEC deposit error:', e);
         document.getElementById('errorMsg').innerText = e.message || String(e);
@@ -3542,6 +3774,10 @@ function __legacy_seedChartPriceFromCache() {
 }
 
 function __legacy_initChart() {
+    if (typeof initChart === 'function') {
+        initChart();
+        return;
+    }
     const ctx = document.getElementById('priceChart');
     if (!ctx || typeof Chart === 'undefined') {
         console.log('Chart.js not loaded yet, retrying...');
@@ -3620,6 +3856,9 @@ function __legacy_initChart() {
 }
 
 async function __legacy_loadHistoricalPrices() {
+    if (typeof loadHistoricalPrices === 'function') {
+        return loadHistoricalPrices();
+    }
     try {
         const __chartDebug =
             (typeof window !== 'undefined' && (window.__fennecChartDebug === true || window.__debugChart === true)) ||
@@ -3630,7 +3869,7 @@ async function __legacy_loadHistoricalPrices() {
 
         // Load history based on current timeframe
         // For 'all', use '90d' since InSwap doesn't store more than 90 days
-        const timeRange =
+        const baseRange =
             chartTimeframe === 'all'
                 ? '90d'
                 : chartTimeframe === '30d'
@@ -3640,8 +3879,15 @@ async function __legacy_loadHistoricalPrices() {
                     : chartTimeframe === '24h'
                       ? '24h'
                       : '1h';
+        const pairKey = String(window.currentSwapPair || currentSwapPair || 'FB_FENNEC').toUpperCase();
+        const isBtcPair = pairKey === 'BTC_FB' || pairKey === 'SBTC_FB' || pairKey.includes('BTC');
+        const tick0 = T_SFB;
+        const tick1 = isBtcPair ? T_SBTC : T_FENNEC;
+        const timeRange = isBtcPair && baseRange !== '1h' && baseRange !== '24h' ? '90d' : baseRange;
         const json = await safeFetchJson(
-            `${BACKEND_URL}?action=price_line&tick0=sFB___000&tick1=FENNEC&timeRange=${timeRange}`,
+            `${BACKEND_URL}?action=price_line&tick0=${encodeURIComponent(tick0)}&tick1=${encodeURIComponent(
+                tick1
+            )}&timeRange=${encodeURIComponent(timeRange)}`,
             { timeoutMs: 12000, retries: 2 }
         );
         if (!json) throw new Error('Failed to load price history');
@@ -3735,6 +3981,9 @@ async function __legacy_loadHistoricalPrices() {
 }
 
 async function __legacy_updatePriceData(force = false) {
+    if (typeof updatePriceData === 'function') {
+        return updatePriceData(force, window.currentSwapPair || 'FB_FENNEC');
+    }
     const __now = Date.now();
     try {
         window.__fennecPriceFetchState =
@@ -3801,6 +4050,10 @@ async function __legacy_updatePriceData(force = false) {
 }
 
 function __legacy_updateChart() {
+    if (typeof updateChart === 'function') {
+        updateChart(window.currentSwapPair || 'FB_FENNEC');
+        return;
+    }
     if (!priceChart) return;
 
     const __chartDebug =
@@ -3950,7 +4203,7 @@ function __legacy_updateChart() {
         }
 
         // Update market cap and volume
-        updateMarketStats(current);
+        updateMarketStats(current, window.currentSwapPair || 'FB_FENNEC');
     } else if (filtered.length === 1) {
         // Only one point - show it
         const priceEl = document.getElementById('chartPrice') || document.getElementById('currentPrice');
@@ -3964,17 +4217,21 @@ function __legacy_updateChart() {
 
     // Update market cap even if only one point
     if (filtered.length > 0) {
-        updateMarketStats(filtered[filtered.length - 1].price);
+        updateMarketStats(filtered[filtered.length - 1].price, window.currentSwapPair || 'FB_FENNEC');
     }
 }
 
 // Get pool info and update market stats from pool_info API
-async function updateMarketStats(fennecPriceInFB) {
+async function updateMarketStats(fennecPriceInFB, pairKey) {
     try {
         const marketCapEl = document.getElementById('marketCap');
         const volume24hEl = document.getElementById('volume24h');
         const volume7dEl = document.getElementById('volume7d');
         const volume30dEl = document.getElementById('volume30d');
+        const pair = String(pairKey || window.currentSwapPair || 'FB_FENNEC').trim() || 'FB_FENNEC';
+        const normalizeTick = v => String(v || '').toUpperCase();
+        const baseTick = pair === 'BTC_FB' ? T_SBTC : T_FENNEC;
+        const quoteTick = T_SFB;
 
         const safeNum = v => {
             if (v === null || v === undefined) return 0;
@@ -4009,10 +4266,30 @@ async function updateMarketStats(fennecPriceInFB) {
             return cleaned ? `$${cleaned}` : '--';
         };
 
-        let poolData = poolCache && poolCache.data ? poolCache.data : null;
+        const isPoolMatch = data => {
+            if (!data || typeof data !== 'object') return false;
+            const t0 = normalizeTick(data.tick0);
+            const t1 = normalizeTick(data.tick1);
+            const base = normalizeTick(baseTick);
+            const quote = normalizeTick(quoteTick);
+            return (t0 === base && t1 === quote) || (t0 === quote && t1 === base);
+        };
+
+        let poolData = poolCache && poolCache.data && isPoolMatch(poolCache.data) ? poolCache.data : null;
         if (!poolData) {
-            await (typeof fetchReserves === 'function' ? fetchReserves() : Promise.resolve());
-            poolData = poolCache && poolCache.data ? poolCache.data : null;
+            try {
+                const url = `${BACKEND_URL}?action=pool_info&tick0=${encodeURIComponent(
+                    baseTick
+                )}&tick1=${encodeURIComponent(quoteTick)}&t=${Date.now()}`;
+                const json = await safeFetchJson(url, { timeoutMs: 12000, retries: 2 }).catch(() => null);
+                const data = json?.data && typeof json.data === 'object' ? json.data : null;
+                if (data && data.tick0) poolData = data;
+            } catch (_) {}
+
+            if (!poolData) {
+                await (typeof fetchReserves === 'function' ? fetchReserves() : Promise.resolve());
+                poolData = poolCache && poolCache.data && isPoolMatch(poolCache.data) ? poolCache.data : null;
+            }
         }
 
         if (poolData) {
@@ -4107,6 +4384,10 @@ async function updateMarketStats(fennecPriceInFB) {
 }
 
 function __legacy_setChartTimeframe(tf) {
+    if (typeof setChartTimeframe === 'function') {
+        setChartTimeframe(tf);
+        return;
+    }
     chartTimeframe = tf;
 
     // Show loading indicator
@@ -4151,6 +4432,10 @@ function __legacy_setChartTimeframe(tf) {
 }
 
 function updateChartTimeframe(tf, event) {
+    if (typeof setChartTimeframe === 'function') {
+        setChartTimeframe(tf);
+        return;
+    }
     chartTimeframe = tf;
     // Reload historical data for new timeframe
     loadHistoricalPrices();
@@ -7552,6 +7837,20 @@ async function loadExistingCardIntoIframe(inscriptionId, identityOverride = null
     const openStartAt = Date.now();
 
     try {
+        if (iframeContainer) iframeContainer.classList.remove('iframe-loaded');
+        if (iframeSlot) {
+            iframeSlot.style.opacity = '';
+            iframeSlot.style.display = '';
+            iframeSlot.style.pointerEvents = '';
+        }
+        if (loadingRoot) {
+            loadingRoot.style.display = '';
+            loadingRoot.style.opacity = '';
+            loadingRoot.style.pointerEvents = '';
+        }
+    } catch (_) {}
+
+    try {
         if (loadingRoot) {
             loadingRoot.innerHTML = `
                                         <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">
@@ -7779,6 +8078,13 @@ async function loadExistingCardIntoIframe(inscriptionId, identityOverride = null
                     const shareBtn = document.getElementById('fidShareBtn');
                     if (shareBtn) {
                         shareBtn.style.display = 'flex';
+                    }
+                } catch (_) {}
+                try {
+                    if (iframeContainer) iframeContainer.classList.add('iframe-loaded');
+                    if (loadingRoot) {
+                        loadingRoot.style.display = 'none';
+                        loadingRoot.style.opacity = '0';
                     }
                 } catch (_) {}
             };
